@@ -15,14 +15,4 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-const attendanceConfig = {
-    apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
-    authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_ATTENDANCE_APP_ID
-};
 
-const attendanceApp = initializeApp(attendanceConfig, "attendanceApp");
-export const attendanceDb = getFirestore(attendanceApp);

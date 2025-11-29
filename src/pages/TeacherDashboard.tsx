@@ -1093,19 +1093,22 @@ const TeacherDashboard = () => {
 
     try {
       // Check if attendance record exists
+      // Optimization: Fetch by workspaceId only to avoid composite index requirement, then filter by date
       const q = query(
         collection(db, 'attendance'),
-        where('workspaceId', '==', workspaceId),
-        where('date', '==', date)
+        where('workspaceId', '==', workspaceId)
       );
       const snap = await getDocs(q);
+
+      // Filter for the specific date in memory
+      const targetDoc = snap.docs.find(d => d.data().date === date);
 
       const workspace = workspaces.find(w => w.id === workspaceId);
       const allStudents = workspace?.students || [];
 
-      if (!snap.empty) {
+      if (targetDoc) {
         // Record exists
-        const data = snap.docs[0].data();
+        const data = targetDoc.data();
         const presentStudents = new Set(data.presentStudents || []);
 
         const list = allStudents.map((email: string) => ({
@@ -1240,23 +1243,25 @@ const TeacherDashboard = () => {
     if (!confirm("Are you sure you want to delete the entire attendance for this date? This cannot be undone.")) return;
 
     try {
+      // Optimization: Fetch by workspaceId only
       const q = query(
         collection(db, 'attendance'),
-        where('workspaceId', '==', wsId),
-        where('date', '==', date)
+        where('workspaceId', '==', wsId)
       );
       const snap = await getDocs(q);
-      if (snap.empty) {
+      const targetDoc = snap.docs.find(d => d.data().date === date);
+
+      if (!targetDoc) {
         toast.error("No attendance record found to delete");
         return;
       }
 
       // Backup
-      const backupData = snap.docs.map(d => d.data());
+      const backupData = [targetDoc.data()];
       setDeletedBackup({ type: 'single', data: backupData });
 
       const batch = writeBatch(db);
-      snap.docs.forEach(d => batch.delete(d.ref));
+      batch.delete(targetDoc.ref);
       await batch.commit();
 
       toast.success("Attendance record deleted");
@@ -1286,17 +1291,17 @@ const TeacherDashboard = () => {
         .filter(s => s.status === 'present')
         .map(s => s.email);
 
+      // Optimization: Fetch by workspaceId only
       const q = query(
         collection(db, 'attendance'),
-        where('workspaceId', '==', attendanceWorkspace),
-        where('date', '==', attendanceDate)
+        where('workspaceId', '==', attendanceWorkspace)
       );
       const snap = await getDocs(q);
+      const targetDoc = snap.docs.find(d => d.data().date === attendanceDate);
 
-      if (!snap.empty) {
+      if (targetDoc) {
         // Update existing
-        const docId = snap.docs[0].id;
-        await updateDoc(doc(db, 'attendance', docId), {
+        await updateDoc(targetDoc.ref, {
           presentStudents: presentEmails,
           updatedAt: serverTimestamp()
         });
