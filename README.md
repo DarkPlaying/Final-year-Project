@@ -2,8 +2,6 @@
 
 Edu Online is a comprehensive, role-based education management platform designed to streamline the interaction between Administrators, Teachers, and Students. Built with modern web technologies and powered by Firebase, it offers a secure, real-time, and AI-enhanced learning environment.
 
-![Project Banner](public/placeholder.svg)
-
 ## 🚀 Features
 
 ### 🛡️ Admin Dashboard
