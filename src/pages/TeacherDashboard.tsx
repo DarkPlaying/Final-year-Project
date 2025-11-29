@@ -1135,9 +1135,9 @@ const TeacherDashboard = () => {
           setAttendanceList(list);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error('Failed to fetch attendance');
+      toast.error(`Failed to fetch attendance: ${error.message}`);
     }
   };
 
@@ -1202,9 +1202,9 @@ const TeacherDashboard = () => {
       });
 
       setMonthAttendanceData(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching month attendance:", error);
-      toast.error("Failed to fetch month attendance");
+      toast.error(`Failed to fetch month attendance: ${error.message}`);
     }
   };
 
