@@ -40,12 +40,35 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY + 100; // Offset for better triggering
+
+      for (const item of items) {
+        if (item.url.startsWith('#')) {
+          const element = document.querySelector(item.url);
+          if (element instanceof HTMLElement) {
+            const offsetTop = element.offsetTop;
+            const offsetBottom = offsetTop + element.offsetHeight;
+
+            if (scrollPosition >= offsetTop && scrollPosition < offsetBottom) {
+              setActiveTab(item.name);
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [items]);
+
   if (!mounted) return null;
 
   return (
     <div className="fixed top-0 left-0 right-0 z-[9999] w-full pt-6">
       <div className="flex justify-center w-full px-4 py-4">
-        <motion.div 
+        <motion.div
           className="flex items-center justify-center gap-2 md:gap-3 bg-black/50 border border-white/10 backdrop-blur-lg py-2 px-3 md:px-4 rounded-full shadow-lg relative max-w-fit"
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -66,7 +89,7 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                 onClick={(e) => {
                   e.preventDefault();
                   setActiveTab(item.name);
-                  
+
                   // Handle hash navigation with smooth scroll
                   if (item.url.startsWith('#')) {
                     const element = document.querySelector(item.url);
@@ -89,7 +112,7 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                   <motion.div
                     className="absolute inset-0 rounded-full -z-10 overflow-hidden"
                     initial={{ opacity: 0 }}
-                    animate={{ 
+                    animate={{
                       opacity: [0.3, 0.5, 0.3],
                       scale: [1, 1.03, 1]
                     }}
@@ -103,8 +126,8 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                     <div className="absolute inset-[-4px] bg-primary/20 rounded-full blur-xl" />
                     <div className="absolute inset-[-8px] bg-primary/15 rounded-full blur-2xl" />
                     <div className="absolute inset-[-12px] bg-primary/5 rounded-full blur-3xl" />
-                    
-                    <div 
+
+                    <div
                       className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/20 to-primary/0"
                       style={{
                         animation: "shine 3s ease-in-out infinite"
@@ -121,14 +144,14 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                 >
                   {item.name}
                 </motion.span>
-                <motion.span 
+                <motion.span
                   className="md:hidden relative z-10"
                   whileHover={{ scale: 1.2 }}
                   whileTap={{ scale: 0.9 }}
                 >
                   <Icon size={18} strokeWidth={2.5} />
                 </motion.span>
-          
+
                 <AnimatePresence>
                   {isHovered && !isActive && (
                     <motion.div
@@ -152,7 +175,7 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                     }}
                   >
                     <div className="relative w-12 h-12">
-                      <motion.div 
+                      <motion.div
                         className="absolute w-10 h-10 bg-white rounded-full left-1/2 -translate-x-1/2"
                         animate={
                           hoveredTab ? {
@@ -172,7 +195,7 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                           }
                         }
                       >
-                        <motion.div 
+                        <motion.div
                           className="absolute w-2 h-2 bg-black rounded-full"
                           animate={
                             hoveredTab ? {
@@ -185,7 +208,7 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                           }
                           style={{ left: '25%', top: '40%' }}
                         />
-                        <motion.div 
+                        <motion.div
                           className="absolute w-2 h-2 bg-black rounded-full"
                           animate={
                             hoveredTab ? {
@@ -198,22 +221,22 @@ export function AnimeNavBar({ items, className, defaultActive = "Home" }: NavBar
                           }
                           style={{ right: '25%', top: '40%' }}
                         />
-                        <motion.div 
+                        <motion.div
                           className="absolute w-2 h-1.5 bg-pink-300 rounded-full"
                           animate={{
                             opacity: hoveredTab ? 0.8 : 0.6
                           }}
                           style={{ left: '15%', top: '55%' }}
                         />
-                        <motion.div 
+                        <motion.div
                           className="absolute w-2 h-1.5 bg-pink-300 rounded-full"
                           animate={{
                             opacity: hoveredTab ? 0.8 : 0.6
                           }}
                           style={{ right: '15%', top: '55%' }}
                         />
-                        
-                        <motion.div 
+
+                        <motion.div
                           className="absolute w-4 h-2 border-b-2 border-black rounded-full"
                           animate={
                             hoveredTab ? {
