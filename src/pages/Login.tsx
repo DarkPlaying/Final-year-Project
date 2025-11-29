@@ -174,16 +174,19 @@ const Login = () => {
 
   const socialIcons = [
     {
-      icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M7.8 2h8.4C19.4 2 22 4.6 22 7.8v8.4a5.8 5.8 0 0 1-5.8 5.8H7.8C4.6 22 2 19.4 2 16.2V7.8A5.8 5.8 0 0 1 7.8 2m-.2 2A3.6 3.6 0 0 0 4 7.6v8.8C4 18.39 5.61 20 7.6 20h8.8a3.6 3.6 0 0 0 3.6-3.6V7.6C20 5.61 18.39 4 16.4 4zm9.65 1.5a1.25 1.25 0 0 1 1.25 1.25A1.25 1.25 0 0 1 17.25 8A1.25 1.25 0 0 1 16 6.75a1.25 1.25 0 0 1 1.25-1.25M12 7a5 5 0 0 1 5 5a5 5 0 0 1-5 5a5 5 0 0 1-5-5a5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3a3 3 0 0 0 3 3a3 3 0 0 0 3-3a3 3 0 0 0-3-3" /></svg>,
+      icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>,
       href: '#',
+      label: 'Help'
     },
     {
-      icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M6.94 5a2 2 0 1 1-4-.002a2 2 0 0 1 4 .002M7 8.48H3V21h4zm6.32 0H9.34V21h3.94v-6.57c0-3.66 4.77-4 4.77 0V21H22v-7.93c0-6.17-7.06-5.94-8.72-2.91z" /></svg>,
+      icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>,
       href: '#',
+      label: 'Contact'
     },
     {
-      icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M9.198 21.5h4v-8.01h3.604l.396-3.98h-4V7.5a1 1 0 0 1 1-1h3v-4h-3a5 5 0 0 0-5 5v2.01h-2l-.396 3.98h2.396z" /></svg>,
+      icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>,
       href: '#',
+      label: 'About'
     }
   ];
 
@@ -241,25 +244,21 @@ const Login = () => {
 
                 <div className="social-container">
                   <div className="flex items-center justify-center">
-                    <ul className="flex gap-3 md:gap-4">
-                      {socialIcons.map((social, index) => (
-                        <li key={index} className="list-none">
-                          <a
-                            href={social.href}
-                            className="w-10 h-10 md:w-12 md:h-12 bg-white/5 dark:bg-white/5 rounded-full flex justify-center items-center relative z-[1] border-2 border-border overflow-hidden group hover:border-primary transition-all duration-300"
-                          >
-                            <div className="absolute inset-0 w-full h-full bg-primary scale-y-0 origin-bottom transition-transform duration-500 ease-in-out group-hover:scale-y-100" />
-                            <span className="text-foreground/70 transition-all duration-500 ease-in-out z-[2] group-hover:text-primary-foreground text-sm md:text-base">
-                              {social.icon}
-                            </span>
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="flex gap-4 items-center">
+                      <div className="w-10 h-10 flex items-center justify-center bg-white/5 rounded-full border border-white/10" title="Built with React">
+                        <svg viewBox="-10.5 -9.45 21 18.9" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-[#61DAFB]"><circle cx="0" cy="0" r="2" fill="currentColor"></circle><g stroke="currentColor" strokeWidth="1" fill="none"><ellipse rx="10" ry="4.5"></ellipse><ellipse rx="10" ry="4.5" transform="rotate(60)"></ellipse><ellipse rx="10" ry="4.5" transform="rotate(120)"></ellipse></g></svg>
+                      </div>
+                      <div className="w-10 h-10 flex items-center justify-center bg-white/5 rounded-full border border-white/10" title="Powered by Firebase">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-6"><path d="M3.89 15.672L6.255 2.6L8.44 7.38L3.89 15.672Z" fill="#FFC107" /><path d="M11.698 9.38L8.438 7.38L3.89 15.67L11.698 9.38Z" fill="#FFA000" /><path d="M19.75 14.2L13.842 3.19L11.7 9.38L19.75 14.2Z" fill="#FFCA28" /><path d="M19.75 14.202L12 21.5L3.89 15.672L19.75 14.202Z" fill="#FFA000" /><path d="M12 21.5L19.75 14.2L11.698 9.38L3.89 15.67L12 21.5Z" fill="#FFC107" /></svg>
+                      </div>
+                      <div className="w-10 h-10 flex items-center justify-center bg-white/5 rounded-full border border-white/10" title="Type Safe">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-[#3178C6]"><path d="M0 0H24V24H0V0Z" fill="currentColor" fillOpacity="0.01" /><path d="M2 2H22V22H2V2Z" stroke="currentColor" strokeWidth="2" /><path d="M12 18H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M14 6V18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M8 6H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <span className='text-xs md:text-sm text-muted-foreground'>or use your account</span>
+                <span className='text-xs md:text-sm text-muted-foreground'>Secure Education Portal</span>
               </div>
 
               <div className='grid gap-3 md:gap-4 items-center'>
@@ -287,8 +286,6 @@ const Login = () => {
                   />
                 </div>
               </div>
-
-              <a href="#" className='font-light text-xs md:text-sm text-muted-foreground hover:text-foreground transition-colors'>Forgot your password?</a>
 
               <div className='flex gap-4 justify-center items-center mt-2'>
                 <button
