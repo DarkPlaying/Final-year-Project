@@ -567,11 +567,24 @@ const AdminDashboard = () => {
   const handleCSVUpload = async () => {
     if (!csvFile || csvData.length === 0) return;
 
+    // Initialize secondary app for Auth creation
+    const secondaryApp = initializeApp({
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID
+    }, "SecondaryApp_CSV");
+    const secondaryAuth = getAuth(secondaryApp);
+
     try {
       const batch = writeBatch(db);
       let successCount = 0;
       let errorCount = 0;
       const uploadedUserIds: any[] = [];
+
+      toast.loading(`Processing ${csvData.length} users...`);
 
       for (const user of csvData) {
         // Basic validation
@@ -582,27 +595,43 @@ const AdminDashboard = () => {
 
         const emailLower = user.email.toLowerCase();
         let userId = '';
-        let newUserRef = null;
+        let isNewUser = false;
 
-        // Check if user exists
+        // Check if user exists in Firestore
         const q = query(collection(db, 'users'), where('email_lower', '==', emailLower));
         const snap = await getDocs(q);
 
         if (!snap.empty) {
-          // User exists
+          // User exists in Firestore
           userId = snap.docs[0].id;
         } else {
-          // Create new user
-          newUserRef = doc(collection(db, 'users'));
-          userId = newUserRef.id;
+          // Create new user in Firebase Auth
+          try {
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, user.email, user.password);
+            userId = userCredential.user.uid;
+            isNewUser = true;
+          } catch (authError: any) {
+            console.error(`Failed to create auth for ${user.email}:`, authError);
+            if (authError.code === 'auth/email-already-in-use') {
+              // If email exists in Auth but not Firestore (rare sync issue), we might want to handle it.
+              // For now, we'll skip or log it.
+              errorCount++;
+              continue;
+            }
+            errorCount++;
+            continue;
+          }
+
+          // Create new user document in Firestore with Auth UID
+          const newUserRef = doc(db, 'users', userId);
           batch.set(newUserRef, {
             full_name: user.name,
             email: user.email,
             email_lower: emailLower,
-            password: user.password, // Note: In production, hash this!
+            password: await hashPassword(user.password), // Hash for backup/reference
             role: user.role.toLowerCase(),
             department: user.department || '-',
-            assignedWorkspaces: activeWorkspaceId ? [activeWorkspaceId] : [], // Assign to workspace if active
+            assignedWorkspaces: activeWorkspaceId ? [activeWorkspaceId] : [],
             createdAt: serverTimestamp(),
             uploadedViaCSV: true
           });
@@ -618,13 +647,12 @@ const AdminDashboard = () => {
             [field]: arrayUnion(emailLower)
           });
 
-          // If user already existed, update their assignedWorkspaces
-          if (snap.empty === false) {
+          // If user already existed (wasn't new), update their assignedWorkspaces
+          if (!isNewUser) {
             batch.update(doc(db, 'users', userId), {
               assignedWorkspaces: arrayUnion(activeWorkspaceId)
             });
           }
-          // If user was new, assignedWorkspaces was already set in batch.set above
         }
 
         uploadedUserIds.push({ id: userId, email: user.email, role: user.role });
@@ -638,20 +666,21 @@ const AdminDashboard = () => {
         timestamp: new Date().toISOString(),
         count: successCount,
         users: uploadedUserIds,
-        workspaceId: activeWorkspaceId // Track which workspace this upload was for
-      }, ...uploadHistory].slice(0, 5); // Keep last 5 uploads
+        workspaceId: activeWorkspaceId
+      }, ...uploadHistory].slice(0, 5);
 
       setUploadHistory(newHistory);
       localStorage.setItem('uploadHistory', JSON.stringify(newHistory));
 
-      toast.success(`Successfully processed ${successCount} users` + (activeWorkspaceId ? ` for workspace "${activeWorkspaceName}"` : ''));
-      if (errorCount > 0) toast.warning(`${errorCount} rows skipped due to missing data or existing users`);
+      toast.dismiss();
+      toast.success(`Successfully processed ${successCount} users`);
+      if (errorCount > 0) toast.warning(`${errorCount} users failed (duplicates or invalid data)`);
 
       setShowCsvDialog(false);
       setCsvFile(null);
       setCsvData([]);
       setCsvPreview([]);
-      setActiveWorkspaceId(null); // Reset
+      setActiveWorkspaceId(null);
       setActiveWorkspaceName(null);
       loadUsers();
       loadWorkspaces();
@@ -661,6 +690,8 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error(error);
       toast.error('Failed to upload CSV');
+    } finally {
+      await deleteApp(secondaryApp);
     }
   };
 
