@@ -894,28 +894,38 @@ const AdminDashboard = () => {
       }
 
       // 4. Execute Deletions in Batches
-      await deleteInBatches(submissionDocsToDelete);
-      await deleteInBatches(queryDocsToDelete);
-      await deleteInBatches(workspaceDocsToDelete);
-      await deleteInBatches(userDocsToDelete);
+      try {
+        await deleteInBatches(submissionDocsToDelete);
+        await deleteInBatches(queryDocsToDelete);
+        await deleteInBatches(workspaceDocsToDelete);
+        await deleteInBatches(userDocsToDelete);
+      } catch (e) {
+        console.warn('Error deleting some related data:', e);
+        toast.warning('Some related data could not be deleted');
+      }
 
       // 5. Delete Attendance (Separate DB)
-      const attendanceQ = query(collection(attendanceDb, 'attendance'), where('workspaceId', '==', id));
-      const attendanceSnap = await getDocs(attendanceQ);
-      await deleteInBatches(attendanceSnap.docs, attendanceDb);
+      try {
+        const attendanceQ = query(collection(attendanceDb, 'attendance'), where('workspaceId', '==', id));
+        const attendanceSnap = await getDocs(attendanceQ);
+        await deleteInBatches(attendanceSnap.docs, attendanceDb);
+      } catch (e) {
+        console.warn('Error deleting attendance data (check permissions):', e);
+        // Do not fail the whole operation if attendance DB is inaccessible
+      }
 
       // 6. Delete Workspace
       await deleteDoc(doc(db, 'workspaces', id));
 
       toast.dismiss();
-      toast.success('Workspace and all related data deleted');
+      toast.success('Workspace deleted');
       logOperation(`Deleted workspace: ${name}`, 'warning');
       loadWorkspaces();
       loadStats();
     } catch (error) {
       console.error('Delete workspace error:', error);
       toast.dismiss();
-      toast.error('Failed to delete workspace');
+      toast.error('Failed to delete workspace. Check console for details.');
     }
   };
 
