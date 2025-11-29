@@ -38,7 +38,7 @@ import {
   AlertTriangle,
   XCircle
 } from 'lucide-react';
-import { db, attendanceDb } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 import { hashPassword, verifyPassword } from '@/lib/security';
 import {
   collection,
@@ -316,7 +316,7 @@ const StudentDashboard = () => {
   useEffect(() => {
     if (!userEmail) return;
 
-    const q = query(collection(attendanceDb, 'marks'), where('studentEmail', '==', userEmail));
+    const q = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
     const unsub = onSnapshot(q, (snap) => {
       const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       // Sort by timestamp if available, otherwise by title
@@ -346,7 +346,7 @@ const StudentDashboard = () => {
 
     chunks.forEach(chunk => {
       const q = query(
-        collection(attendanceDb, 'unom_reports'),
+        collection(db, 'unom_reports'),
         where('workspaceId', 'in', chunk),
         where('status', '==', 'active')
       );
@@ -451,7 +451,7 @@ const StudentDashboard = () => {
         const endOfMonth = `${attendanceMonth}-31`;
 
         const q = query(
-          collection(attendanceDb, 'attendance'),
+          collection(db, 'attendance'),
           where('date', '>=', startOfMonth),
           where('date', '<=', endOfMonth)
         );
@@ -557,7 +557,7 @@ const StudentDashboard = () => {
     });
 
     try {
-      await updateDoc(doc(attendanceDb, 'unom_reports', selectedUnomId), {
+      await updateDoc(doc(db, 'unom_reports', selectedUnomId), {
         data: newData,
         updatedAt: serverTimestamp()
       });
