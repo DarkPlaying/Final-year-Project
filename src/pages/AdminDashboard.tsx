@@ -942,14 +942,21 @@ const AdminDashboard = () => {
         toast.warning('Some related data could not be deleted');
       }
 
-      // 5. Delete Attendance (Separate DB)
+      // 5. Delete Secondary DB Data (Attendance, Marks, Reports)
       try {
-        const attendanceQ = query(collection(secondaryDb, 'attendance'), where('workspaceId', '==', id));
-        const attendanceSnap = await getDocs(attendanceQ);
-        await deleteInBatches(attendanceSnap.docs, secondaryDb);
+        const secondaryCollections = ['attendance', 'mark_batches', 'marks', 'unom_reports'];
+
+        for (const colName of secondaryCollections) {
+          const q = query(collection(secondaryDb, colName), where('workspaceId', '==', id));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            await deleteInBatches(snap.docs, secondaryDb);
+            console.log(`Deleted ${snap.size} docs from ${colName} in secondary DB`);
+          }
+        }
       } catch (e) {
-        console.warn('Error deleting attendance data (check permissions):', e);
-        // Do not fail the whole operation if attendance DB is inaccessible
+        console.warn('Error deleting secondary DB data (check permissions):', e);
+        // Do not fail the whole operation if secondary DB is inaccessible
       }
 
       // 6. Delete Workspace
