@@ -56,7 +56,7 @@ import {
 import { getAuth, signInAnonymously } from 'firebase/auth';
 
 // Google Drive Config
-const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const EXAM_CLIENT_ID = '815335775209-mkgtp7o17o48e5ul7lmgn4uljko3e8ag.apps.googleusercontent.com'; // User provided Client ID
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const ASSIGNMENT_DRIVE_FOLDER_ID = '1l7eC3pUZIdlzfp5wp1hfgWZjj_p-m2gc'; // User provided folder
 
