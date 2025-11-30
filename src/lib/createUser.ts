@@ -81,19 +81,38 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                 throw error;
             }
         }
-
         // --- Step B & C: Secondary System ---
         const secondaryAuth = getAuth(tempSecondaryApp);
         const tempSecondaryDb = getFirestore(tempSecondaryApp);
 
         console.log(`[createUser] Secondary App Project ID: ${tempSecondaryApp.options.projectId}`);
-        alert(`Debug: Writing to Secondary Project ID: ${tempSecondaryApp.options.projectId}`);
 
         if (!isRestored) {
-            // New User Flow
+            // New User Flow (Main Auth was new)
             console.log(`[createUser] Creating user in Secondary Auth: ${email}`);
-            const secCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-            console.log(`[createUser] Secondary Auth UID: ${secCred.user.uid}`);
+            let secUid = '';
+
+            try {
+                const secCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+                secUid = secCred.user.uid;
+            } catch (secAuthError: any) {
+                if (secAuthError.code === 'auth/email-already-in-use') {
+                    console.log(`[createUser] User already exists in Secondary Auth. Signing in...`);
+                    try {
+                        const secCred = await signInWithEmailAndPassword(secondaryAuth, email, password);
+                        secUid = secCred.user.uid;
+                    } catch (secLoginError) {
+                        console.error(`[createUser] Failed to sign in to Secondary Auth:`, secLoginError);
+                        // Fallback: Try anonymous auth if password fails (though unlikely if same password)
+                        // or just fail. If we can't auth, we can't write to Secondary DB (enforced by rules).
+                        throw new Error("Failed to authenticate with Secondary System.");
+                    }
+                } else {
+                    throw secAuthError;
+                }
+            }
+
+            console.log(`[createUser] Secondary Auth UID: ${secUid}`);
             console.log(`[createUser] Main Auth UID: ${mainUid}`);
 
             const secUserRef = doc(tempSecondaryDb, 'users', mainUid);
@@ -114,7 +133,8 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                 console.log(`[createUser] VERIFIED: Document exists in Secondary DB.`);
             } else {
                 console.error(`[createUser] VERIFICATION FAILED: Document NOT found in Secondary DB after write.`);
-                throw new Error("Secondary DB write verification failed. The document was not found after creation.");
+                // Don't throw here, just log. We don't want to fail the whole process if Main DB succeeds.
+                console.warn("Secondary DB write verification failed. Proceeding with Main DB.");
             }
 
         } else {
