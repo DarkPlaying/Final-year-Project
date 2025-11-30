@@ -782,9 +782,9 @@ const StudentDashboard = () => {
       setAssignmentLink('');
       setAssignmentFile(null);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error('Failed to submit assignment');
+      toast.error(`Failed to submit assignment: ${error.message || 'Unknown error'}`);
     }
   };
 
