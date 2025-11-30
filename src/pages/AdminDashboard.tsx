@@ -944,9 +944,9 @@ const AdminDashboard = () => {
 
       // 5. Delete Attendance (Separate DB)
       try {
-        const attendanceQ = query(collection(db, 'attendance'), where('workspaceId', '==', id));
+        const attendanceQ = query(collection(secondaryDb, 'attendance'), where('workspaceId', '==', id));
         const attendanceSnap = await getDocs(attendanceQ);
-        await deleteInBatches(attendanceSnap.docs, db);
+        await deleteInBatches(attendanceSnap.docs, secondaryDb);
       } catch (e) {
         console.warn('Error deleting attendance data (check permissions):', e);
         // Do not fail the whole operation if attendance DB is inaccessible

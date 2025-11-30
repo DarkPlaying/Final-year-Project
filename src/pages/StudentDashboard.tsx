@@ -39,6 +39,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { secondaryDb } from '@/lib/firebaseSecondary';
 import { hashPassword, verifyPassword } from '@/lib/security';
 import {
   collection,
@@ -328,7 +329,7 @@ const StudentDashboard = () => {
   useEffect(() => {
     if (!userEmail) return;
 
-    const q = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
+    const q = query(collection(secondaryDb, 'marks'), where('studentEmail', '==', userEmail));
     const unsub = onSnapshot(q, (snap) => {
       const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       // Sort by timestamp if available, otherwise by title
@@ -358,7 +359,7 @@ const StudentDashboard = () => {
 
     chunks.forEach(chunk => {
       const q = query(
-        collection(db, 'unom_reports'),
+        collection(secondaryDb, 'unom_reports'),
         where('workspaceId', 'in', chunk),
         where('status', '==', 'active')
       );
@@ -463,7 +464,7 @@ const StudentDashboard = () => {
         const endOfMonth = `${attendanceMonth}-31`;
 
         const q = query(
-          collection(db, 'attendance'),
+          collection(secondaryDb, 'attendance'),
           where('date', '>=', startOfMonth),
           where('date', '<=', endOfMonth)
         );
@@ -574,7 +575,7 @@ const StudentDashboard = () => {
     });
 
     try {
-      await updateDoc(doc(db, 'unom_reports', selectedUnomId), {
+      await updateDoc(doc(secondaryDb, 'unom_reports', selectedUnomId), {
         data: newData,
         updatedAt: serverTimestamp()
       });
