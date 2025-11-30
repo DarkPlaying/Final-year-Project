@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 import { db } from '@/lib/firebase';
+import { secondaryDb } from '@/lib/firebaseSecondary';
 import { hashPassword } from '@/lib/security';
 import {
   collection,
@@ -493,6 +494,19 @@ const AdminDashboard = () => {
         createdAt: serverTimestamp()
       });
 
+      // Sync to Secondary DB (Attendance DB)
+      try {
+        await setDoc(doc(secondaryDb, 'users', newUid), {
+          name: newUser.full_name,
+          email: newUser.email,
+          role: newUser.role,
+          createdAt: serverTimestamp()
+        });
+      } catch (secError) {
+        console.error("Failed to sync to secondary DB:", secError);
+        toast.warning("User created, but failed to sync to Attendance DB");
+      }
+
       toast.success('User added successfully');
       logOperation(`Added user: ${newUser.email}`, 'success');
       setShowAddDialog(false);
@@ -525,6 +539,13 @@ const AdminDashboard = () => {
 
       await batch.commit();
       await deleteDoc(doc(db, 'users', userId));
+
+      // Sync delete to Secondary DB
+      try {
+        await deleteDoc(doc(secondaryDb, 'users', userId));
+      } catch (secError) {
+        console.error("Failed to delete from secondary DB:", secError);
+      }
 
       toast.success('User deleted successfully');
       logOperation(`Deleted user: ${userEmail}`, 'warning');
@@ -580,6 +601,7 @@ const AdminDashboard = () => {
 
     try {
       const batch = writeBatch(db);
+      const secondaryBatch = writeBatch(secondaryDb);
       let successCount = 0;
       let errorCount = 0;
       const uploadedUserIds: any[] = [];
@@ -635,6 +657,16 @@ const AdminDashboard = () => {
             createdAt: serverTimestamp(),
             uploadedViaCSV: true
           });
+
+          // Sync to Secondary DB
+          const secUserRef = doc(secondaryDb, 'users', userId);
+          secondaryBatch.set(secUserRef, {
+            name: user.name,
+            email: user.email,
+            role: user.role.toLowerCase(),
+            createdAt: serverTimestamp(),
+            uploadedViaCSV: true
+          });
         }
 
         // If uploading to a specific workspace
@@ -660,6 +692,12 @@ const AdminDashboard = () => {
       }
 
       await batch.commit();
+      try {
+        await secondaryBatch.commit();
+      } catch (secError) {
+        console.error("Failed to commit to secondary DB:", secError);
+        toast.warning("Users uploaded, but failed to sync to Attendance DB");
+      }
 
       // Update history
       const newHistory = [{
@@ -719,6 +757,12 @@ const AdminDashboard = () => {
         // Only delete if still marked as CSV upload and no workspaces
         const userRef = doc(db, 'users', user.id);
         await deleteDoc(userRef);
+        // Sync delete to Secondary DB
+        try {
+          await deleteDoc(doc(secondaryDb, 'users', user.id));
+        } catch (e) {
+          console.error("Failed to undo in secondary DB", e);
+        }
         deleted++;
       }
 
