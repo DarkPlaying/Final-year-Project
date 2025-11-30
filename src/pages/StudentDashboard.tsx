@@ -233,15 +233,19 @@ const StudentDashboard = () => {
 
     // Exams Listener
     const unsubExams = onSnapshot(query(collection(db, 'exams'), orderBy('createdAt', 'desc')), (snap) => {
-      const newExams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const newExams = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((e: any) => e.students?.includes(userEmail));
       setExams(newExams);
 
       if (!isInitialLoad.current) {
         snap.docChanges().forEach(change => {
           if (change.type === 'added') {
             const data = change.doc.data();
-            toast.info(`New Exam: ${data.title}`, { description: 'A new exam has been posted.' });
-            addNotification('exam', `New Exam: ${data.title}`);
+            if (data.students?.includes(userEmail)) {
+              toast.info(`New Exam: ${data.title}`, { description: 'A new exam has been posted.' });
+              addNotification('exam', `New Exam: ${data.title}`);
+            }
           }
         });
       }
@@ -249,15 +253,19 @@ const StudentDashboard = () => {
 
     // Syllabi Listener
     const unsubSyllabi = onSnapshot(query(collection(db, 'syllabi'), orderBy('createdAt', 'desc')), (snap) => {
-      const newSyllabi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const newSyllabi = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((s: any) => s.students?.includes(userEmail));
       setSyllabi(newSyllabi);
 
       if (!isInitialLoad.current) {
         snap.docChanges().forEach(change => {
           if (change.type === 'added') {
             const data = change.doc.data();
-            toast.info(`New Syllabus: ${data.title}`, { description: 'New syllabus material available.' });
-            addNotification('syllabus', `New Syllabus: ${data.title}`);
+            if (data.students?.includes(userEmail)) {
+              toast.info(`New Syllabus: ${data.name}`, { description: 'New syllabus material available.' });
+              addNotification('syllabus', `New Syllabus: ${data.name}`);
+            }
           }
         });
       }
@@ -265,15 +273,19 @@ const StudentDashboard = () => {
 
     // Announcements Listener
     const unsubAnnouncements = onSnapshot(query(collection(db, 'announcements'), orderBy('createdAt', 'desc')), (snap) => {
-      const newAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const newAnnouncements = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter((a: any) => a.students?.includes(userEmail));
       setAnnouncements(newAnnouncements);
 
       if (!isInitialLoad.current) {
         snap.docChanges().forEach(change => {
           if (change.type === 'added') {
             const data = change.doc.data();
-            toast.info(`New Announcement: ${data.title}`, { description: data.description });
-            addNotification('announcement', `Announcement: ${data.title}`);
+            if (data.students?.includes(userEmail)) {
+              toast.info(`New Announcement: ${data.title}`, { description: data.description });
+              addNotification('announcement', `Announcement: ${data.title}`);
+            }
           }
         });
       }
