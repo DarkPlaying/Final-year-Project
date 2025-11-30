@@ -1032,7 +1032,10 @@ const StudentDashboard = () => {
                             <h4 className="font-medium text-white text-sm">{exam.title}</h4>
                             <p className="text-xs text-slate-400">{exam.description || 'No description'}</p>
                           </div>
-                          <Button size="sm" variant="outline" className="h-7 text-xs border-slate-600 hover:bg-slate-700" onClick={() => window.open(exam.driveLink, '_blank')}>
+                          <Button size="sm" variant="outline" className="h-7 text-xs border-slate-600 hover:bg-slate-700" onClick={() => {
+                            if (exam.driveLink) window.open(exam.driveLink, '_blank');
+                            else toast.error("No document link available");
+                          }}>
                             View
                           </Button>
                         </div>
@@ -1087,7 +1090,10 @@ const StudentDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="pt-4 mt-2 border-t border-slate-700/50 flex justify-end">
-                        <Button size="sm" className="bg-slate-700 hover:bg-blue-600 text-white transition-colors w-full" onClick={() => window.open(s.driveLink, '_blank')}>
+                        <Button size="sm" className="bg-slate-700 hover:bg-blue-600 text-white transition-colors w-full" onClick={() => {
+                          if (s.driveLink) window.open(s.driveLink, '_blank');
+                          else toast.error("No document link available");
+                        }}>
                           <ExternalLink className="h-4 w-4 mr-2" /> View Material
                         </Button>
                       </div>
@@ -1157,7 +1163,10 @@ const StudentDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="pt-4 mt-2 border-t border-slate-700/50 flex justify-end">
-                        <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white w-full shadow-lg shadow-purple-900/20" onClick={() => window.open(e.driveLink, '_blank')}>
+                        <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white w-full shadow-lg shadow-purple-900/20" onClick={() => {
+                          if (e.driveLink) window.open(e.driveLink, '_blank');
+                          else toast.error("No document link available");
+                        }}>
                           <ExternalLink className="h-4 w-4 mr-2" /> {e.type === 'assignment' ? 'View Assignment' : 'Take Exam'}
                         </Button>
                       </div>
