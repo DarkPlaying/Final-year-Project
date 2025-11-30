@@ -9,9 +9,13 @@ import { GraduationCap, Lock, User, Moon, Sun, Home } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import { db, auth } from '@/lib/firebase';
 import { secondaryDb } from '@/lib/firebaseSecondary';
-import { getAuth as getSecondaryAuth, signInWithEmailAndPassword as signInSecondary } from 'firebase/auth';
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInAnonymously
+} from 'firebase/auth';
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
-import { signInWithEmailAndPassword } from 'firebase/auth';
 import { hashPassword, verifyPassword } from '@/lib/security';
 import { useAuthState } from '@/hooks/useAuthState';
 
@@ -68,12 +72,29 @@ const Login = () => {
       // 2. Sign in with Secondary Auth (Attendance DB)
       // This is required for secure rules on the secondary DB
       try {
-        const secondaryAuth = getSecondaryAuth(secondaryDb.app);
-        await signInSecondary(secondaryAuth, email, pass);
-      } catch (secErr) {
+        const secondaryAuth = getAuth(secondaryDb.app);
+        await signInWithEmailAndPassword(secondaryAuth, email, pass);
+      } catch (secErr: any) {
         console.error("Secondary Auth Login Failed:", secErr);
-        // We don't block login if secondary fails, but warn
-        toast.warning("Attendance features may be limited (Auth Sync Failed)");
+        const secondaryAuth = getAuth(secondaryDb.app);
+
+        if (secErr.code === 'auth/user-not-found') {
+          try {
+            // Try to create the user in secondary auth (Syncing accounts)
+            await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+            console.log("Created missing user in Secondary Auth");
+            toast.success("Account synced with Attendance System");
+          } catch (createErr) {
+            console.error("Failed to create secondary user, falling back to anonymous:", createErr);
+            await signInAnonymously(secondaryAuth);
+            toast.warning("Attendance features limited (Guest Mode)");
+          }
+        } else {
+          // Fallback to anonymous for other errors (wrong password, etc)
+          console.log("Falling back to anonymous auth for Secondary DB");
+          await signInAnonymously(secondaryAuth);
+          toast.warning("Attendance features limited (Guest Mode)");
+        }
       }
 
       // 2. Fetch User Document from Firestore
