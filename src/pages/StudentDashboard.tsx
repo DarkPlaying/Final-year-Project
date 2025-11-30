@@ -58,7 +58,7 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 // Google Drive Config
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-const ASSIGNMENT_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID; // Using same folder for now
+const ASSIGNMENT_DRIVE_FOLDER_ID = '1l7eC3pUZIdlzfp5wp1hfgWZjj_p-m2gc'; // User provided folder
 
 const StudentDashboard = () => {
   const [activeSection, setActiveSection] = useState('overview');
@@ -625,32 +625,53 @@ const StudentDashboard = () => {
         toast.error('Google API not loaded yet. Please refresh the page.');
       }
     }
+    toast.loading("Refreshing dashboard...");
+    setTimeout(() => toast.dismiss(), 1000);
+    setTimeout(() => toast.success("Dashboard refreshed"), 1100);
   };
 
   const uploadFileToDrive = async (file: File, folderId: string): Promise<string> => {
     if (!driveAccessToken) throw new Error('Not authenticated');
 
-    const metadata = {
-      name: file.name,
-      mimeType: file.type,
-      // parents: [folderId] // Removed to allow upload to user's root drive (fixes permission error)
+    const upload = async (parents?: string[]) => {
+      const metadata = {
+        name: file.name,
+        mimeType: file.type,
+        parents: parents
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+        body: form
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error?.message || 'Upload failed');
+      }
+      return await res.json();
     };
 
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', file);
+    let json;
+    try {
+      if (folderId) {
+        json = await upload([folderId]);
+      } else {
+        json = await upload();
+      }
+    } catch (error) {
+      console.warn("Upload to folder failed, retrying to root...", error);
+      json = await upload();
+    }
 
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + driveAccessToken },
-      body: form
-    });
-
-    if (!res.ok) throw new Error('Upload failed');
-    const json = await res.json();
     const fileId = json.id;
 
-    // Make public
+    // Make public (Viewer mode)
     await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
       method: 'POST',
       headers: {
@@ -660,16 +681,12 @@ const StudentDashboard = () => {
       body: JSON.stringify({ role: 'reader', type: 'anyone' })
     });
 
-    return `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
-  };
-
-  const handleGlobalRefresh = () => {
-    if (userEmail) {
-      toast.loading("Refreshing dashboard...");
-
-      setTimeout(() => toast.dismiss(), 1000);
-      setTimeout(() => toast.success("Dashboard refreshed"), 1100);
-    }
+    // Get link
+    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=webViewLink`, {
+      headers: { 'Authorization': 'Bearer ' + driveAccessToken }
+    });
+    const metaJson = await metaRes.json();
+    return metaJson.webViewLink;
   };
 
   const handleLogout = () => {
