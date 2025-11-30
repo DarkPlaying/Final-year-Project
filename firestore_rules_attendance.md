@@ -61,11 +61,14 @@ service cloud.firestore {
     // we rely on the fact that only Admins have access to the Admin Panel code that writes here.
     // BUT for rules, we can check if the requestor is an admin in the DB.
     
+    // Allow Admin Panel to sync users
+    // CRITICAL: When creating a user from the Admin Panel, we are authenticated as the NEW user (secUid)
+    // but we are writing a document with the MAIN UID (mainUid).
+    // Therefore, request.auth.uid != userId.
+    // We must allow authenticated users to write to ANY user document to support this sync.
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // Needed for Admin to create/delete users. 
-      // Ideally restrict to admin role, but if Admin user isn't synced with 'admin' role in this DB, it might fail.
-      // Assuming Admin user IS synced with role 'admin'.
+      allow write: if isAuthenticated(); 
     }
 
     // Default deny for everything else
