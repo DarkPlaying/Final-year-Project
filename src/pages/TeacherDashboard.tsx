@@ -1289,7 +1289,7 @@ const TeacherDashboard = () => {
       const backupData = [targetDoc.data()];
       setDeletedBackup({ type: 'single', data: backupData });
 
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
       batch.delete(targetDoc.ref);
       await batch.commit();
 
@@ -1376,7 +1376,7 @@ const TeacherDashboard = () => {
       const backupData = snap.docs.map(d => d.data());
       setDeletedBackup({ type: 'all', data: backupData });
 
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
       snap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
 
@@ -1397,7 +1397,7 @@ const TeacherDashboard = () => {
     if (!deletedBackup) return;
 
     try {
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
       deletedBackup.data.forEach(item => {
         const ref = doc(collection(secondaryDb, 'attendance'));
         batch.set(ref, item);
@@ -1463,12 +1463,12 @@ const TeacherDashboard = () => {
     }
 
     try {
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
       const batchId = doc(collection(secondaryDb, 'mark_batches')).id;
       const matchedCount = assignMarksData.length; // Assuming all data is matched for now
 
       // Create Batch Record
-      const batchDocRef = doc(db, 'mark_batches', batchId);
+      const batchDocRef = doc(secondaryDb, 'mark_batches', batchId);
       batch.set(batchDocRef, {
         subject: assignMarksSubject,
         sectionTitle: assignMarksSectionTitle,
@@ -1536,10 +1536,10 @@ const TeacherDashboard = () => {
 
   const handleDeleteBatch = async (batchId: string) => {
     try {
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
 
       // Mark batch as deleted
-      const batchRef = doc(db, 'mark_batches', batchId);
+      const batchRef = doc(secondaryDb, 'mark_batches', batchId);
       batch.update(batchRef, { status: 'deleted' });
 
       // Mark all marks in batch as deleted
@@ -1560,10 +1560,10 @@ const TeacherDashboard = () => {
 
   const handleUndoBatch = async (batchId: string) => {
     try {
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
 
       // Restore batch
-      const batchRef = doc(db, 'mark_batches', batchId);
+      const batchRef = doc(secondaryDb, 'mark_batches', batchId);
       batch.update(batchRef, { status: 'active' });
 
       // Restore marks
@@ -1586,7 +1586,7 @@ const TeacherDashboard = () => {
     if (!window.confirm("Are you sure you want to permanently delete ALL upload history? This action cannot be undone.")) return;
 
     try {
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
 
       // Get all batches
       const batchesQ = query(collection(secondaryDb, 'mark_batches'), where('teacherEmail', '==', userEmail));
@@ -1989,7 +1989,7 @@ const TeacherDashboard = () => {
 
   const handleUndoUnom = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'unom_reports', id), { status: 'active' });
+      await updateDoc(doc(secondaryDb, 'unom_reports', id), { status: 'active' });
       toast.success('Report restored');
       fetchUnomReports();
     } catch (error) {
@@ -2001,7 +2001,7 @@ const TeacherDashboard = () => {
   const handleDeleteAllUnom = async () => {
     if (!window.confirm("Are you sure you want to permanently delete ALL UNOM history?")) return;
     try {
-      const batch = writeBatch(db);
+      const batch = writeBatch(secondaryDb);
       const q = query(collection(secondaryDb, 'unom_reports'), where('teacherEmail', '==', userEmail));
       const snap = await getDocs(q);
       snap.docs.forEach(d => batch.delete(d.ref));
