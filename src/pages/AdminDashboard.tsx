@@ -558,23 +558,15 @@ const AdminDashboard = () => {
   const handleCSVUpload = async () => {
     if (!csvFile || csvData.length === 0) return;
 
-    // Initialize secondary app for Auth creation
-    const secondaryApp = initializeApp({
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID
-    }, "SecondaryApp_CSV");
-    const secondaryAuth = getAuth(secondaryApp);
-
     try {
-      const batch = writeBatch(db);
-      const secondaryBatch = writeBatch(secondaryDb);
       let successCount = 0;
       let errorCount = 0;
       const uploadedUserIds: any[] = [];
+
+      // We will use a batch for workspace updates, but user creation happens individually
+      // to ensure dual-system consistency via the utility.
+      const workspaceBatch = writeBatch(db);
+      let hasWorkspaceUpdates = false;
 
       toast.loading(`Processing ${csvData.length} users...`);
 
@@ -585,139 +577,60 @@ const AdminDashboard = () => {
           continue;
         }
 
-        const emailLower = user.email.toLowerCase();
-        let userId = '';
-        let isNewUser = false;
+        try {
+          const hashedPassword = await hashPassword(user.password);
 
-        // Check if user exists in Firestore
-        const q = query(collection(db, 'users'), where('email_lower', '==', emailLower));
-        const snap = await getDocs(q);
-
-        if (!snap.empty) {
-          // User exists in Firestore
-          userId = snap.docs[0].id;
-        } else {
-          // Create new user in Firebase Auth
-          let mainUid = '';
-          let secUid = '';
-
-          // 1. Create in Main Auth
-          try {
-            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, user.email, user.password);
-            mainUid = userCredential.user.uid;
-            isNewUser = true;
-          } catch (authError: any) {
-            console.error(`Failed to create Main Auth for ${user.email}:`, authError);
-            if (authError.code === 'auth/email-already-in-use') {
-              // User exists in Auth but not Firestore (e.g. deleted workspace).
-              // Attempt to RECOVER by signing in to get UID.
-              try {
-                const recoveredCred = await signInWithEmailAndPassword(secondaryAuth, user.email, user.password);
-                mainUid = recoveredCred.user.uid;
-                isNewUser = false; // Not technically new auth, but new profile
-                // We must sign out immediately to not switch the admin's session
-                // BUT secondaryAuth is a separate instance, so it shouldn't affect main auth?
-                // Actually 'secondaryAuth' here is initialized as 'SecondaryApp_CSV', so it's isolated.
-                // We are good.
-              } catch (loginError) {
-                console.error(`Failed to recover user ${user.email} via login:`, loginError);
-                errorCount++;
-                continue;
-              }
-            } else {
-              errorCount++;
-              continue;
-            }
-          }
-
-          // 2. Create in Secondary Auth (Attendance DB)
-          // We need a temp app for this
-          const tempSecApp = initializeApp({
-            apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
-            authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
-            projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
-            storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
-            messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
-            appId: import.meta.env.VITE_ATTENDANCE_APP_ID
-          }, `TempSecApp_${Date.now()}_${Math.random()}`);
-          const tempSecAuth = getAuth(tempSecApp);
-
-          try {
-            const secCred = await createUserWithEmailAndPassword(tempSecAuth, user.email, user.password);
-            secUid = secCred.user.uid;
-            await deleteApp(tempSecApp);
-          } catch (secAuthError: any) {
-            console.error(`Failed to create Secondary Auth for ${user.email}:`, secAuthError);
-            if (secAuthError.code === 'auth/email-already-in-use') {
-              // Recover Secondary UID
-              try {
-                const recoveredSecCred = await signInWithEmailAndPassword(tempSecAuth, user.email, user.password);
-                secUid = recoveredSecCred.user.uid;
-              } catch (secLoginErr) {
-                console.error("Failed to recover secondary auth:", secLoginErr);
-              }
-            }
-            await deleteApp(tempSecApp);
-          }
-
-          userId = mainUid; // We use Main UID for Main DB
-
-          // Create new user document in Firestore with Auth UID
-          const newUserRef = doc(db, 'users', userId);
-          batch.set(newUserRef, {
-            full_name: user.name,
+          // Use the robust utility to create/restore user in both systems
+          const { uid, isRestored } = await createUserInBothSystems({
             email: user.email,
-            email_lower: emailLower,
-            password: await hashPassword(user.password), // Hash for backup/reference
-            role: user.role.toLowerCase(),
-            department: user.department || '-',
-            assignedWorkspaces: activeWorkspaceId ? [activeWorkspaceId] : [],
-            createdAt: serverTimestamp(),
-            uploadedViaCSV: true
+            password: user.password,
+            role: user.role,
+            full_name: user.name,
+            department: user.department,
+            hashedPassword: hashedPassword
           });
 
-          // Sync to Secondary DB (using Secondary UID if available, else Main UID - wait, rules check request.auth.uid)
-          // If we created a secondary auth user, we MUST use THAT uid for the secondary DB doc.
-          if (secUid) {
-            const secUserRef = doc(secondaryDb, 'users', secUid);
-            secondaryBatch.set(secUserRef, {
-              name: user.name,
-              email: user.email,
-              role: user.role.toLowerCase(),
-              createdAt: serverTimestamp(),
+          // If uploading to a specific workspace
+          if (activeWorkspaceId) {
+            const wsRef = doc(db, 'workspaces', activeWorkspaceId);
+            const field = user.role.toLowerCase() === 'teacher' ? 'teachers' : 'students';
+            const emailLower = user.email.toLowerCase();
+
+            // Add user email to workspace's teachers/students list
+            workspaceBatch.update(wsRef, {
+              [field]: arrayUnion(emailLower)
+            });
+
+            // Update user's assignedWorkspaces
+            workspaceBatch.update(doc(db, 'users', uid), {
+              assignedWorkspaces: arrayUnion(activeWorkspaceId),
               uploadedViaCSV: true
             });
-          }
-        }
 
-        // If uploading to a specific workspace
-        if (activeWorkspaceId) {
-          const wsRef = doc(db, 'workspaces', activeWorkspaceId);
-          const field = user.role.toLowerCase() === 'teacher' ? 'teachers' : 'students';
-
-          // Add user email to workspace's teachers/students list
-          batch.update(wsRef, {
-            [field]: arrayUnion(emailLower)
-          });
-
-          // If user already existed (wasn't new), update their assignedWorkspaces
-          if (!isNewUser) {
-            batch.update(doc(db, 'users', userId), {
-              assignedWorkspaces: arrayUnion(activeWorkspaceId)
+            hasWorkspaceUpdates = true;
+          } else {
+            // If not adding to workspace, we still want to mark as CSV upload
+            // We can do a quick update or just let it be. 
+            // The utility doesn't set 'uploadedViaCSV', so let's update it.
+            // We can use the batch for this too.
+            workspaceBatch.update(doc(db, 'users', uid), {
+              uploadedViaCSV: true
             });
+            hasWorkspaceUpdates = true;
           }
-        }
 
-        uploadedUserIds.push({ id: userId, email: user.email, role: user.role });
-        successCount++;
+          uploadedUserIds.push({ id: uid, email: user.email, role: user.role });
+          successCount++;
+
+        } catch (err) {
+          console.error(`Failed to process user ${user.email}`, err);
+          errorCount++;
+        }
       }
 
-      await batch.commit();
-      try {
-        await secondaryBatch.commit();
-      } catch (secError) {
-        console.error("Failed to commit to secondary DB:", secError);
-        toast.warning("Users uploaded, but failed to sync to Attendance DB");
+      // Commit workspace/user metadata updates
+      if (hasWorkspaceUpdates) {
+        await workspaceBatch.commit();
       }
 
       // Update history
@@ -749,8 +662,6 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error(error);
       toast.error('Failed to upload CSV');
-    } finally {
-      await deleteApp(secondaryApp);
     }
   };
 
