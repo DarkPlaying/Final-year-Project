@@ -598,24 +598,44 @@ const TeacherDashboard = () => {
   const uploadFileToDrive = async (file: File, folderId: string): Promise<string> => {
     if (!driveAccessToken) throw new Error('Not authenticated');
 
-    const metadata = {
-      name: file.name,
-      mimeType: file.type,
-      parents: [folderId]
+    const upload = async (parents?: string[]) => {
+      const metadata = {
+        name: file.name,
+        mimeType: file.type,
+        parents: parents
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+        body: form
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error?.message || 'Upload failed');
+      }
+      return await res.json();
     };
 
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', file);
+    let json;
+    try {
+      // Try uploading to specified folder
+      if (folderId) {
+        json = await upload([folderId]);
+      } else {
+        json = await upload();
+      }
+    } catch (error) {
+      console.warn("Upload to folder failed, retrying to root...", error);
+      // Fallback: Upload to root
+      json = await upload();
+    }
 
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + driveAccessToken },
-      body: form
-    });
-
-    if (!res.ok) throw new Error('Upload failed');
-    const json = await res.json();
     const fileId = json.id;
 
     // Make public
