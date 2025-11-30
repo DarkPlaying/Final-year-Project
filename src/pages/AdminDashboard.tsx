@@ -512,35 +512,23 @@ const AdminDashboard = () => {
       await deleteDoc(doc(db, 'users', userId));
 
       // Sync delete to Secondary DB
+      // Sync delete to Secondary DB
       try {
-        const secondaryConfig = {
-          apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
-          authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
-          projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
-          storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
-          messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
-          appId: import.meta.env.VITE_ATTENDANCE_APP_ID
-        };
+        const secAuth = getAuth(secondaryDb.app);
+        console.log("[deleteUser] Secondary Auth Current User:", secAuth.currentUser?.uid);
 
-        const tempSecApp = initializeApp(secondaryConfig, `temp-delete-${Date.now()}`);
-        const tempSecAuth = getAuth(tempSecApp);
-        const tempSecDb = getFirestore(tempSecApp);
-
-        // Authenticate anonymously before deleting
-        await signInAnonymously(tempSecAuth);
-
-        try {
-          // 1. Delete from Firestore in Secondary
-          await deleteDoc(doc(tempSecDb, 'users', userId));
-          console.log(`[deleteUser] Deleted user ${userId} from Secondary DB`);
-        } catch (innerError) {
-          console.error("Failed to delete from secondary DB (Auth/Write error):", innerError);
-        } finally {
-          await deleteApp(tempSecApp);
+        if (!secAuth.currentUser) {
+          console.log("[deleteUser] Not authenticated in Secondary DB, attempting anonymous sign-in...");
+          await signInAnonymously(secAuth);
         }
 
-      } catch (secError) {
-        console.error("Failed to initialize secondary app for deletion:", secError);
+        // 1. Delete from Firestore in Secondary
+        await deleteDoc(doc(secondaryDb, 'users', userId));
+        console.log(`[deleteUser] Deleted user ${userId} from Secondary DB`);
+
+      } catch (secError: any) {
+        console.error("Failed to delete from secondary DB:", secError);
+        toast.error(`Deleted from Main DB, but failed in Secondary: ${secError.message}`);
       }
 
       toast.success('User deleted successfully');
