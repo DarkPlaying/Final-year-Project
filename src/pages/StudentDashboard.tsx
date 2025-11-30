@@ -630,6 +630,12 @@ const StudentDashboard = () => {
     setTimeout(() => toast.success("Dashboard refreshed"), 1100);
   };
 
+  const handleGlobalRefresh = () => {
+    toast.loading("Refreshing dashboard...");
+    setTimeout(() => toast.dismiss(), 1000);
+    setTimeout(() => toast.success("Dashboard refreshed"), 1100);
+  };
+
   const uploadFileToDrive = async (file: File, folderId: string): Promise<string> => {
     if (!driveAccessToken) throw new Error('Not authenticated');
 
