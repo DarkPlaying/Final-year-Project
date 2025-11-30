@@ -8,6 +8,8 @@ import { toast } from 'sonner';
 import { GraduationCap, Lock, User, Moon, Sun, Home } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import { db, auth } from '@/lib/firebase';
+import { secondaryDb } from '@/lib/firebaseSecondary';
+import { getAuth as getSecondaryAuth, signInWithEmailAndPassword as signInSecondary } from 'firebase/auth';
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { hashPassword, verifyPassword } from '@/lib/security';
@@ -55,9 +57,20 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      // 1. Sign in with Firebase Auth
+      // 1. Sign in with Firebase Auth (Main)
       const userCredential = await signInWithEmailAndPassword(auth, email, pass);
       const user = userCredential.user;
+
+      // 2. Sign in with Secondary Auth (Attendance DB)
+      // This is required for secure rules on the secondary DB
+      try {
+        const secondaryAuth = getSecondaryAuth(secondaryDb.app);
+        await signInSecondary(secondaryAuth, email, pass);
+      } catch (secErr) {
+        console.error("Secondary Auth Login Failed:", secErr);
+        // We don't block login if secondary fails, but warn
+        toast.warning("Attendance features may be limited (Auth Sync Failed)");
+      }
 
       // 2. Fetch User Document from Firestore
       // We expect the document ID to match the Auth UID

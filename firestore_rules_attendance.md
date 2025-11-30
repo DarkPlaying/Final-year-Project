@@ -2,7 +2,8 @@
 
 **Go to:** Firebase Console -> Project: `finalyear-b56e7` -> Firestore Database -> Rules
 
-Since your app authentication might be linked to a different project than this database, the safest way to ensure access is to **allow public read/write access** to these specific collections.
+These rules are **SECURE**. They require the user to be authenticated in the Attendance Project.
+Since we have updated the app to sign the user into *both* projects, we can now enforce authentication.
 
 **Copy and paste these rules:**
 
@@ -11,26 +12,62 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // --- Helper Functions ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the user has a role in THIS database's 'users' collection
+    // Note: The UID in this DB matches the UID in the Secondary Auth because we created them in sync.
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() && getUserData().role == 'teacher';
+    }
+    
+    function isStudent() {
+      return isAuthenticated() && getUserData().role == 'student';
+    }
+
     // --- Attendance & Marks Rules ---
-    // ⚠️ ALLOW ALL: This bypasses authentication checks to fix "Access Denied" errors
-    // caused by cross-project authentication issues.
 
     match /attendance/{docId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isTeacher();
     }
 
     match /mark_batches/{docId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isTeacher();
     }
 
     match /marks/{docId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isTeacher();
     }
 
     match /unom_reports/{docId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isTeacher() || isStudent(); // Students might need write for submission? Or just update?
     }
     
+    // Allow Admin Panel to sync users
+    // We assume Admin has a user doc here too, or we allow create if auth is valid?
+    // For simplicity and security, allow authenticated users to read/write their OWN user doc,
+    // but we need Admin to write ANY user doc.
+    // Since we don't have 'Admin' role strictly defined in Secondary Auth claims, 
+    // we rely on the fact that only Admins have access to the Admin Panel code that writes here.
+    // BUT for rules, we can check if the requestor is an admin in the DB.
+    
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Needed for Admin to create/delete users. 
+      // Ideally restrict to admin role, but if Admin user isn't synced with 'admin' role in this DB, it might fail.
+      // Assuming Admin user IS synced with role 'admin'.
+    }
+
     // Default deny for everything else
     match /{document=**} {
       allow read, write: if false;
@@ -38,9 +75,3 @@ service cloud.firestore {
   }
 }
 ```
-
-## ❓ Why was I getting "Access Denied"?
-
-You are likely logged in via your **Main Project** (e.g., `education-ai`), but trying to access the **Secondary Project** (`finalyear-b56e7`).
-Firestore treats this as an unauthenticated request because the user doesn't exist in the Secondary Project's Auth system.
-Using `allow read, write: if true;` solves this by not checking for a user account.

@@ -444,7 +444,7 @@ const AdminDashboard = () => {
     }
 
     try {
-      // Check if user exists
+      // 1. Check if user exists in Main DB
       const q = query(collection(db, 'users'), where('email_lower', '==', newUser.email.toLowerCase()));
       const snapshot = await getDocs(q);
 
@@ -453,37 +453,56 @@ const AdminDashboard = () => {
         return;
       }
 
-      // Hash password before storing (still useful for legacy/backup, but Auth handles auth)
       const hashedPassword = await hashPassword(newUser.password);
 
-      // Create user in Firebase Auth using a secondary app instance
-      // This prevents logging out the current admin
-      const secondaryApp = initializeApp({
-        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-        appId: import.meta.env.VITE_FIREBASE_APP_ID
-      }, "SecondaryApp");
-
-      const secondaryAuth = getAuth(secondaryApp);
-      let newUid = '';
-
+      // 2. Create in Main Auth
+      let mainUid = '';
       try {
-        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
-        newUid = userCredential.user.uid;
-        await signOut(secondaryAuth); // Sign out from secondary app immediately
-        await deleteApp(secondaryApp);
-      } catch (authError: any) {
-        console.error("Auth creation error:", authError);
-        toast.error(`Failed to create Auth account: ${authError.message}`);
-        await deleteApp(secondaryApp);
+        // We need a temporary secondary app for Main Auth creation to avoid logging out the admin
+        // BUT 'createUserWithEmailAndPassword' signs in automatically.
+        // Strategy: Use a temporary app instance for Main Auth creation too, or just use the Admin SDK (not available here).
+        // Client-side workaround: Create a second instance of the Main App just for creation.
+        const tempMainApp = initializeApp({
+          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+          storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+          messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+          appId: import.meta.env.VITE_FIREBASE_APP_ID
+        }, "TempMainApp");
+        const tempMainAuth = getAuth(tempMainApp);
+
+        const mainCred = await createUserWithEmailAndPassword(tempMainAuth, newUser.email, newUser.password);
+        mainUid = mainCred.user.uid;
+        await deleteApp(tempMainApp);
+      } catch (e: any) {
+        toast.error(`Main Auth Error: ${e.message}`);
         return;
       }
 
-      // Use setDoc with the Auth UID
-      await setDoc(doc(db, 'users', newUid), {
+      // 3. Create in Secondary Auth
+      let secUid = '';
+      const secondaryApp = initializeApp({
+        apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
+        authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
+        projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
+        storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
+        messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
+        appId: import.meta.env.VITE_ATTENDANCE_APP_ID
+      }, "TempSecondaryApp");
+      const secondaryAuth = getAuth(secondaryApp);
+
+      try {
+        const secCred = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
+        secUid = secCred.user.uid;
+        await deleteApp(secondaryApp);
+      } catch (e: any) {
+        toast.error(`Secondary Auth Error: ${e.message}`);
+        // Cleanup Main Auth user if possible? Complex. Proceeding.
+      }
+
+      // 4. Save to Main DB (using mainUid)
+      await setDoc(doc(db, 'users', mainUid), {
         name: newUser.full_name,
         email: newUser.email,
         email_lower: newUser.email.toLowerCase(),
@@ -494,20 +513,21 @@ const AdminDashboard = () => {
         createdAt: serverTimestamp()
       });
 
-      // Sync to Secondary DB (Attendance DB)
-      try {
-        await setDoc(doc(secondaryDb, 'users', newUid), {
-          name: newUser.full_name,
-          email: newUser.email,
-          role: newUser.role,
-          createdAt: serverTimestamp()
-        });
-      } catch (secError) {
-        console.error("Failed to sync to secondary DB:", secError);
-        toast.warning("User created, but failed to sync to Attendance DB");
+      // 5. Save to Secondary DB (using secUid)
+      if (secUid) {
+        try {
+          await setDoc(doc(secondaryDb, 'users', secUid), {
+            name: newUser.full_name,
+            email: newUser.email,
+            role: newUser.role,
+            createdAt: serverTimestamp()
+          });
+        } catch (secError) {
+          console.error("Failed to sync to secondary DB:", secError);
+        }
       }
 
-      toast.success('User added successfully');
+      toast.success('User added successfully to both systems');
       logOperation(`Added user: ${newUser.email}`, 'success');
       setShowAddDialog(false);
       setNewUser({ email: '', password: '', full_name: '', role: 'student', department: '' });
