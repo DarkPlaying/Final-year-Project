@@ -78,7 +78,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -659,14 +659,25 @@ const AdminDashboard = () => {
           } catch (authError: any) {
             console.error(`Failed to create Main Auth for ${user.email}:`, authError);
             if (authError.code === 'auth/email-already-in-use') {
-              // User exists in Auth but not Firestore. We can't get UID easily.
-              // We will skip creating this user to avoid data corruption.
-              // Ideally we would fetch the user by email, but we can't with client SDK.
+              // User exists in Auth but not Firestore (e.g. deleted workspace).
+              // Attempt to RECOVER by signing in to get UID.
+              try {
+                const recoveredCred = await signInWithEmailAndPassword(secondaryAuth, user.email, user.password);
+                mainUid = recoveredCred.user.uid;
+                isNewUser = false; // Not technically new auth, but new profile
+                // We must sign out immediately to not switch the admin's session
+                // BUT secondaryAuth is a separate instance, so it shouldn't affect main auth?
+                // Actually 'secondaryAuth' here is initialized as 'SecondaryApp_CSV', so it's isolated.
+                // We are good.
+              } catch (loginError) {
+                console.error(`Failed to recover user ${user.email} via login:`, loginError);
+                errorCount++;
+                continue;
+              }
+            } else {
               errorCount++;
               continue;
             }
-            errorCount++;
-            continue;
           }
 
           // 2. Create in Secondary Auth (Attendance DB)
@@ -687,11 +698,16 @@ const AdminDashboard = () => {
             await deleteApp(tempSecApp);
           } catch (secAuthError: any) {
             console.error(`Failed to create Secondary Auth for ${user.email}:`, secAuthError);
-            // If failed (e.g. already exists), we might still want to proceed with Main DB creation?
-            // But then they can't login to secondary.
-            // If 'email-already-in-use', maybe they already exist there.
+            if (secAuthError.code === 'auth/email-already-in-use') {
+              // Recover Secondary UID
+              try {
+                const recoveredSecCred = await signInWithEmailAndPassword(tempSecAuth, user.email, user.password);
+                secUid = recoveredSecCred.user.uid;
+              } catch (secLoginErr) {
+                console.error("Failed to recover secondary auth:", secLoginErr);
+              }
+            }
             await deleteApp(tempSecApp);
-            // We proceed, but they might have issues.
           }
 
           userId = mainUid; // We use Main UID for Main DB
