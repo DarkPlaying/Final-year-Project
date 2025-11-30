@@ -12,6 +12,7 @@ import { motion } from 'framer-motion';
 import { GlowingEffect } from '@/components/ui/glowing-effect';
 import { PremiumTestimonials } from '@/components/ui/premium-testimonials';
 import RadialOrbitalTimeline from '@/components/ui/radial-orbital-timeline';
+import { useAuthState } from '@/hooks/useAuthState';
 
 /**
  * Landing Page Component
@@ -20,15 +21,20 @@ import RadialOrbitalTimeline from '@/components/ui/radial-orbital-timeline';
  */
 const Index = () => {
   const navigate = useNavigate();
-  const user = getCurrentUser();
+  const { user, loading } = useAuthState();
+
   useEffect(() => {
     // Redirect authenticated users to their dashboard
-    if (user) {
-      navigate(`/dashboard/${user.role}`, {
-        replace: true
-      });
+    if (!loading && user) {
+      const role = localStorage.getItem('userRole');
+      if (role) {
+        navigate(`/dashboard/${role}`, {
+          replace: true
+        });
+      }
     }
-  }, [user, navigate]);
+  }, [user, loading, navigate]);
+
   const features = [{
     icon: <BookOpen className="h-8 w-8" />,
     title: 'Interactive Learning',

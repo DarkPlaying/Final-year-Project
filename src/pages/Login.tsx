@@ -13,6 +13,7 @@ import { getAuth as getSecondaryAuth, signInWithEmailAndPassword as signInSecond
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { hashPassword, verifyPassword } from '@/lib/security';
+import { useAuthState } from '@/hooks/useAuthState';
 
 function generateSessionId() {
   if (window.crypto && window.crypto.getRandomValues) {
@@ -34,14 +35,17 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+  const { user, loading: authLoading } = useAuthState();
 
   useEffect(() => {
-    // Check if already logged in
+    if (authLoading) return;
+
+    // Check if already logged in (both Firebase and LocalStorage)
     const userRole = localStorage.getItem('userRole');
-    if (userRole) {
+    if (user && userRole) {
       navigate(`/dashboard/${userRole}`, { replace: true });
     }
-  }, [navigate]);
+  }, [user, authLoading, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
