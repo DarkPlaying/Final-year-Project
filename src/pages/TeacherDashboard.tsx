@@ -450,32 +450,22 @@ const TeacherDashboard = () => {
       return;
     }
 
-    // Filter assignments based on current filters
-    const filtered = assignments.filter(a => {
-      const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-        (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
+    if (selectedAssignments.length === 0) {
+      toast.error("Please select assignments to grade");
+      return;
+    }
 
-      let matchesDate = true;
-      if (filterFrom && a.createdAt?.toDate) {
-        matchesDate = matchesDate && a.createdAt.toDate() >= new Date(filterFrom);
-      }
-      if (filterTo && a.createdAt?.toDate) {
-        const endDate = new Date(filterTo);
-        endDate.setDate(endDate.getDate() + 1);
-        matchesDate = matchesDate && a.createdAt.toDate() < endDate;
-      }
+    // Filter assignments to only those selected
+    const targets = assignments.filter(a => selectedAssignments.includes(a.id));
 
-      return matchesSearch && matchesDate;
-    });
-
-    if (filtered.length === 0) {
-      toast.error("No assignments match current filters");
+    if (targets.length === 0) {
+      toast.error("No valid assignments selected");
       return;
     }
 
     try {
       const batch = writeBatch(db);
-      filtered.forEach(a => {
+      targets.forEach(a => {
         const ref = doc(db, 'submissions', a.id);
         batch.update(ref, {
           marks: mark,
@@ -484,8 +474,9 @@ const TeacherDashboard = () => {
         });
       });
       await batch.commit();
-      toast.success(`Assigned ${mark} marks to ${filtered.length} assignments`);
+      toast.success(`Assigned ${mark} marks to ${targets.length} assignments`);
       setBulkMark('');
+      setSelectedAssignments([]);
     } catch (error) {
       console.error(error);
       toast.error('Failed to assign grades');
