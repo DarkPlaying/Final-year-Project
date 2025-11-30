@@ -513,25 +513,24 @@ const AdminDashboard = () => {
 
       // Sync delete to Secondary DB
       try {
-        // We need to be authenticated to delete from Secondary DB (due to rules)
-        // Since we can't easily proxy the admin's auth to the secondary app here without custom tokens,
-        // we will use a temporary anonymous auth session to perform the delete.
-        // NOTE: This requires the Secondary DB rules to allow delete if request.auth != null.
-
-        const tempSecApp = initializeApp({
+        const secondaryConfig = {
           apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
           authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
           projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
           storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
           messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
           appId: import.meta.env.VITE_ATTENDANCE_APP_ID
-        }, `TempSecApp_Delete_${Date.now()}`);
+        };
 
+        const tempSecApp = initializeApp(secondaryConfig, `temp-delete-${Date.now()}`);
         const tempSecAuth = getAuth(tempSecApp);
         const tempSecDb = getFirestore(tempSecApp);
 
+        // Authenticate anonymously before deleting
+        await signInAnonymously(tempSecAuth);
+
         try {
-          await signInAnonymously(tempSecAuth);
+          // 1. Delete from Firestore in Secondary
           await deleteDoc(doc(tempSecDb, 'users', userId));
           console.log(`[deleteUser] Deleted user ${userId} from Secondary DB`);
         } catch (innerError) {
