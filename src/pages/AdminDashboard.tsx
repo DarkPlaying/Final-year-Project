@@ -76,10 +76,11 @@ import {
   writeBatch,
   limit,
   onSnapshot,
-  setDoc
+  setDoc,
+  getFirestore
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -512,9 +513,35 @@ const AdminDashboard = () => {
 
       // Sync delete to Secondary DB
       try {
-        await deleteDoc(doc(secondaryDb, 'users', userId));
+        // We need to be authenticated to delete from Secondary DB (due to rules)
+        // Since we can't easily proxy the admin's auth to the secondary app here without custom tokens,
+        // we will use a temporary anonymous auth session to perform the delete.
+        // NOTE: This requires the Secondary DB rules to allow delete if request.auth != null.
+
+        const tempSecApp = initializeApp({
+          apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
+          authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
+          projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
+          storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
+          messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
+          appId: import.meta.env.VITE_ATTENDANCE_APP_ID
+        }, `TempSecApp_Delete_${Date.now()}`);
+
+        const tempSecAuth = getAuth(tempSecApp);
+        const tempSecDb = getFirestore(tempSecApp);
+
+        try {
+          await signInAnonymously(tempSecAuth);
+          await deleteDoc(doc(tempSecDb, 'users', userId));
+          console.log(`[deleteUser] Deleted user ${userId} from Secondary DB`);
+        } catch (innerError) {
+          console.error("Failed to delete from secondary DB (Auth/Write error):", innerError);
+        } finally {
+          await deleteApp(tempSecApp);
+        }
+
       } catch (secError) {
-        console.error("Failed to delete from secondary DB:", secError);
+        console.error("Failed to initialize secondary app for deletion:", secError);
       }
 
       toast.success('User deleted successfully');
