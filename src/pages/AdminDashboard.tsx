@@ -1001,7 +1001,27 @@ const AdminDashboard = () => {
         if (submissionDocsToDelete.length > 0) await deleteInBatches(submissionDocsToDelete);
         if (queryDocsToDelete.length > 0) await deleteInBatches(queryDocsToDelete);
         if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
-        if (userDocsToDelete.length > 0) await deleteInBatches(userDocsToDelete);
+
+        if (userDocsToDelete.length > 0) {
+          await deleteInBatches(userDocsToDelete);
+
+          // Sync delete to Secondary DB for these users
+          try {
+            const batchSec = writeBatch(secondaryDb);
+            let count = 0;
+            for (const userDoc of userDocsToDelete) {
+              batchSec.delete(doc(secondaryDb, 'users', userDoc.id));
+              count++;
+              if (count >= 400) {
+                await batchSec.commit();
+                count = 0;
+              }
+            }
+            if (count > 0) await batchSec.commit();
+          } catch (secErr) {
+            console.error("Failed to sync delete users in secondary DB:", secErr);
+          }
+        }
       } catch (e) {
         console.warn('Error deleting some related data:', e);
         toast.warning('Some related data could not be deleted');
