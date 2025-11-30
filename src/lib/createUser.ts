@@ -1,5 +1,5 @@
 import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInAnonymously } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, signInAnonymously, signInWithEmailAndPassword } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase"; // Main DB instance (authenticated as Admin)
 
@@ -55,14 +55,27 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
             mainUid = mainCred.user.uid;
         } catch (error: any) {
             if (error.code === 'auth/email-already-in-use') {
-                // Try to find in deleted_users
+                // 1. Try to find in deleted_users (Restoration)
                 const deletedRef = doc(db, 'deleted_users', emailLower);
                 const deletedSnap = await getDoc(deletedRef);
+
                 if (deletedSnap.exists()) {
                     mainUid = deletedSnap.data().uid;
                     isRestored = true;
+                    console.log(`[createUser] User found in deleted_users archive. Restoring UID: ${mainUid}`);
                 } else {
-                    throw new Error(`User ${email} already exists in Auth system but no restore record found.`);
+                    // 2. Not in archive? User might exist in Auth but not Firestore (or just re-uploading).
+                    // Try to sign in to recover UID.
+                    console.log(`[createUser] User exists in Auth. Attempting to recover UID via login...`);
+                    try {
+                        const recoveredCred = await signInWithEmailAndPassword(mainAuth, email, password);
+                        mainUid = recoveredCred.user.uid;
+                        console.log(`[createUser] Recovered UID via login: ${mainUid}`);
+                        // We don't mark as restored, we just treat as existing user to be synced.
+                    } catch (loginError) {
+                        console.error(`[createUser] Failed to recover user via login (Wrong password?):`, loginError);
+                        throw new Error(`User ${email} already exists and password does not match.`);
+                    }
                 }
             } else {
                 throw error;
