@@ -119,6 +119,11 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAdmin() || isTeacher();
     }
+
+    // Deleted Users (for restoration):
+    match /deleted_users/{email} {
+      allow read, write: if isAdmin();
+    }
   }
 }
 ```

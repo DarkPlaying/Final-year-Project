@@ -57,6 +57,7 @@ import {
 import { UserRole } from '@/types/auth';
 import { db } from '@/lib/firebase';
 import { secondaryDb } from '@/lib/firebaseSecondary';
+import { createUserInBothSystems } from '@/lib/createUser';
 import { hashPassword } from '@/lib/security';
 import {
   collection,
@@ -455,80 +456,22 @@ const AdminDashboard = () => {
 
       const hashedPassword = await hashPassword(newUser.password);
 
-      // 2. Create in Main Auth
-      let mainUid = '';
-      try {
-        // We need a temporary secondary app for Main Auth creation to avoid logging out the admin
-        // BUT 'createUserWithEmailAndPassword' signs in automatically.
-        // Strategy: Use a temporary app instance for Main Auth creation too, or just use the Admin SDK (not available here).
-        // Client-side workaround: Create a second instance of the Main App just for creation.
-        const tempMainApp = initializeApp({
-          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-          storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-          messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-          appId: import.meta.env.VITE_FIREBASE_APP_ID
-        }, "TempMainApp");
-        const tempMainAuth = getAuth(tempMainApp);
-
-        const mainCred = await createUserWithEmailAndPassword(tempMainAuth, newUser.email, newUser.password);
-        mainUid = mainCred.user.uid;
-        await deleteApp(tempMainApp);
-      } catch (e: any) {
-        toast.error(`Main Auth Error: ${e.message}`);
-        return;
-      }
-
-      // 3. Create in Secondary Auth
-      let secUid = '';
-      const secondaryApp = initializeApp({
-        apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
-        authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
-        projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
-        storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
-        messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
-        appId: import.meta.env.VITE_ATTENDANCE_APP_ID
-      }, "TempSecondaryApp");
-      const secondaryAuth = getAuth(secondaryApp);
-
-      try {
-        const secCred = await createUserWithEmailAndPassword(secondaryAuth, newUser.email, newUser.password);
-        secUid = secCred.user.uid;
-        await deleteApp(secondaryApp);
-      } catch (e: any) {
-        toast.error(`Secondary Auth Error: ${e.message}`);
-        // Cleanup Main Auth user if possible? Complex. Proceeding.
-      }
-
-      // 4. Save to Main DB (using mainUid)
-      await setDoc(doc(db, 'users', mainUid), {
-        name: newUser.full_name,
+      const { isRestored } = await createUserInBothSystems({
         email: newUser.email,
-        email_lower: newUser.email.toLowerCase(),
-        password: hashedPassword,
+        password: newUser.password,
         role: newUser.role,
-        department: newUser.department || '-',
-        assignedWorkspaces: [],
-        createdAt: serverTimestamp()
+        full_name: newUser.full_name,
+        department: newUser.department,
+        hashedPassword: hashedPassword
       });
 
-      // 5. Save to Secondary DB (using secUid)
-      if (secUid) {
-        try {
-          await setDoc(doc(secondaryDb, 'users', secUid), {
-            name: newUser.full_name,
-            email: newUser.email,
-            role: newUser.role,
-            createdAt: serverTimestamp()
-          });
-        } catch (secError) {
-          console.error("Failed to sync to secondary DB:", secError);
-        }
+      if (isRestored) {
+        toast.success('User restored successfully! Note: Password remains unchanged.');
+        logOperation(`Restored user: ${newUser.email}`, 'success');
+      } else {
+        toast.success('User added successfully to both systems');
+        logOperation(`Added user: ${newUser.email}`, 'success');
       }
-
-      toast.success('User added successfully to both systems');
-      logOperation(`Added user: ${newUser.email}`, 'success');
       setShowAddDialog(false);
       setNewUser({ email: '', password: '', full_name: '', role: 'student', department: '' });
       loadUsers();
@@ -542,6 +485,13 @@ const AdminDashboard = () => {
     if (!confirm(`Are you sure you want to delete ${userEmail}?`)) return;
 
     try {
+      // Archive to deleted_users for potential restoration
+      await setDoc(doc(db, 'deleted_users', userEmail.toLowerCase()), {
+        uid: userId,
+        email: userEmail,
+        deletedAt: serverTimestamp()
+      });
+
       // Remove from workspaces first
       const workspacesSnap = await getDocs(collection(db, 'workspaces'));
       const batch = writeBatch(db);
