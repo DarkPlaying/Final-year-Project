@@ -593,6 +593,7 @@ const AdminDashboard = () => {
       let successCount = 0;
       let errorCount = 0;
       const uploadedUserIds: any[] = [];
+      const failedUsers: string[] = [];
 
       // We will use a batch for workspace updates, but user creation happens individually
       // to ensure dual-system consistency via the utility.
@@ -653,9 +654,10 @@ const AdminDashboard = () => {
           uploadedUserIds.push({ id: uid, email: user.email, role: user.role });
           successCount++;
 
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Failed to process user ${user.email}`, err);
           errorCount++;
+          failedUsers.push(`${user.email}: ${err.message}`);
         }
       }
 
@@ -677,7 +679,10 @@ const AdminDashboard = () => {
 
       toast.dismiss();
       toast.success(`Successfully processed ${successCount} users`);
-      if (errorCount > 0) toast.warning(`${errorCount} users failed (duplicates or invalid data)`);
+      if (errorCount > 0) {
+        toast.warning(`${errorCount} users failed. See details in alert.`);
+        alert(`Failed users:\n${failedUsers.join('\n')}\n\nTip: If users were deleted previously, you may need to delete them from Firebase Authentication console manually.`);
+      }
 
       setShowCsvDialog(false);
       setCsvFile(null);
