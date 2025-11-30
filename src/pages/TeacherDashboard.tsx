@@ -69,6 +69,7 @@ import {
   Timestamp,
   setDoc
 } from 'firebase/firestore';
+import { getAuth, signInAnonymously } from 'firebase/auth';
 import { AITestGenerator } from '@/components/AITestGenerator';
 
 // Google Drive Config
@@ -232,6 +233,13 @@ const TeacherDashboard = () => {
 
     loadDashboardData(email);
     loadWorkspaces(email, uid || '');
+
+    // Authenticate with Secondary DB for Attendance/Marks access
+    const secAuth = getAuth(secondaryDb.app);
+    signInAnonymously(secAuth).catch(err => {
+      console.error("Failed to authenticate with Secondary DB:", err);
+      toast.error("Database connection failed. Some features may not work.");
+    });
 
     // Real-time listeners
     const unsubExams = subscribeExams(email);
