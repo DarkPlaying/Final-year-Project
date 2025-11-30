@@ -26,7 +26,6 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
     let isRestored = false;
 
     // 1. Initialize Temporary Main App for Auth Creation
-    // We use a temp app to avoid signing out the currently logged-in Admin
     const tempMainApp = initializeApp({
         apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
         authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -74,18 +73,38 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
         const secondaryAuth = getAuth(tempSecondaryApp);
         const tempSecondaryDb = getFirestore(tempSecondaryApp);
 
+        console.log(`[createUser] Secondary App Project ID: ${tempSecondaryApp.options.projectId}`);
+
         if (!isRestored) {
             // New User Flow
-            await createUserWithEmailAndPassword(secondaryAuth, email, password);
-            await setDoc(doc(tempSecondaryDb, 'users', mainUid), {
+            console.log(`[createUser] Creating user in Secondary Auth: ${email}`);
+            const secCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+            console.log(`[createUser] Secondary Auth UID: ${secCred.user.uid}`);
+            console.log(`[createUser] Main Auth UID: ${mainUid}`);
+
+            const secUserRef = doc(tempSecondaryDb, 'users', mainUid);
+            console.log(`[createUser] Writing to Secondary DB at: users/${mainUid}`);
+
+            await setDoc(secUserRef, {
                 email: email,
                 email_lower: emailLower,
                 role: role,
                 createdAt: serverTimestamp()
             });
+            console.log(`[createUser] Write operation completed.`);
+
+            // Verify Write
+            console.log(`[createUser] Verifying document existence...`);
+            const verifySnap = await getDoc(secUserRef);
+            if (verifySnap.exists()) {
+                console.log(`[createUser] VERIFIED: Document exists in Secondary DB.`);
+            } else {
+                console.error(`[createUser] VERIFICATION FAILED: Document NOT found in Secondary DB after write.`);
+                throw new Error("Secondary DB write verification failed. The document was not found after creation.");
+            }
+
         } else {
-            // Restore Flow: Try to restore Secondary DB entry
-            // We attempt Anonymous Auth to gain write access (if allowed by project settings)
+            // Restore Flow
             try {
                 await signInAnonymously(secondaryAuth);
                 await setDoc(doc(tempSecondaryDb, 'users', mainUid), {
@@ -97,12 +116,10 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                 });
             } catch (secError) {
                 console.warn("Failed to restore user in Secondary DB (Auth restriction):", secError);
-                // We proceed, as Main DB restore is more critical for Admin Panel
             }
         }
 
         // --- Step D: Write to Main Firestore ---
-        // We can use the main 'db' instance which is authenticated as Admin
         await setDoc(doc(db, 'users', mainUid), {
             full_name: full_name || '',
             email: email,
