@@ -1136,8 +1136,12 @@ const TeacherDashboard = () => {
         }
       }
     } catch (error: any) {
-      console.error(error);
-      toast.error(`Failed to fetch attendance: ${error.message}`);
+      console.error("Attendance fetch error:", error);
+      if (error.code === 'permission-denied') {
+        toast.error("Access denied. Please update Firestore Security Rules.");
+      } else {
+        toast.error(`Failed to fetch attendance: ${error.message || 'Unknown error'}`);
+      }
     }
   };
 
@@ -1204,7 +1208,11 @@ const TeacherDashboard = () => {
       setMonthAttendanceData(data);
     } catch (error: any) {
       console.error("Error fetching month attendance:", error);
-      toast.error(`Failed to fetch month attendance: ${error.message}`);
+      if (error.code === 'permission-denied') {
+        toast.error("Access denied (Month View). Update Firestore Rules.");
+      } else {
+        toast.error(`Failed to fetch month attendance: ${error.message || 'Unknown error'}`);
+      }
     }
   };
 

@@ -7,7 +7,7 @@ const DEFAULT_ADMIN = {
   username: 'sanjay',
   password: 'Dark',
   role: 'admin' as UserRole,
-  name: 'Sanjay Kumar',
+  name: 'Sanjay M',
   email: 'admin@examportal.com',
 };
 

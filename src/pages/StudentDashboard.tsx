@@ -474,8 +474,13 @@ const StudentDashboard = () => {
         myAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
         setAttendance(myAttendance);
 
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching attendance:", error);
+        if (error.code === 'permission-denied') {
+          toast.error("Access denied. Please check Firestore Rules.");
+        } else {
+          toast.error(`Failed to fetch attendance: ${error.message || 'Unknown error'}`);
+        }
       }
     };
 
