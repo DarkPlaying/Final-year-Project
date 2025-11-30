@@ -513,6 +513,9 @@ const AdminDashboard = () => {
 
       // Sync delete to Secondary DB
       // Sync delete to Secondary DB
+      let secondarySuccess = false;
+      let secondaryError = "";
+
       try {
         const secAuth = getAuth(secondaryDb.app);
         console.log("[deleteUser] Secondary Auth Current User:", secAuth.currentUser?.uid);
@@ -525,14 +528,21 @@ const AdminDashboard = () => {
         // 1. Delete from Firestore in Secondary
         await deleteDoc(doc(secondaryDb, 'users', userId));
         console.log(`[deleteUser] Deleted user ${userId} from Secondary DB`);
+        secondarySuccess = true;
 
       } catch (secError: any) {
         console.error("Failed to delete from secondary DB:", secError);
-        toast.error(`Deleted from Main DB, but failed in Secondary: ${secError.message}`);
+        secondaryError = secError.message;
       }
 
-      toast.success('User deleted successfully');
-      logOperation(`Deleted user: ${userEmail}`, 'warning');
+      if (secondarySuccess) {
+        toast.success('User deleted successfully from both systems');
+        logOperation(`Deleted user: ${userEmail}`, 'warning');
+      } else {
+        toast.warning(`Deleted from Main only. Secondary error: ${secondaryError}`);
+        logOperation(`Deleted user (Main only): ${userEmail}`, 'error');
+      }
+
       loadUsers();
       loadStats();
     } catch (error: any) {
