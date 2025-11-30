@@ -72,6 +72,11 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // Archived Users:
+    match /deleted_users/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
