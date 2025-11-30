@@ -648,21 +648,53 @@ const AdminDashboard = () => {
           userId = snap.docs[0].id;
         } else {
           // Create new user in Firebase Auth
+          let mainUid = '';
+          let secUid = '';
+
+          // 1. Create in Main Auth
           try {
             const userCredential = await createUserWithEmailAndPassword(secondaryAuth, user.email, user.password);
-            userId = userCredential.user.uid;
+            mainUid = userCredential.user.uid;
             isNewUser = true;
           } catch (authError: any) {
-            console.error(`Failed to create auth for ${user.email}:`, authError);
+            console.error(`Failed to create Main Auth for ${user.email}:`, authError);
             if (authError.code === 'auth/email-already-in-use') {
-              // If email exists in Auth but not Firestore (rare sync issue), we might want to handle it.
-              // For now, we'll skip or log it.
+              // User exists in Auth but not Firestore. We can't get UID easily.
+              // We will skip creating this user to avoid data corruption.
+              // Ideally we would fetch the user by email, but we can't with client SDK.
               errorCount++;
               continue;
             }
             errorCount++;
             continue;
           }
+
+          // 2. Create in Secondary Auth (Attendance DB)
+          // We need a temp app for this
+          const tempSecApp = initializeApp({
+            apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
+            authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
+            projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
+            storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
+            messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
+            appId: import.meta.env.VITE_ATTENDANCE_APP_ID
+          }, `TempSecApp_${Date.now()}_${Math.random()}`);
+          const tempSecAuth = getAuth(tempSecApp);
+
+          try {
+            const secCred = await createUserWithEmailAndPassword(tempSecAuth, user.email, user.password);
+            secUid = secCred.user.uid;
+            await deleteApp(tempSecApp);
+          } catch (secAuthError: any) {
+            console.error(`Failed to create Secondary Auth for ${user.email}:`, secAuthError);
+            // If failed (e.g. already exists), we might still want to proceed with Main DB creation?
+            // But then they can't login to secondary.
+            // If 'email-already-in-use', maybe they already exist there.
+            await deleteApp(tempSecApp);
+            // We proceed, but they might have issues.
+          }
+
+          userId = mainUid; // We use Main UID for Main DB
 
           // Create new user document in Firestore with Auth UID
           const newUserRef = doc(db, 'users', userId);
@@ -678,15 +710,18 @@ const AdminDashboard = () => {
             uploadedViaCSV: true
           });
 
-          // Sync to Secondary DB
-          const secUserRef = doc(secondaryDb, 'users', userId);
-          secondaryBatch.set(secUserRef, {
-            name: user.name,
-            email: user.email,
-            role: user.role.toLowerCase(),
-            createdAt: serverTimestamp(),
-            uploadedViaCSV: true
-          });
+          // Sync to Secondary DB (using Secondary UID if available, else Main UID - wait, rules check request.auth.uid)
+          // If we created a secondary auth user, we MUST use THAT uid for the secondary DB doc.
+          if (secUid) {
+            const secUserRef = doc(secondaryDb, 'users', secUid);
+            secondaryBatch.set(secUserRef, {
+              name: user.name,
+              email: user.email,
+              role: user.role.toLowerCase(),
+              createdAt: serverTimestamp(),
+              uploadedViaCSV: true
+            });
+          }
         }
 
         // If uploading to a specific workspace
