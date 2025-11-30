@@ -74,6 +74,7 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
         const tempSecondaryDb = getFirestore(tempSecondaryApp);
 
         console.log(`[createUser] Secondary App Project ID: ${tempSecondaryApp.options.projectId}`);
+        alert(`Debug: Writing to Secondary Project ID: ${tempSecondaryApp.options.projectId}`);
 
         if (!isRestored) {
             // New User Flow
