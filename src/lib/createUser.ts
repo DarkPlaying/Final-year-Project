@@ -103,9 +103,14 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                         secUid = secCred.user.uid;
                     } catch (secLoginError) {
                         console.error(`[createUser] Failed to sign in to Secondary Auth:`, secLoginError);
-                        // Fallback: Try anonymous auth if password fails (though unlikely if same password)
-                        // or just fail. If we can't auth, we can't write to Secondary DB (enforced by rules).
-                        throw new Error("Failed to authenticate with Secondary System.");
+                        // Fallback: Try anonymous auth if password fails
+                        console.log(`[createUser] Fallback: Using Anonymous Auth for Secondary DB write...`);
+                        try {
+                            await signInAnonymously(secondaryAuth);
+                            // We don't care about the UID, we just need to be authenticated to write.
+                        } catch (anonError) {
+                            throw new Error("Failed to authenticate with Secondary System (even anonymously).");
+                        }
                     }
                 } else {
                     throw secAuthError;
