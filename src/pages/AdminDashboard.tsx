@@ -907,20 +907,34 @@ const AdminDashboard = () => {
           await deleteInBatches(userDocsToDelete);
 
           // Sync delete to Secondary DB for these users
+          // Sync delete to Secondary DB for these users
           try {
-            const batchSec = writeBatch(secondaryDb);
+            const secAuth = getAuth(secondaryDb.app);
+            if (!secAuth.currentUser) {
+              console.log("[deleteWorkspace] Not authenticated in Secondary DB, attempting anonymous sign-in...");
+              await signInAnonymously(secAuth);
+            }
+
+            // Create a new batch for secondary DB
+            let batchSec = writeBatch(secondaryDb);
             let count = 0;
+
             for (const userDoc of userDocsToDelete) {
               batchSec.delete(doc(secondaryDb, 'users', userDoc.id));
               count++;
+              // Firestore batch limit is 500, but we use 400 to be safe
               if (count >= 400) {
                 await batchSec.commit();
+                batchSec = writeBatch(secondaryDb); // Start new batch
                 count = 0;
               }
             }
             if (count > 0) await batchSec.commit();
-          } catch (secErr) {
+            console.log(`[deleteWorkspace] Synced deletion of ${userDocsToDelete.length} users to Secondary DB`);
+
+          } catch (secErr: any) {
             console.error("Failed to sync delete users in secondary DB:", secErr);
+            toast.warning(`Workspace deleted, but failed to remove users from Secondary DB: ${secErr.message}`);
           }
         }
       } catch (e) {
