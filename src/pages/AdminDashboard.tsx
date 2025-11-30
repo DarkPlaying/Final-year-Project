@@ -944,14 +944,40 @@ const AdminDashboard = () => {
 
       // 5. Delete Secondary DB Data (Attendance, Marks, Reports)
       try {
-        const secondaryCollections = ['attendance', 'mark_batches', 'marks', 'unom_reports'];
+        // 5a. Direct deletion by workspaceId
+        // Note: 'marks' usually don't have workspaceId, so we delete them via mark_batches
+        const directCollections = ['attendance', 'mark_batches', 'unom_reports'];
+        const batchIdsToDelete: string[] = [];
 
-        for (const colName of secondaryCollections) {
+        for (const colName of directCollections) {
           const q = query(collection(secondaryDb, colName), where('workspaceId', '==', id));
           const snap = await getDocs(q);
+
           if (!snap.empty) {
+            // Capture batch IDs to delete related marks later
+            if (colName === 'mark_batches') {
+              snap.forEach(d => batchIdsToDelete.push(d.id));
+            }
             await deleteInBatches(snap.docs, secondaryDb);
             console.log(`Deleted ${snap.size} docs from ${colName} in secondary DB`);
+          }
+        }
+
+        // 5b. Delete Marks linked to deleted batches
+        if (batchIdsToDelete.length > 0) {
+          // Firestore 'in' query limit is 10
+          const chunks = [];
+          for (let i = 0; i < batchIdsToDelete.length; i += 10) {
+            chunks.push(batchIdsToDelete.slice(i, i + 10));
+          }
+
+          for (const chunk of chunks) {
+            const marksQ = query(collection(secondaryDb, 'marks'), where('batchId', 'in', chunk));
+            const marksSnap = await getDocs(marksQ);
+            if (!marksSnap.empty) {
+              await deleteInBatches(marksSnap.docs, secondaryDb);
+              console.log(`Deleted ${marksSnap.size} marks linked to deleted batches`);
+            }
           }
         }
       } catch (e) {
