@@ -672,6 +672,7 @@ const StudentDashboard = () => {
       }
     } catch (error) {
       console.warn("Upload to folder failed, retrying to root...", error);
+      toast.warning("Shared folder access denied. Uploading to your personal Drive.");
       json = await upload();
     }
 
