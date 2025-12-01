@@ -401,6 +401,45 @@ const StudentDashboard = () => {
     return () => unsubs.forEach(u => u());
   }, [myWorkspaces]);
 
+  // Attendance Listener
+  useEffect(() => {
+    if (!userEmail || myWorkspaces.length === 0 || !attendanceMonth) {
+      setAttendance([]);
+      return;
+    }
+
+    const [year, month] = attendanceMonth.split('-');
+    const startDateStr = `${attendanceMonth}-01`;
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const endDateStr = `${attendanceMonth}-${lastDay}`;
+
+    const q = query(
+      collection(secondaryDb, 'attendance'),
+      where('date', '>=', startDateStr),
+      where('date', '<=', endDateStr)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const records = snap.docs.map(d => d.data());
+
+      // Filter by my workspaces and process status
+      const myAttendance = records
+        .filter((r: any) => myWorkspaces.includes(r.workspaceId))
+        .map((r: any) => {
+          const isPresent = r.presentStudents && (
+            r.presentStudents.includes(userEmail) ||
+            r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
+          );
+          return { ...r, status: isPresent ? 'present' : 'absent' };
+        });
+
+      myAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
+      setAttendance(myAttendance);
+    });
+
+    return () => unsub();
+  }, [userEmail, myWorkspaces, attendanceMonth]);
+
   const addNotification = (type: string, message: string) => {
     setNotifications(prev => [{ id: Date.now(), type, message, time: new Date(), read: false }, ...prev]);
   };
