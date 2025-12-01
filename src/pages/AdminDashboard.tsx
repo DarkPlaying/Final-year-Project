@@ -101,6 +101,8 @@ interface Workspace {
   teachers: string[];
   students: string[];
   createdAt: any;
+  classTeacher?: string;
+  mentor?: string;
 }
 
 interface QueryItem {
@@ -400,7 +402,9 @@ const AdminDashboard = () => {
           category: data.category || 'General',
           teachers: data.teachers || [],
           students: data.students || [],
-          createdAt: data.createdAt
+          createdAt: data.createdAt,
+          classTeacher: data.classTeacher,
+          mentor: data.mentor
         });
       });
       setWorkspaces(loadedWorkspaces);
@@ -555,6 +559,34 @@ const AdminDashboard = () => {
     } catch (error: any) {
       toast.error('Failed to delete user');
       console.error(error);
+    }
+  };
+
+  const handleAppointRole = async (workspaceId: string, role: 'classTeacher' | 'mentor', email: string) => {
+    try {
+      // 1. Update Main DB
+      const wsRef = doc(db, 'workspaces', workspaceId);
+      await updateDoc(wsRef, {
+        [role]: email
+      });
+
+      // 2. Sync to Secondary DB (for Security Rules)
+      try {
+        const secWsRef = doc(secondaryDb, 'workspaces', workspaceId);
+        // Use setDoc with merge to ensure document exists
+        await setDoc(secWsRef, {
+          [role]: email
+        }, { merge: true });
+      } catch (secError) {
+        console.error('Failed to sync to secondary DB:', secError);
+        // Don't block the UI, but warn
+      }
+
+      toast.success(`${role === 'classTeacher' ? 'Class Teacher' : 'Mentor'} appointed`);
+      loadWorkspaces();
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to appoint role');
     }
   };
 
@@ -1680,6 +1712,48 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 <CardContent className="p-4 space-y-4">
+                  {/* Role Appointment Section */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Class Teacher</Label>
+                      <Select
+                        value={ws.classTeacher || ''}
+                        onValueChange={(val) => handleAppointRole(ws.id, 'classTeacher', val)}
+                      >
+                        <SelectTrigger className={`h-8 text-sm ${!ws.classTeacher ? 'border-red-500/50' : 'border-slate-700'}`}>
+                          <SelectValue placeholder="Select Class Teacher" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ws.teachers.length > 0 ? (
+                            ws.teachers.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)
+                          ) : (
+                            <SelectItem value="none" disabled>No teachers added</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {!ws.classTeacher && <span className="text-[10px] text-red-400 flex items-center mt-1"><AlertTriangle className="h-3 w-3 mr-1" /> Required</span>}
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Mentor</Label>
+                      <Select
+                        value={ws.mentor || ''}
+                        onValueChange={(val) => handleAppointRole(ws.id, 'mentor', val)}
+                      >
+                        <SelectTrigger className={`h-8 text-sm ${!ws.mentor ? 'border-red-500/50' : 'border-slate-700'}`}>
+                          <SelectValue placeholder="Select Mentor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ws.teachers.length > 0 ? (
+                            ws.teachers.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)
+                          ) : (
+                            <SelectItem value="none" disabled>No teachers added</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {!ws.mentor && <span className="text-[10px] text-red-400 flex items-center mt-1"><AlertTriangle className="h-3 w-3 mr-1" /> Required</span>}
+                    </div>
+                  </div>
+
                   {/* Teachers Section */}
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">

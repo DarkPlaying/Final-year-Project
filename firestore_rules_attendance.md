@@ -17,64 +17,58 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Check if the user has a role in THIS database's 'users' collection
-    // Note: The UID in this DB matches the UID in the Secondary Auth because we created them in sync.
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-    
-    function isTeacher() {
-      return isAuthenticated() && getUserData().role == 'teacher';
-    }
-    
+
     function isStudent() {
-      return isAuthenticated() && getUserData().role == 'student';
+      return getUserData().role == 'student';
     }
 
-    // --- Attendance & Marks Rules ---
+    // Check if the user is the appointed Class Teacher or Mentor for the workspace
+    function isAuthorizedTeacher(workspaceId) {
+       let workspace = get(/databases/$(database)/documents/workspaces/$(workspaceId)).data;
+       return workspace.classTeacher == request.auth.token.email || workspace.mentor == request.auth.token.email;
+    }
 
-    match /attendance/{docId} {
+    // --- Collection Rules ---
+
+    // Workspaces (Synced from Main DB for Security Rules):
+    match /workspaces/{workspaceId} {
       allow read: if isAuthenticated();
-      allow write: if isTeacher();
+      allow write: if isAuthenticated(); // Allow Admin Dashboard to sync
     }
 
-    match /mark_batches/{docId} {
+    // Attendance: Only Class Teacher or Mentor can manage
+    match /attendance/{docId} { 
       allow read: if isAuthenticated();
-      allow write: if isTeacher();
+      allow create: if isAuthenticated() && isAuthorizedTeacher(request.resource.data.workspaceId);
+      allow update, delete: if isAuthenticated() && isAuthorizedTeacher(resource.data.workspaceId);
     }
 
-    match /marks/{docId} {
+    // UNOM Reports: 
+    // - Create: Only Class Teacher or Mentor
+    // - Delete: Only Class Teacher or Mentor (Hard delete)
+    // - Update: Class Teacher/Mentor OR Creator (for soft delete) OR Students (submitting marks)
+    match /unom_reports/{docId} { 
       allow read: if isAuthenticated();
-      allow write: if isTeacher();
+      allow create: if isAuthenticated() && isAuthorizedTeacher(request.resource.data.workspaceId);
+      allow delete: if isAuthenticated() && isAuthorizedTeacher(resource.data.workspaceId);
+      allow update: if isAuthenticated() && (
+        isAuthorizedTeacher(resource.data.workspaceId) || 
+        resource.data.teacherEmail == request.auth.token.email ||
+        isStudent()
+      );
     }
 
-    match /unom_reports/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isTeacher() || isStudent(); // Students might need write for submission? Or just update?
-    }
+    // Marks & Batches (General access for now, or refine later)
+    match /mark_batches/{docId} { allow read, write: if isAuthenticated(); }
+    match /marks/{docId} { allow read, write: if isAuthenticated(); }
     
-    // Allow Admin Panel to sync users
-    // We assume Admin has a user doc here too, or we allow create if auth is valid?
-    // For simplicity and security, allow authenticated users to read/write their OWN user doc,
-    // but we need Admin to write ANY user doc.
-    // Since we don't have 'Admin' role strictly defined in Secondary Auth claims, 
-    // we rely on the fact that only Admins have access to the Admin Panel code that writes here.
-    // BUT for rules, we can check if the requestor is an admin in the DB.
-    
-    // Allow Admin Panel to sync users
-    // CRITICAL: When creating a user from the Admin Panel, we are authenticated as the NEW user (secUid)
-    // but we are writing a document with the MAIN UID (mainUid).
-    // Therefore, request.auth.uid != userId.
-    // We must allow authenticated users to write to ANY user document to support this sync.
-    match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); 
-    }
+    // Allow syncing users
+    match /users/{userId} { allow read, write: if isAuthenticated(); }
 
-    // Default deny for everything else
-    match /{document=**} {
-      allow read, write: if false;
-    }
+    match /{document=**} { allow read, write: if false; }
   }
 }
 ```

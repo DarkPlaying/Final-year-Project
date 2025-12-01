@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Student Dashboard</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link rel="stylesheet" href="teacher-dashboard.css">
+    <link rel="stylesheet" href="student-dashboard.css">
+    <link rel="stylesheet" href="refresh-button.css">
+    <style>
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .session-countdown {
+            font-size: 0.85rem;
+            color: #cbd5ff;
+            background: rgba(148, 163, 184, 0.1);
+            padding: 4px 10px;
+            border-radius: 999px;
+        }
+    </style>
+</head>
+
+<body>
+    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+    </button>
+    <header class="header">
+        <div class="logo">
+            <!-- Your SVG logo here -->
+            <span>EduPortal</span>
+        </div>
+        <div class="user-info">
+            <span id="studentName">Student</span>
+            <span class="role-badge">(student)</span>
+            <span id="studentSessionCountdown" class="session-countdown">Session expires in 05:00:00</span>
+            <button type="button" id="studentRefreshBtn" class="btn-refresh" onclick="refreshStudentDashboard()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                </svg>
+                Refresh
+            </button>
+            <button onclick="logout()" class="logout-btn">Logout</button>
+        </div>
+    </header>
+
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <button class="sidebar-close" id="sidebarClose" aria-label="Close menu">&times;</button>
+            <nav class="nav">
+                <a href="#" class="nav-item active" onclick="showSection('overview')">Overview</a>
+                <a href="#" class="nav-item" onclick="showSection('syllabus')">Review Syllabus</a>
+                <a href="#" class="nav-item" onclick="showSection('exam')">Attend Exam</a>
+                <a href="#" class="nav-item" onclick="showSection('assignments')">Send Assignments</a>
+                <a href="#" class="nav-item" onclick="showSection('viewMarks')">View Marks</a>
+                <a href="#" class="nav-item" onclick="showSection('viewAttendance')">View Attendance</a>
+                <a href="#" class="nav-item" onclick="showSection('announcements')">Announcements</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <!-- OVERVIEW SECTION -->
+            <section id="overview" class="content-section active">
+                <h1>Student Dashboard</h1>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Test Sheet</h3>
+                        <p class="stat-number" id="testSheetsCount">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Assignment</h3>
+                        <p class="stat-number" id="assignmentsCount">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Syllabus</h3>
+                        <p class="stat-number" id="syllabusCount">0</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- REVIEW SYLLABUS SECTION -->
+            <section id="syllabus" class="content-section">
+                <h1>Review Syllabus</h1>
+                <div class="create-box">
+                    <p class="muted">View syllabus and course materials provided by your teachers.</p>
+                    <div id="syllabusList" style="margin-top:10px;display:flex;flex-direction:column;gap:15px;">
+                        <!-- Syllabus items will be populated here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ATTEND EXAM SECTION -->
+            <section id="exam" class="content-section">
+                <h1>Attend Exam</h1>
+                <div class="create-box">
+                    <p class="muted">View and take upcoming or ongoing exams for your courses.</p>
+                    <div id="examList" style="margin-top:10px;display:flex;flex-direction:column;gap:15px;">
+                        <!-- Exam details and links/buttons to participate -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- SEND ASSIGNMENTS SECTION -->
+            <section id="assignments" class="content-section">
+                <h1>Send Assignments</h1>
+                <div class="create-box">
+                    <p class="muted">Upload and submit completed assignments to your teachers.</p><br>
+                    <form id="submitAssignmentForm" class="form-inline" autocomplete="off">
+                        <div style="width:100%">
+                            <label for="assignmentTitle">Assignment Title</label>
+                            <input type="text" id="assignmentTitle" placeholder="e.g., Algebra Homework 1" required>
+                        </div>
+                        <div style="width:100%">
+                            <label for="assignmentFile">Upload File</label>
+                            <input type="file" id="assignmentFile" accept=".pdf">
+                        </div>
+                        <div style="width:100%">
+                            <label for="assignmentComments">Comments</label>
+                            <textarea id="assignmentComments" rows="3"
+                                placeholder="Any notes for your teacher"></textarea>
+                        </div>
+                        <div style="width:100%">
+                            <label for="teacherSelectDropdown">Select Teacher</label>
+                            <select id="teacherSelectDropdown" required
+                                style="width:100%;padding:8px;margin-top:5px;background:#0f2441;color:#fff;border:1px solid #2d3b55;border-radius:4px;">
+                                <option value="">Loading teachers...</option>
+                            </select>
+                        </div>
+                        <div style="width:100%;display:flex;gap:8px;align-items:center;margin-top:8px;">
+                            <button type="button" id="authBtn" class="btn-create" style="background:#4285F4;">Sign In
+                                with Google</button>
+                            <button type="button" id="submitAssignmentBtn" class="btn-create" disabled>Submit
+                                Assignment</button>
+                            <div id="submitAssignmentMessage" class="message"></div>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="create-box" style="margin-top:8px;">
+                    <h2>Submitted Assignments</h2>
+                    <p class="muted">Manage assignments you've uploaded. Use View to preview, Undo to retract a
+                        submission, or Delete to remove it.</p>
+
+                    <div id="submittedAssignmentsList"
+                        style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">
+                        <!-- Student submissions will be appended here by JS -->
+                        <div class="students-empty" id="noSubmissionsPlaceholder">No submissions yet.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW MARKS SECTION -->
+            <section id="viewMarks" class="content-section">
+                <h1>View Marks</h1>
+                <p class="muted">View your marks across assignments and exams.</p><br>
+                <div class="create-box">
+                    <div id="studentMarksTable" style="margin-top:8px;">
+                        <div class="muted">Loading marks...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW ATTENDANCE SECTION -->
+            <section id="viewAttendance" class="content-section">
+                <h1>View Attendance</h1>
+                <p class="muted">Select a date to view your attendance record.</p><br>
+                <div class="create-box">
+                    <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:16px;">
+                        <div style="min-width:220px;flex:1;">
+                            <label for="studentAttendanceDate">Select Date:</label>
+                            <input type="date" id="studentAttendanceDate"
+                                style="width:100%;padding:8px 12px;background:#020617;border:1px solid #334155;color:#e2e8f0;border-radius:8px;">
+                        </div>
+                    </div>
+                    <div id="studentAttendanceStatus" style="margin-top:8px;min-height:80px;">
+                        <div class="muted">Select a date to see your attendance.</div>
+                    </div>
+                    <div id="studentAttendanceMessage" class="message" style="margin-top:8px"></div>
+                </div>
+            </section>
+
+            <!-- ANNOUNCEMENTS SECTION -->
+            <section id="announcements" class="content-section">
+                <h1>Announcements</h1>
+                <p class="muted">View announcements sent by your teachers.</p><br>
+                <div class="create-box">
+                    <div id="announcementsList" style="margin-top:10px;display:flex;flex-direction:column;gap:15px;">
+                        <div class="muted">Loading announcements...</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="backdrop" class="backdrop" aria-hidden="true"></div>
+
+    <!-- Submission Preview Modal -->
+    <div id="submissionPreviewModal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:880px;">
+            <div class="modal-header">
+                <h2 id="previewTitle">Preview</h2>
+                <button class="modal-close" id="closePreviewModal">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:0;">
+                <iframe id="previewIframe" src="" style="width:100%;height:560px;border:0;border-radius:8px;"></iframe>
+            </div>
+            <div class="modal-footer">
+                <button id="closePreviewBtn" class="btn-ghost">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs (namespaced/v8 style) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <!-- Maintenance Mode -->
+    <link rel="stylesheet" href="maintenance-modal.css">
+    <script src="maintenance-check.js"></script>
+    <!-- Project scripts -->
+    <script src="student-dashboard.js"></script>
+</body>
+
+</html>

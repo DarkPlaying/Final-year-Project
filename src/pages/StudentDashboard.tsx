@@ -559,7 +559,8 @@ const StudentDashboard = () => {
       ...unomForm,
       total,
       percentage,
-      submittedAt: new Date().toISOString()
+      submittedAt: new Date().toISOString(),
+      hasUpdated: true
     };
 
     // Recalculate ranks

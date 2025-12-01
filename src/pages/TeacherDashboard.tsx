@@ -184,6 +184,15 @@ const TeacherDashboard = () => {
   const [unomSearch, setUnomSearch] = useState('');
   const [unomSortConfig, setUnomSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
+  // Filters & History Search
+  const [examFilterWorkspace, setExamFilterWorkspace] = useState('all');
+  const [syllabusFilterWorkspace, setSyllabusFilterWorkspace] = useState('all');
+  const [announceFilterWorkspace, setAnnounceFilterWorkspace] = useState('all');
+  const [marksHistoryFilterWorkspace, setMarksHistoryFilterWorkspace] = useState('all');
+  const [unomHistoryFilterWorkspace, setUnomHistoryFilterWorkspace] = useState('all');
+  const [marksHistorySearch, setMarksHistorySearch] = useState('');
+  const [unomHistorySearch, setUnomHistorySearch] = useState('');
+
   // Pagination & Search States
   const [examPage, setExamPage] = useState(1);
   const [examSearch, setExamSearch] = useState('');
@@ -1808,30 +1817,61 @@ const TeacherDashboard = () => {
 
   const fetchUnomReports = async () => {
     try {
-      const q = query(collection(secondaryDb, 'unom_reports'), where('teacherEmail', '==', userEmail));
-      const snap = await getDocs(q);
-      const reports = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      reports.sort((a: any, b: any) => {
+      if (workspaces.length === 0) {
+        setUnomReports([]);
+        return;
+      }
+
+      const workspaceIds = workspaces.map(w => w.id);
+      let allReports: any[] = [];
+
+      // Chunking for 'in' query limit of 10
+      const chunks = [];
+      for (let i = 0; i < workspaceIds.length; i += 10) {
+        chunks.push(workspaceIds.slice(i, i + 10));
+      }
+
+      for (const chunk of chunks) {
+        const q = query(collection(secondaryDb, 'unom_reports'), where('workspaceId', 'in', chunk));
+        const snap = await getDocs(q);
+        snap.docs.forEach(d => allReports.push({ id: d.id, ...d.data() }));
+      }
+
+      // Remove duplicates
+      const uniqueReports = Array.from(new Map(allReports.map(item => [item.id, item])).values());
+
+      uniqueReports.sort((a: any, b: any) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
         return dateB - dateA;
       });
-      setUnomReports(reports);
+      setUnomReports(uniqueReports);
     } catch (error) {
       console.error("Error fetching UNOM reports:", error);
     }
   };
 
   useEffect(() => {
-    if (activeSection === 'unom') {
+    if (activeSection === 'unom' && workspaces.length > 0) {
       fetchUnomReports();
     }
-  }, [activeSection, userEmail]);
+  }, [activeSection, workspaces]);
+
+  // Sync viewing data when reports update
+  useEffect(() => {
+    if (viewingUnomId) {
+      const report = unomReports.find(r => r.id === viewingUnomId);
+      if (report) {
+        setViewingUnomData(report.data || []);
+      }
+    }
+  }, [unomReports, viewingUnomId]);
 
   const handleDeleteUnom = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'unom_reports', id), { status: 'deleted' });
+      await updateDoc(doc(secondaryDb, 'unom_reports', id), { status: 'deleted' });
       toast.success('UNOM report deleted successfully');
+      fetchUnomReports();
     } catch (error) {
       console.error("Error deleting UNOM report:", error);
       toast.error("Failed to delete UNOM report");
@@ -1994,6 +2034,58 @@ const TeacherDashboard = () => {
     } catch (error) {
       console.error("Error restoring report:", error);
       toast.error("Failed to restore report");
+    }
+  };
+
+  const handleClearUpdate = async (report: any, studentEmail: string) => {
+    // Check authorization
+    const ws = workspaces.find(w => w.id === report.workspaceId);
+    if (!ws || (ws.classTeacher !== userEmail && ws.mentor !== userEmail)) {
+      toast.error("Only Class Teacher or Mentor can clear this status.");
+      return;
+    }
+
+    try {
+      const newData = [...report.data];
+      const studentIndex = newData.findIndex((d: any) => d.email === studentEmail);
+      if (studentIndex === -1) return;
+
+      newData[studentIndex] = {
+        ...newData[studentIndex],
+        hasUpdated: false
+      };
+
+      await updateDoc(doc(secondaryDb, 'unom_reports', report.id), {
+        data: newData
+      });
+      toast.success("Status cleared");
+    } catch (error) {
+      console.error("Error clearing status:", error);
+      toast.error("Failed to clear status");
+    }
+  };
+
+  const handleMarkAllAsMarked = async (report: any) => {
+    // Check authorization
+    const ws = workspaces.find(w => w.id === report.workspaceId);
+    if (!ws || (ws.classTeacher !== userEmail && ws.mentor !== userEmail)) {
+      toast.error("Only Class Teacher or Mentor can perform this action.");
+      return;
+    }
+
+    try {
+      const newData = report.data.map((d: any) => ({
+        ...d,
+        hasUpdated: false
+      }));
+
+      await updateDoc(doc(secondaryDb, 'unom_reports', report.id), {
+        data: newData
+      });
+      toast.success("All updates marked as read");
+    } catch (error) {
+      console.error("Error marking all as read:", error);
+      toast.error("Failed to mark all as read");
     }
   };
 
@@ -2506,8 +2598,20 @@ const TeacherDashboard = () => {
                   onChange={(e) => setExamSearch(e.target.value)}
                 />
               </div>
+              <Select value={examFilterWorkspace} onValueChange={setExamFilterWorkspace}>
+                <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                  <SelectValue placeholder="All Workspaces" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Workspaces</SelectItem>
+                  {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
-            {exams.filter(e => e.title.toLowerCase().includes(examSearch.toLowerCase())).length === 0 ? (
+            {exams.filter(e =>
+              e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
+              (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
+            ).length === 0 ? (
               <Card className="bg-slate-800 border-slate-700 text-white">
                 <CardContent className="p-8 text-center text-slate-500">
                   {exams.length === 0 ? "No exams created yet. Create one above." : "No exams match your search."}
@@ -2517,7 +2621,10 @@ const TeacherDashboard = () => {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {exams
-                    .filter(e => e.title.toLowerCase().includes(examSearch.toLowerCase()))
+                    .filter(e =>
+                      e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
+                      (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
+                    )
                     .slice((examPage - 1) * 20, examPage * 20)
                     .map(exam => (
                       <Card key={exam.id} className="bg-slate-800 border-slate-700 text-white hover:border-blue-500/50 transition-all group overflow-hidden relative">
@@ -2563,13 +2670,25 @@ const TeacherDashboard = () => {
                       </Card>
                     ))}
                 </div>
-                {exams.filter(e => e.title.toLowerCase().includes(examSearch.toLowerCase())).length > 20 && (
-                  <div className="flex items-center justify-center gap-2 mt-6">
-                    <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.max(1, p - 1))} disabled={examPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                    <span className="text-sm text-slate-400">Page {examPage} of {Math.ceil(exams.filter(e => e.title.toLowerCase().includes(examSearch.toLowerCase())).length / 20)}</span>
-                    <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.min(Math.ceil(exams.filter(e => e.title.toLowerCase().includes(examSearch.toLowerCase())).length / 20), p + 1))} disabled={examPage === Math.ceil(exams.filter(e => e.title.toLowerCase().includes(examSearch.toLowerCase())).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                  </div>
-                )}
+                {exams.filter(e =>
+                  e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
+                  (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
+                ).length > 20 && (
+                    <div className="flex items-center justify-center gap-2 mt-6">
+                      <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.max(1, p - 1))} disabled={examPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                      <span className="text-sm text-slate-400">Page {examPage} of {Math.ceil(exams.filter(e =>
+                        e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
+                        (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
+                      ).length / 20)}</span>
+                      <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.min(Math.ceil(exams.filter(e =>
+                        e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
+                        (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
+                      ).length / 20), p + 1))} disabled={examPage === Math.ceil(exams.filter(e =>
+                        e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
+                        (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
+                      ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                    </div>
+                  )}
               </>
             )}
           </div>
@@ -2686,11 +2805,26 @@ const TeacherDashboard = () => {
                     onChange={(e) => setAnnounceSearch(e.target.value)}
                   />
                 </div>
+                <Select value={announceFilterWorkspace} onValueChange={setAnnounceFilterWorkspace}>
+                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                    <SelectValue placeholder="All Workspaces" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Workspaces</SelectItem>
+                    {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-              {announcements.filter(a => a.title.toLowerCase().includes(announceSearch.toLowerCase())).length === 0 ? <p className="text-slate-500">No announcements found.</p> : (
+              {announcements.filter(a =>
+                a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
+                (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
+              ).length === 0 ? <p className="text-slate-500">No announcements found.</p> : (
                 <div className="space-y-3">
                   {announcements
-                    .filter(a => a.title.toLowerCase().includes(announceSearch.toLowerCase()))
+                    .filter(a =>
+                      a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
+                      (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
+                    )
                     .slice((announcePage - 1) * 20, announcePage * 20)
                     .map(a => (
                       <div key={a.id} className="flex items-center justify-between p-4 bg-slate-900 rounded-lg border border-slate-700">
@@ -2720,552 +2854,596 @@ const TeacherDashboard = () => {
                     ))}
                 </div>
               )}
-              {announcements.filter(a => a.title.toLowerCase().includes(announceSearch.toLowerCase())).length > 20 && (
-                <div className="flex items-center justify-center gap-2 mt-6">
-                  <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.max(1, p - 1))} disabled={announcePage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                  <span className="text-sm text-slate-400">Page {announcePage} of {Math.ceil(announcements.filter(a => a.title.toLowerCase().includes(announceSearch.toLowerCase())).length / 20)}</span>
-                  <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.min(Math.ceil(announcements.filter(a => a.title.toLowerCase().includes(announceSearch.toLowerCase())).length / 20), p + 1))} disabled={announcePage === Math.ceil(announcements.filter(a => a.title.toLowerCase().includes(announceSearch.toLowerCase())).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                </div>
-              )}
+              {announcements.filter(a =>
+                a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
+                (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
+              ).length > 20 && (
+                  <div className="flex items-center justify-center gap-2 mt-6">
+                    <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.max(1, p - 1))} disabled={announcePage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                    <span className="text-sm text-slate-400">Page {announcePage} of {Math.ceil(announcements.filter(a =>
+                      a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
+                      (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
+                    ).length / 20)}</span>
+                    <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.min(Math.ceil(announcements.filter(a =>
+                      a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
+                      (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
+                    ).length / 20), p + 1))} disabled={announcePage === Math.ceil(announcements.filter(a =>
+                      a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
+                      (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
+                    ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                  </div>
+                )}
             </CardContent>
           </Card>
         </div>
       )}
 
       {/* SYLLABUS */}
-      {activeSection === 'syllabus' && (
-        <div className="space-y-6">
-          <Card className="bg-slate-800 border-slate-700 text-white">
-            <CardHeader>
-              <CardTitle>{editingSyllabus ? 'Edit Syllabus' : 'Upload Syllabus'}</CardTitle>
-              <CardDescription className="text-slate-400">Add or update course syllabus with Google Drive.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Syllabus Name</Label>
-                <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Mathematics Course Syllabus 2025" value={syllabusName} onChange={e => setSyllabusName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Units (comma separated)</Label>
-                <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Algebra, Calculus, Geometry" value={syllabusUnits} onChange={e => setSyllabusUnits(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Google Drive Link (Optional)</Label>
-                <div className="flex gap-2">
-                  <Input className="bg-slate-900 border-slate-700" placeholder="https://..." value={syllabusLink} onChange={e => setSyllabusLink(e.target.value)} />
-                  <div className="relative">
-                    <input type="file" id="syllabus-file" className="hidden" onChange={(e) => handleFileUpload(e, setSyllabusLink)} />
-                    <Button variant="secondary" className="whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white border-0" onClick={() => document.getElementById('syllabus-file')?.click()}>
-                      <Upload className="h-4 w-4 mr-2" /> Upload File
-                    </Button>
+      {
+        activeSection === 'syllabus' && (
+          <div className="space-y-6">
+            <Card className="bg-slate-800 border-slate-700 text-white">
+              <CardHeader>
+                <CardTitle>{editingSyllabus ? 'Edit Syllabus' : 'Upload Syllabus'}</CardTitle>
+                <CardDescription className="text-slate-400">Add or update course syllabus with Google Drive.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Syllabus Name</Label>
+                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Mathematics Course Syllabus 2025" value={syllabusName} onChange={e => setSyllabusName(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Units (comma separated)</Label>
+                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Algebra, Calculus, Geometry" value={syllabusUnits} onChange={e => setSyllabusUnits(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Google Drive Link (Optional)</Label>
+                  <div className="flex gap-2">
+                    <Input className="bg-slate-900 border-slate-700" placeholder="https://..." value={syllabusLink} onChange={e => setSyllabusLink(e.target.value)} />
+                    <div className="relative">
+                      <input type="file" id="syllabus-file" className="hidden" onChange={(e) => handleFileUpload(e, setSyllabusLink)} />
+                      <Button variant="secondary" className="whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white border-0" onClick={() => document.getElementById('syllabus-file')?.click()}>
+                        <Upload className="h-4 w-4 mr-2" /> Upload File
+                      </Button>
+                    </div>
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <Label>Select Workspace</Label>
+                  <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); }}>
+                    <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue placeholder="-- Select workspace --" /></SelectTrigger>
+                    <SelectContent>
+                      {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedWorkspace && (
+                  <div className="space-y-2">
+                    <Label>Students in Workspace</Label>
+                    <div className="bg-slate-900 border border-slate-700 rounded-md p-2 max-h-40 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-2 px-2">
+                        <span className="text-sm font-medium text-slate-400">Email</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs h-7"
+                          onClick={() => {
+                            if (selectedStudents.length === workspaceStudents.length) {
+                              setSelectedStudents([]);
+                            } else {
+                              setSelectedStudents(workspaceStudents);
+                            }
+                          }}
+                        >
+                          {selectedStudents.length === workspaceStudents.length ? 'Unselect All' : 'Select All'}
+                        </Button>
+                      </div>
+                      {workspaceStudents.map(email => (
+                        <div key={email} className="flex items-center justify-between py-1 px-2 hover:bg-slate-800 rounded">
+                          <span className="text-sm text-slate-300">
+                            {studentMap.get(email) ? `${studentMap.get(email)} (${email})` : email}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={selectedStudents.includes(email)}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedStudents([...selectedStudents, email]);
+                              else setSelectedStudents(selectedStudents.filter(s => s !== email));
+                            }}
+                            className="rounded border-slate-600 bg-slate-800"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2 pt-2">
+                  {!driveAccessToken && (
+                    <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-0" onClick={handleGoogleAuth}>Sign In with Google</Button>
+                  )}
+                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleCreateSyllabus}>
+                    {editingSyllabus ? 'Update Syllabus' : 'Upload Syllabus'}
+                  </Button>
+                  {editingSyllabus && <Button variant="ghost" onClick={() => { setEditingSyllabus(null); setSyllabusName(''); setSyllabusUnits(''); setSyllabusLink(''); }}>Cancel</Button>}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <BookOpen className="h-6 w-6 text-green-400" /> Uploaded Syllabi
+                </h3>
+                {syllabi.length > 0 && (
+                  <Button variant="destructive" size="sm" onClick={handleDeleteAllSyllabi}>
+                    <Trash2 className="h-4 w-4 mr-2" /> Delete All
+                  </Button>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label>Select Workspace</Label>
-                <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); }}>
-                  <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue placeholder="-- Select workspace --" /></SelectTrigger>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search syllabus..."
+                    className="pl-8 bg-slate-900 border-slate-700"
+                    value={syllabusSearch}
+                    onChange={(e) => setSyllabusSearch(e.target.value)}
+                  />
+                </div>
+                <Select value={syllabusFilterWorkspace} onValueChange={setSyllabusFilterWorkspace}>
+                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                    <SelectValue placeholder="All Workspaces" />
+                  </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="all">All Workspaces</SelectItem>
                     {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              {selectedWorkspace && (
-                <div className="space-y-2">
-                  <Label>Students in Workspace</Label>
-                  <div className="bg-slate-900 border border-slate-700 rounded-md p-2 max-h-40 overflow-y-auto">
-                    <div className="flex items-center justify-between mb-2 px-2">
-                      <span className="text-sm font-medium text-slate-400">Email</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs h-7"
-                        onClick={() => {
-                          if (selectedStudents.length === workspaceStudents.length) {
-                            setSelectedStudents([]);
-                          } else {
-                            setSelectedStudents(workspaceStudents);
-                          }
-                        }}
-                      >
-                        {selectedStudents.length === workspaceStudents.length ? 'Unselect All' : 'Select All'}
-                      </Button>
-                    </div>
-                    {workspaceStudents.map(email => (
-                      <div key={email} className="flex items-center justify-between py-1 px-2 hover:bg-slate-800 rounded">
-                        <span className="text-sm text-slate-300">
-                          {studentMap.get(email) ? `${studentMap.get(email)} (${email})` : email}
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={selectedStudents.includes(email)}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelectedStudents([...selectedStudents, email]);
-                            else setSelectedStudents(selectedStudents.filter(s => s !== email));
-                          }}
-                          className="rounded border-slate-600 bg-slate-800"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex gap-2 pt-2">
-                {!driveAccessToken && (
-                  <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-0" onClick={handleGoogleAuth}>Sign In with Google</Button>
-                )}
-                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleCreateSyllabus}>
-                  {editingSyllabus ? 'Update Syllabus' : 'Upload Syllabus'}
-                </Button>
-                {editingSyllabus && <Button variant="ghost" onClick={() => { setEditingSyllabus(null); setSyllabusName(''); setSyllabusUnits(''); setSyllabusLink(''); }}>Cancel</Button>}
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <BookOpen className="h-6 w-6 text-green-400" /> Uploaded Syllabi
-              </h3>
-              {syllabi.length > 0 && (
-                <Button variant="destructive" size="sm" onClick={handleDeleteAllSyllabi}>
-                  <Trash2 className="h-4 w-4 mr-2" /> Delete All
-                </Button>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Search syllabus..."
-                  className="pl-8 bg-slate-900 border-slate-700"
-                  value={syllabusSearch}
-                  onChange={(e) => setSyllabusSearch(e.target.value)}
-                />
-              </div>
-            </div>
-            {syllabi.filter(s => s.name.toLowerCase().includes(syllabusSearch.toLowerCase())).length === 0 ? (
-              <Card className="bg-slate-800 border-slate-700 text-white">
-                <CardContent className="p-8 text-center text-slate-500">
-                  {syllabi.length === 0 ? "No syllabi uploaded yet. Upload one above." : "No syllabi match your search."}
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {syllabi
-                    .filter(s => s.name.toLowerCase().includes(syllabusSearch.toLowerCase()))
-                    .slice((syllabusPage - 1) * 20, syllabusPage * 20)
-                    .map(s => (
-                      <Card key={s.id} className="bg-slate-800 border-slate-700 text-white hover:border-green-500/50 transition-all group overflow-hidden relative">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-green-500 to-emerald-500"></div>
-                        <CardHeader className="pb-2">
-                          <div className="flex justify-between items-start">
-                            <div className="p-2 bg-green-500/10 rounded-lg mb-3">
-                              <BookOpen className="h-6 w-6 text-green-400" />
+              {syllabi.filter(s =>
+                s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
+                (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
+              ).length === 0 ? (
+                <Card className="bg-slate-800 border-slate-700 text-white">
+                  <CardContent className="p-8 text-center text-slate-500">
+                    {syllabi.length === 0 ? "No syllabi uploaded yet. Upload one above." : "No syllabi match your search."}
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {syllabi
+                      .filter(s =>
+                        s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
+                        (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
+                      )
+                      .slice((syllabusPage - 1) * 20, syllabusPage * 20)
+                      .map(s => (
+                        <Card key={s.id} className="bg-slate-800 border-slate-700 text-white hover:border-green-500/50 transition-all group overflow-hidden relative">
+                          <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-green-500 to-emerald-500"></div>
+                          <CardHeader className="pb-2">
+                            <div className="flex justify-between items-start">
+                              <div className="p-2 bg-green-500/10 rounded-lg mb-3">
+                                <BookOpen className="h-6 w-6 text-green-400" />
+                              </div>
+                              <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-1 rounded-full border border-slate-700">
+                                {s.createdAt?.toDate().toLocaleDateString()}
+                              </span>
                             </div>
-                            <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-1 rounded-full border border-slate-700">
-                              {s.createdAt?.toDate().toLocaleDateString()}
-                            </span>
-                          </div>
-                          <CardTitle className="text-lg group-hover:text-green-400 transition-colors">{s.name}</CardTitle>
-                          <CardDescription className="text-slate-400 line-clamp-2">{Array.isArray(s.units) ? s.units.join(', ') : s.units}</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
-                            {s.driveLink && (
-                              <Button size="sm" variant="outline" className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white" onClick={() => window.open(s.driveLink, '_blank')}>
-                                View
+                            <CardTitle className="text-lg group-hover:text-green-400 transition-colors">{s.name}</CardTitle>
+                            <CardDescription className="text-slate-400 line-clamp-2">{Array.isArray(s.units) ? s.units.join(', ') : s.units}</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex gap-2 mt-4 pt-4 border-t border-slate-700/50">
+                              {s.driveLink && (
+                                <Button size="sm" variant="outline" className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white" onClick={() => window.open(s.driveLink, '_blank')}>
+                                  View
+                                </Button>
+                              )}
+                              <Button size="sm" variant="outline" className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white" onClick={() => {
+                                setEditingSyllabus(s);
+                                setSyllabusName(s.name);
+                                setSyllabusUnits(Array.isArray(s.units) ? s.units.join(', ') : s.units);
+                                setSyllabusLink(s.driveLink);
+                                setSelectedWorkspace(s.workspaceId);
+                                loadWorkspaceStudents(s.workspaceId);
+                                setSelectedStudents(s.students || []);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}>Edit</Button>
+                              <Button size="sm" variant="destructive" className="px-3" onClick={() => handleDeleteSyllabus(s.id)}>
+                                <Trash2 className="h-4 w-4" />
                               </Button>
-                            )}
-                            <Button size="sm" variant="outline" className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white" onClick={() => {
-                              setEditingSyllabus(s);
-                              setSyllabusName(s.name);
-                              setSyllabusUnits(Array.isArray(s.units) ? s.units.join(', ') : s.units);
-                              setSyllabusLink(s.driveLink);
-                              setSelectedWorkspace(s.workspaceId);
-                              loadWorkspaceStudents(s.workspaceId);
-                              setSelectedStudents(s.students || []);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}>Edit</Button>
-                            <Button size="sm" variant="destructive" className="px-3" onClick={() => handleDeleteSyllabus(s.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                </div>
-                {syllabi.filter(s => s.name.toLowerCase().includes(syllabusSearch.toLowerCase())).length > 20 && (
-                  <div className="flex items-center justify-center gap-2 mt-6">
-                    <Button variant="outline" size="sm" onClick={() => setSyllabusPage(p => Math.max(1, p - 1))} disabled={syllabusPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                    <span className="text-sm text-slate-400">Page {syllabusPage} of {Math.ceil(syllabi.filter(s => s.name.toLowerCase().includes(syllabusSearch.toLowerCase())).length / 20)}</span>
-                    <Button variant="outline" size="sm" onClick={() => setSyllabusPage(p => Math.min(Math.ceil(syllabi.filter(s => s.name.toLowerCase().includes(syllabusSearch.toLowerCase())).length / 20), p + 1))} disabled={syllabusPage === Math.ceil(syllabi.filter(s => s.name.toLowerCase().includes(syllabusSearch.toLowerCase())).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                   </div>
-                )}
-              </>
-            )}
+                  {syllabi.filter(s =>
+                    s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
+                    (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
+                  ).length > 20 && (
+                      <div className="flex items-center justify-center gap-2 mt-6">
+                        <Button variant="outline" size="sm" onClick={() => setSyllabusPage(p => Math.max(1, p - 1))} disabled={syllabusPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                        <span className="text-sm text-slate-400">Page {syllabusPage} of {Math.ceil(syllabi.filter(s =>
+                          s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
+                          (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
+                        ).length / 20)}</span>
+                        <Button variant="outline" size="sm" onClick={() => setSyllabusPage(p => Math.min(Math.ceil(syllabi.filter(s =>
+                          s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
+                          (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
+                        ).length / 20), p + 1))} disabled={syllabusPage === Math.ceil(syllabi.filter(s =>
+                          s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
+                          (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
+                        ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                      </div>
+                    )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* AI GENERATOR */}
       {activeSection === 'ai-generator' && <AITestGenerator />}
 
       {/* QUERIES */}
-      {activeSection === 'queries' && (
-        <div className="space-y-6">
-          <Card className="bg-slate-800 border-slate-700 text-white">
-            <CardHeader><CardTitle>Write your query</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <Textarea
-                className="bg-slate-900 border-slate-700 min-h-[100px]"
-                placeholder="Describe your doubt or issue in detail..."
-                value={newQuery}
-                onChange={e => setNewQuery(e.target.value)}
-              />
-              <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleSendQuery}>
-                <Send className="h-4 w-4 mr-2" /> Send Query
-              </Button>
-            </CardContent>
-          </Card>
+      {
+        activeSection === 'queries' && (
+          <div className="space-y-6">
+            <Card className="bg-slate-800 border-slate-700 text-white">
+              <CardHeader><CardTitle>Write your query</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <Textarea
+                  className="bg-slate-900 border-slate-700 min-h-[100px]"
+                  placeholder="Describe your doubt or issue in detail..."
+                  value={newQuery}
+                  onChange={e => setNewQuery(e.target.value)}
+                />
+                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleSendQuery}>
+                  <Send className="h-4 w-4 mr-2" /> Send Query
+                </Button>
+              </CardContent>
+            </Card>
 
-          <Card className="bg-slate-800 border-slate-700 text-white">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Your Queries</CardTitle>
-              <Button size="sm" variant="ghost" onClick={handleRefreshQueries}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-                  <Input
-                    placeholder="Search queries..."
-                    className="pl-8 bg-slate-900 border-slate-700"
-                    value={querySearch}
-                    onChange={(e) => setQuerySearch(e.target.value)}
-                  />
+            <Card className="bg-slate-800 border-slate-700 text-white">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Your Queries</CardTitle>
+                <Button size="sm" variant="ghost" onClick={handleRefreshQueries}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      placeholder="Search queries..."
+                      className="pl-8 bg-slate-900 border-slate-700"
+                      value={querySearch}
+                      onChange={(e) => setQuerySearch(e.target.value)}
+                    />
+                  </div>
                 </div>
-              </div>
-              {queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length === 0 ? <p className="text-slate-500">No queries found.</p> : (
-                <div className="space-y-4">
-                  {queries
-                    .filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase()))
-                    .slice((queryPage - 1) * 20, queryPage * 20)
-                    .map(q => (
-                      <div key={q.id} className="p-4 bg-slate-900 rounded-lg border border-slate-700">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs text-slate-500">{q.createdAt?.toDate().toLocaleString()}</span>
-                          <span className={`text-xs px-2 py-1 rounded-full ${q.status === 'solved' || q.status === 'answered' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                            {q.status}
-                          </span>
-                        </div>
-                        <h4 className="font-medium text-white mb-3">Your Query:</h4>
-                        <p className="text-slate-300 mb-4">{q.question || q.query}</p>
-
-                        {(q.answer || q.adminReply) && (
-                          <div className="bg-slate-800/50 p-3 rounded border border-slate-700">
-                            <h5 className="text-sm font-semibold text-blue-400 mb-1">Admin Reply:</h5>
-                            <p className="text-sm text-slate-300">{q.answer || q.adminReply}</p>
+                {queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length === 0 ? <p className="text-slate-500">No queries found.</p> : (
+                  <div className="space-y-4">
+                    {queries
+                      .filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase()))
+                      .slice((queryPage - 1) * 20, queryPage * 20)
+                      .map(q => (
+                        <div key={q.id} className="p-4 bg-slate-900 rounded-lg border border-slate-700">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-xs text-slate-500">{q.createdAt?.toDate().toLocaleString()}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${q.status === 'solved' || q.status === 'answered' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                              {q.status}
+                            </span>
                           </div>
-                        )}
+                          <h4 className="font-medium text-white mb-3">Your Query:</h4>
+                          <p className="text-slate-300 mb-4">{q.question || q.query}</p>
 
-                        {(q.status === 'solved' || q.status === 'answered') && (
-                          <div className="mt-2 flex items-center text-green-500 text-sm">
-                            <CheckSquare className="h-4 w-4 mr-2" /> Issue resolved
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              )}
-              {queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length > 20 && (
-                <div className="flex items-center justify-center gap-2 mt-6">
-                  <Button variant="outline" size="sm" onClick={() => setQueryPage(p => Math.max(1, p - 1))} disabled={queryPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                  <span className="text-sm text-slate-400">Page {queryPage} of {Math.ceil(queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length / 20)}</span>
-                  <Button variant="outline" size="sm" onClick={() => setQueryPage(p => Math.min(Math.ceil(queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length / 20), p + 1))} disabled={queryPage === Math.ceil(queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ASSIGNMENTS */}
-      {activeSection === 'assignments' && (
-        <div className="space-y-6">
-          <div className="flex items-end justify-between">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-2xl font-bold text-white">Assignment Reviews</h2>
-              <p className="text-slate-400">Review and grade student assignments. Control whether the submission portal is open for students.</p>
-            </div>
-            <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-700 mb-1">
-              <span className={`text-xs uppercase tracking-wider px-3 font-semibold ${portalStatus === 'closed' ? 'text-orange-500' : 'text-slate-500'}`}>Portal: {portalStatus}</span>
-              <Button
-                className={`h-8 px-3 text-xs font-medium ${portalStatus === 'open' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} transition-all border-0`}
-                onClick={() => portalStatus === 'closed' && togglePortal()}
-              >
-                Open
-              </Button>
-              <Button
-                className={`h-8 px-3 text-xs font-medium ${portalStatus === 'closed' ? 'bg-slate-700 text-slate-300' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} transition-all border-0`}
-                onClick={() => portalStatus === 'open' && togglePortal()}
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-
-          <Card className="bg-slate-800 border-slate-700 text-white">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between gap-4 overflow-x-auto p-1">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <Label className="whitespace-nowrap text-slate-400">From:</Label>
-                    <Input type="date" className="bg-slate-950 border-slate-700 w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label className="whitespace-nowrap text-slate-400">To:</Label>
-                    <Input type="date" className="bg-slate-950 border-slate-700 w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label className="whitespace-nowrap text-slate-400">Bulk Mark:</Label>
-                    <Select value={bulkMark} onValueChange={setBulkMark}>
-                      <SelectTrigger className="w-[70px] bg-slate-950 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="-" /></SelectTrigger>
-                      <SelectContent>
-                        {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label className="whitespace-nowrap text-slate-400">Search:</Label>
-                    <Input className="bg-slate-950 border-slate-700 w-64 text-slate-300 h-8" placeholder="Title / email" value={assignmentSearch} onChange={e => setAssignmentSearch(e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pl-2 border-l border-slate-700">
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap h-8 text-xs px-3" onClick={handleBulkAssign}>Assign Grade</Button>
-                  <Button variant="secondary" className="bg-white text-slate-900 hover:bg-slate-200 whitespace-nowrap h-8 text-xs px-3" onClick={handleAssignAndDelete}>Assign & Delete</Button>
-                  <Button variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700 whitespace-nowrap h-8 text-xs px-3" onClick={handleUndoDeleteAssignment} disabled={deletedAssignmentsBackup.length === 0}>Undo</Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="flex justify-end items-center gap-6">
-            <div className="flex items-center gap-2">
-              <Label className="whitespace-nowrap text-slate-400">Workspace:</Label>
-              <Select value={assignmentFilterWorkspace} onValueChange={setAssignmentFilterWorkspace}>
-                <SelectTrigger className="w-[150px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All Workspaces" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Workspaces</SelectItem>
-                  {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="whitespace-nowrap text-slate-400">Type:</Label>
-              <Select value={assignmentFilterType} onValueChange={(v: any) => setAssignmentFilterType(v)}>
-                <SelectTrigger className="w-[110px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="exam">Exam</SelectItem>
-                  <SelectItem value="assignment">Assignment</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                className="rounded border-slate-600 bg-slate-800"
-                checked={selectAllAssignments}
-                onChange={e => {
-                  setSelectAllAssignments(e.target.checked);
-                  if (e.target.checked) {
-                    // Select all currently visible
-                    const visible = assignments.filter(a => {
-                      const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-                        (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
-                      let matchesDate = true;
-                      if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                        matchesDate = matchesDate && date >= new Date(filterFrom);
-                      }
-                      if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                        const endDate = new Date(filterTo);
-                        endDate.setDate(endDate.getDate() + 1);
-                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                        matchesDate = matchesDate && date < endDate;
-                      }
-                      if (assignmentFilterType !== 'all') {
-                        const type = a.type || 'exam';
-                        if (type !== assignmentFilterType) return false;
-                      }
-                      if (assignmentFilterWorkspace !== 'all') {
-                        const ws = workspaces.find(w => w.id === assignmentFilterWorkspace);
-                        if (!ws || !ws.students || !ws.students.includes(a.studentEmail)) return false;
-                      }
-                      return matchesSearch && matchesDate;
-                    }).map(a => a.id);
-                    setSelectedAssignments(visible);
-                  } else {
-                    setSelectedAssignments([]);
-                  }
-                }}
-              />
-              <span className="text-sm text-slate-300">Select all displayed</span>
-            </div>
-          </div>
-
-          <Card className="bg-slate-800 border-slate-700 text-white">
-            <CardContent className="p-0">
-              {assignments.filter(a => {
-                const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-                  (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
-                let matchesDate = true;
-                if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                  const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                  matchesDate = matchesDate && date >= new Date(filterFrom);
-                }
-                if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                  const endDate = new Date(filterTo);
-                  endDate.setDate(endDate.getDate() + 1);
-                  const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                  matchesDate = matchesDate && date < endDate;
-                }
-                if (assignmentFilterType !== 'all') {
-                  const type = a.type || 'exam'; // Default to exam for backward compatibility
-                  if (type !== assignmentFilterType) return false;
-                }
-                if (assignmentFilterWorkspace !== 'all') {
-                  const ws = workspaces.find(w => w.id === assignmentFilterWorkspace);
-                  if (!ws || !ws.students || !ws.students.includes(a.studentEmail)) return false;
-                }
-                return matchesSearch && matchesDate;
-              }).length === 0 ? (
-                <div className="p-8 text-center text-slate-500">No assignments found matching filters.</div>
-              ) : (
-                <>
-                  <div className="divide-y divide-slate-700">
-                    {assignments.filter(a => {
-                      const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-                        (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
-                      if (assignmentFilterWorkspace !== 'all') {
-                        const ws = workspaces.find(w => w.id === assignmentFilterWorkspace);
-                        if (!ws || !ws.students || !ws.students.includes(a.studentEmail)) return false;
-                      }
-                      let matchesDate = true;
-                      if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                        matchesDate = matchesDate && date >= new Date(filterFrom);
-                      }
-                      if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                        const endDate = new Date(filterTo);
-                        endDate.setDate(endDate.getDate() + 1);
-                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                        matchesDate = matchesDate && date < endDate;
-                      }
-                      if (assignmentFilterType !== 'all') {
-                        const type = a.type || 'exam';
-                        if (type !== assignmentFilterType) return false;
-                      }
-                      return matchesSearch && matchesDate;
-                    })
-                      .slice((assignmentPage - 1) * 20, assignmentPage * 20)
-                      .map(a => (
-                        <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex items-center gap-4">
-                          <input
-                            type="checkbox"
-                            className="rounded border-slate-600 bg-slate-800"
-                            checked={selectedAssignments.includes(a.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) setSelectedAssignments([...selectedAssignments, a.id]);
-                              else setSelectedAssignments(selectedAssignments.filter(id => id !== a.id));
-                            }}
-                          />
-                          <div className="flex items-center gap-4 flex-1">
-                            <div className="p-3 bg-slate-700 rounded-lg">
-                              <FileText className="h-6 w-6 text-orange-400" />
+                          {(q.answer || q.adminReply) && (
+                            <div className="bg-slate-800/50 p-3 rounded border border-slate-700">
+                              <h5 className="text-sm font-semibold text-blue-400 mb-1">Admin Reply:</h5>
+                              <p className="text-sm text-slate-300">{q.answer || q.adminReply}</p>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-white truncate">{a.assignmentTitle || a.title || 'Untitled'} <span className="text-slate-400 font-normal text-sm">by {studentMap.get(a.studentEmail) || a.studentName || a.studentEmail}</span></h4>
-                              <div className="flex items-center gap-3 mt-1">
-                                <p className="text-xs text-slate-500">Submitted: {a.submittedAt?.toDate ? a.submittedAt.toDate().toLocaleString() : (a.createdAt?.toDate ? a.createdAt.toDate().toLocaleString() : 'N/A')}</p>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${a.status === 'graded' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                                  {a.status || 'pending'}
-                                </span>
-                              </div>
-                            </div>
+                          )}
 
-                            <div className="flex items-center gap-4">
-                              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => window.open(a.googleDriveLink || a.driveLink || a.url, '_blank')}>View PDF</Button>
-
-                              <div className="flex items-center gap-2 bg-slate-950 p-1 rounded border border-slate-700">
-                                <span className="text-xs text-slate-400 pl-2">Marks:</span>
-                                <Select onValueChange={(v) => handleUpdateMarks(a.id, Number(v))}>
-                                  <SelectTrigger className="w-[60px] h-7 bg-transparent border-0 focus:ring-0 text-white"><SelectValue placeholder={a.marks || '-'} /></SelectTrigger>
-                                  <SelectContent>
-                                    {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                                <Button size="sm" variant="secondary" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white border-0">Save</Button>
-                              </div>
+                          {(q.status === 'solved' || q.status === 'answered') && (
+                            <div className="mt-2 flex items-center text-green-500 text-sm">
+                              <CheckSquare className="h-4 w-4 mr-2" /> Issue resolved
                             </div>
-                          </div>
+                          )}
                         </div>
                       ))}
                   </div>
-                  {assignments.filter(a => {
-                    const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-                      (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
-                    let matchesDate = true;
-                    if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                      const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                      matchesDate = matchesDate && date >= new Date(filterFrom);
+                )}
+                {queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length > 20 && (
+                  <div className="flex items-center justify-center gap-2 mt-6">
+                    <Button variant="outline" size="sm" onClick={() => setQueryPage(p => Math.max(1, p - 1))} disabled={queryPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                    <span className="text-sm text-slate-400">Page {queryPage} of {Math.ceil(queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length / 20)}</span>
+                    <Button variant="outline" size="sm" onClick={() => setQueryPage(p => Math.min(Math.ceil(queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length / 20), p + 1))} disabled={queryPage === Math.ceil(queries.filter(q => q.userEmail === userEmail && (q.question || q.query || '').toLowerCase().includes(querySearch.toLowerCase())).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )
+      }
+
+      {/* ASSIGNMENTS */}
+      {
+        activeSection === 'assignments' && (
+          <div className="space-y-6">
+            <div className="flex items-end justify-between">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-2xl font-bold text-white">Assignment Reviews</h2>
+                <p className="text-slate-400">Review and grade student assignments. Control whether the submission portal is open for students.</p>
+              </div>
+              <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-700 mb-1">
+                <span className={`text-xs uppercase tracking-wider px-3 font-semibold ${portalStatus === 'closed' ? 'text-orange-500' : 'text-slate-500'}`}>Portal: {portalStatus}</span>
+                <Button
+                  className={`h-8 px-3 text-xs font-medium ${portalStatus === 'open' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} transition-all border-0`}
+                  onClick={() => portalStatus === 'closed' && togglePortal()}
+                >
+                  Open
+                </Button>
+                <Button
+                  className={`h-8 px-3 text-xs font-medium ${portalStatus === 'closed' ? 'bg-slate-700 text-slate-300' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} transition-all border-0`}
+                  onClick={() => portalStatus === 'open' && togglePortal()}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+
+            <Card className="bg-slate-800 border-slate-700 text-white">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-4 overflow-x-auto p-1">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Label className="whitespace-nowrap text-slate-400">From:</Label>
+                      <Input type="date" className="bg-slate-950 border-slate-700 w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="whitespace-nowrap text-slate-400">To:</Label>
+                      <Input type="date" className="bg-slate-950 border-slate-700 w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="whitespace-nowrap text-slate-400">Bulk Mark:</Label>
+                      <Select value={bulkMark} onValueChange={setBulkMark}>
+                        <SelectTrigger className="w-[70px] bg-slate-950 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="-" /></SelectTrigger>
+                        <SelectContent>
+                          {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="whitespace-nowrap text-slate-400">Search:</Label>
+                      <Input className="bg-slate-950 border-slate-700 w-64 text-slate-300 h-8" placeholder="Title / email" value={assignmentSearch} onChange={e => setAssignmentSearch(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pl-2 border-l border-slate-700">
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap h-8 text-xs px-3" onClick={handleBulkAssign}>Assign Grade</Button>
+                    <Button variant="secondary" className="bg-white text-slate-900 hover:bg-slate-200 whitespace-nowrap h-8 text-xs px-3" onClick={handleAssignAndDelete}>Assign & Delete</Button>
+                    <Button variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700 whitespace-nowrap h-8 text-xs px-3" onClick={handleUndoDeleteAssignment} disabled={deletedAssignmentsBackup.length === 0}>Undo</Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-end items-center gap-6">
+              <div className="flex items-center gap-2">
+                <Label className="whitespace-nowrap text-slate-400">Workspace:</Label>
+                <Select value={assignmentFilterWorkspace} onValueChange={setAssignmentFilterWorkspace}>
+                  <SelectTrigger className="w-[150px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All Workspaces" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Workspaces</SelectItem>
+                    {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="whitespace-nowrap text-slate-400">Type:</Label>
+                <Select value={assignmentFilterType} onValueChange={(v: any) => setAssignmentFilterType(v)}>
+                  <SelectTrigger className="w-[110px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="exam">Exam</SelectItem>
+                    <SelectItem value="assignment">Assignment</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="rounded border-slate-600 bg-slate-800"
+                  checked={selectAllAssignments}
+                  onChange={e => {
+                    setSelectAllAssignments(e.target.checked);
+                    if (e.target.checked) {
+                      // Select all currently visible
+                      const visible = assignments.filter(a => {
+                        const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+                          (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
+                        let matchesDate = true;
+                        if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                          const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                          matchesDate = matchesDate && date >= new Date(filterFrom);
+                        }
+                        if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                          const endDate = new Date(filterTo);
+                          endDate.setDate(endDate.getDate() + 1);
+                          const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                          matchesDate = matchesDate && date < endDate;
+                        }
+                        if (assignmentFilterType !== 'all') {
+                          const type = a.type || 'exam';
+                          if (type !== assignmentFilterType) return false;
+                        }
+                        if (assignmentFilterWorkspace !== 'all') {
+                          const ws = workspaces.find(w => w.id === assignmentFilterWorkspace);
+                          if (!ws || !ws.students || !ws.students.includes(a.studentEmail)) return false;
+                        }
+                        return matchesSearch && matchesDate;
+                      }).map(a => a.id);
+                      setSelectedAssignments(visible);
+                    } else {
+                      setSelectedAssignments([]);
                     }
-                    if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                      const endDate = new Date(filterTo);
-                      endDate.setDate(endDate.getDate() + 1);
-                      const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                      matchesDate = matchesDate && date < endDate;
-                    }
-                    if (assignmentFilterType !== 'all') {
-                      const type = a.type || 'exam';
-                      if (type !== assignmentFilterType) return false;
-                    }
-                    return matchesSearch && matchesDate;
-                  }).length > 20 && (
-                      <div className="flex items-center justify-center gap-2 mt-6 p-4 border-t border-slate-700">
-                        <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.max(1, p - 1))} disabled={assignmentPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                        <span className="text-sm text-slate-400">Page {assignmentPage}</span>
-                        <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => p + 1)} disabled={assignments.filter(a => {
-                          const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-                            (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
-                          let matchesDate = true;
-                          if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                            const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                            matchesDate = matchesDate && date >= new Date(filterFrom);
-                          }
-                          if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                            const endDate = new Date(filterTo);
-                            endDate.setDate(endDate.getDate() + 1);
-                            const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                            matchesDate = matchesDate && date < endDate;
-                          }
-                          if (assignmentFilterType !== 'all') {
-                            const type = a.type || 'exam';
-                            if (type !== assignmentFilterType) return false;
-                          }
-                          return matchesSearch && matchesDate;
-                        }).length <= assignmentPage * 20} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                      </div>
-                    )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )
+                  }}
+                />
+                <span className="text-sm text-slate-300">Select all displayed</span>
+              </div>
+            </div>
+
+            <Card className="bg-slate-800 border-slate-700 text-white">
+              <CardContent className="p-0">
+                {assignments.filter(a => {
+                  const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+                    (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
+                  let matchesDate = true;
+                  if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                    const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                    matchesDate = matchesDate && date >= new Date(filterFrom);
+                  }
+                  if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                    const endDate = new Date(filterTo);
+                    endDate.setDate(endDate.getDate() + 1);
+                    const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                    matchesDate = matchesDate && date < endDate;
+                  }
+                  if (assignmentFilterType !== 'all') {
+                    const type = a.type || 'exam'; // Default to exam for backward compatibility
+                    if (type !== assignmentFilterType) return false;
+                  }
+                  if (assignmentFilterWorkspace !== 'all') {
+                    const ws = workspaces.find(w => w.id === assignmentFilterWorkspace);
+                    if (!ws || !ws.students || !ws.students.includes(a.studentEmail)) return false;
+                  }
+                  return matchesSearch && matchesDate;
+                }).length === 0 ? (
+                  <div className="p-8 text-center text-slate-500">No assignments found matching filters.</div>
+                ) : (
+                  <>
+                    <div className="divide-y divide-slate-700">
+                      {assignments.filter(a => {
+                        const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+                          (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
+                        if (assignmentFilterWorkspace !== 'all') {
+                          const ws = workspaces.find(w => w.id === assignmentFilterWorkspace);
+                          if (!ws || !ws.students || !ws.students.includes(a.studentEmail)) return false;
+                        }
+                        let matchesDate = true;
+                        if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                          const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                          matchesDate = matchesDate && date >= new Date(filterFrom);
+                        }
+                        if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                          const endDate = new Date(filterTo);
+                          endDate.setDate(endDate.getDate() + 1);
+                          const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                          matchesDate = matchesDate && date < endDate;
+                        }
+                        if (assignmentFilterType !== 'all') {
+                          const type = a.type || 'exam';
+                          if (type !== assignmentFilterType) return false;
+                        }
+                        return matchesSearch && matchesDate;
+                      })
+                        .slice((assignmentPage - 1) * 20, assignmentPage * 20)
+                        .map(a => (
+                          <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex items-center gap-4">
+                            <input
+                              type="checkbox"
+                              className="rounded border-slate-600 bg-slate-800"
+                              checked={selectedAssignments.includes(a.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedAssignments([...selectedAssignments, a.id]);
+                                else setSelectedAssignments(selectedAssignments.filter(id => id !== a.id));
+                              }}
+                            />
+                            <div className="flex items-center gap-4 flex-1">
+                              <div className="p-3 bg-slate-700 rounded-lg">
+                                <FileText className="h-6 w-6 text-orange-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-white truncate">{a.assignmentTitle || a.title || 'Untitled'} <span className="text-slate-400 font-normal text-sm">by {studentMap.get(a.studentEmail) || a.studentName || a.studentEmail}</span></h4>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <p className="text-xs text-slate-500">Submitted: {a.submittedAt?.toDate ? a.submittedAt.toDate().toLocaleString() : (a.createdAt?.toDate ? a.createdAt.toDate().toLocaleString() : 'N/A')}</p>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${a.status === 'graded' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                                    {a.status || 'pending'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-4">
+                                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => window.open(a.googleDriveLink || a.driveLink || a.url, '_blank')}>View PDF</Button>
+
+                                <div className="flex items-center gap-2 bg-slate-950 p-1 rounded border border-slate-700">
+                                  <span className="text-xs text-slate-400 pl-2">Marks:</span>
+                                  <Select onValueChange={(v) => handleUpdateMarks(a.id, Number(v))}>
+                                    <SelectTrigger className="w-[60px] h-7 bg-transparent border-0 focus:ring-0 text-white"><SelectValue placeholder={a.marks || '-'} /></SelectTrigger>
+                                    <SelectContent>
+                                      {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                  <Button size="sm" variant="secondary" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white border-0">Save</Button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                    {assignments.filter(a => {
+                      const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+                        (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
+                      let matchesDate = true;
+                      if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                        matchesDate = matchesDate && date >= new Date(filterFrom);
+                      }
+                      if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                        const endDate = new Date(filterTo);
+                        endDate.setDate(endDate.getDate() + 1);
+                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                        matchesDate = matchesDate && date < endDate;
+                      }
+                      if (assignmentFilterType !== 'all') {
+                        const type = a.type || 'exam';
+                        if (type !== assignmentFilterType) return false;
+                      }
+                      return matchesSearch && matchesDate;
+                    }).length > 20 && (
+                        <div className="flex items-center justify-center gap-2 mt-6 p-4 border-t border-slate-700">
+                          <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.max(1, p - 1))} disabled={assignmentPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                          <span className="text-sm text-slate-400">Page {assignmentPage}</span>
+                          <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => p + 1)} disabled={assignments.filter(a => {
+                            const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
+                              (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
+                            let matchesDate = true;
+                            if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                              const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                              matchesDate = matchesDate && date >= new Date(filterFrom);
+                            }
+                            if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
+                              const endDate = new Date(filterTo);
+                              endDate.setDate(endDate.getDate() + 1);
+                              const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
+                              matchesDate = matchesDate && date < endDate;
+                            }
+                            if (assignmentFilterType !== 'all') {
+                              const type = a.type || 'exam';
+                              if (type !== assignmentFilterType) return false;
+                            }
+                            return matchesSearch && matchesDate;
+                          }).length <= assignmentPage * 20} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                        </div>
+                      )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )
       }
 
       {/* VIEW MARKS */}
@@ -3463,525 +3641,658 @@ const TeacherDashboard = () => {
                         </table>
                       </div>
                     </div>
-                    {workspaces.find(w => w.id === viewAttendanceWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(attendanceSearch.toLowerCase())).length > 20 && (
-                      <div className="flex items-center justify-center gap-2 mt-6">
-                        <Button variant="outline" size="sm" onClick={() => setAttendancePage(p => Math.max(1, p - 1))} disabled={attendancePage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                        <span className="text-sm text-slate-400">Page {attendancePage}</span>
-                        <Button variant="outline" size="sm" onClick={() => setAttendancePage(p => p + 1)} disabled={attendancePage * 20 >= (workspaces.find(w => w.id === viewAttendanceWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(attendanceSearch.toLowerCase())).length || 0)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                      </div>
-                    )}
+                    {
+                      workspaces.find(w => w.id === viewAttendanceWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(attendanceSearch.toLowerCase())).length > 20 && (
+                        <div className="flex items-center justify-center gap-2 mt-6">
+                          <Button variant="outline" size="sm" onClick={() => setAttendancePage(p => Math.max(1, p - 1))} disabled={attendancePage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                          <span className="text-sm text-slate-400">Page {attendancePage}</span>
+                          <Button variant="outline" size="sm" onClick={() => setAttendancePage(p => p + 1)} disabled={attendancePage * 20 >= (workspaces.find(w => w.id === viewAttendanceWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(attendanceSearch.toLowerCase())).length || 0)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                        </div>
+                      )
+                    }
                   </>
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </CardContent >
+            </Card >
+          </div >
         )
       }
 
       {/* ASSIGN MARKS */}
-      {activeSection === 'assign-marks' && (
-        <div className="space-y-6 min-h-screen">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-2xl font-bold text-white">Assign Marks</h2>
-            <p className="text-slate-400">Upload student marks via CSV.</p>
-          </div>
+      {
+        activeSection === 'assign-marks' && (
+          <div className="space-y-6 min-h-screen">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-2xl font-bold text-white">Assign Marks</h2>
+              <p className="text-slate-400">Upload student marks via CSV.</p>
+            </div>
 
-          <Card className="bg-slate-800 border-slate-700 text-white">
-            <CardHeader>
-              <CardTitle>Upload Marks</CardTitle>
-              <CardDescription className="text-slate-400">
-                Select a workspace to generate a template, then upload the filled CSV with columns: <code>email, marks</code>
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Select Workspace (for template)</Label>
-                <Select value={assignMarksWorkspace} onValueChange={setAssignMarksWorkspace}>
-                  <SelectTrigger className="bg-slate-900 border-slate-700">
-                    <SelectValue placeholder="Select Workspace" />
+            <Card className="bg-slate-800 border-slate-700 text-white">
+              <CardHeader>
+                <CardTitle>Upload Marks</CardTitle>
+                <CardDescription className="text-slate-400">
+                  Select a workspace to generate a template, then upload the filled CSV with columns: <code>email, marks</code>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Select Workspace (for template)</Label>
+                  <Select value={assignMarksWorkspace} onValueChange={setAssignMarksWorkspace}>
+                    <SelectTrigger className="bg-slate-900 border-slate-700">
+                      <SelectValue placeholder="Select Workspace" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workspaces.map(ws => (
+                        <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Subject Name</Label>
+                  <Input
+                    className="bg-slate-900 border-slate-700"
+                    placeholder="e.g. Mathematics"
+                    value={assignMarksSubject}
+                    onChange={(e) => setAssignMarksSubject(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Section Title</Label>
+                  <Input
+                    className="bg-slate-900 border-slate-700"
+                    placeholder="e.g. Unit Test 1, Section A"
+                    value={assignMarksSectionTitle}
+                    onChange={(e) => setAssignMarksSectionTitle(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label>Upload CSV</Label>
+                    <Button variant="link" size="sm" onClick={handleDownloadSampleCsv} className="text-blue-400 h-auto p-0">
+                      {assignMarksWorkspace ? 'Download Class Template' : 'Download Sample CSV'}
+                    </Button>
+                  </div>
+                  <Input
+                    type="file"
+                    accept=".csv"
+                    className="bg-slate-900 border-slate-700"
+                    onChange={handleMarksCsvUpload}
+                  />
+                </div>
+
+                {assignMarksData.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-semibold">Preview ({assignMarksData.length} records)</h3>
+                      <Button onClick={handlePublishMarks} className="bg-green-600 hover:bg-green-700 text-white">
+                        Publish Marks
+                      </Button>
+                    </div>
+
+                    <div className="border border-slate-700 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-900 text-slate-400">
+                          <tr>
+                            <th className="p-3">Email</th>
+                            <th className="p-3">Subject</th>
+                            <th className="p-3">Marks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700 bg-slate-800/50">
+                          {assignMarksData
+                            .slice((assignMarksPage - 1) * 10, assignMarksPage * 10)
+                            .map((item, idx) => (
+                              <tr key={idx} className="hover:bg-slate-700/50">
+                                <td className="p-3">{item.email}</td>
+                                <td className="p-3">{assignMarksSubject || '-'}</td>
+                                <td className="p-3 font-mono">{item.marks}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {assignMarksData.length > 10 && (
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <Button variant="outline" size="sm" onClick={() => setAssignMarksPage(p => Math.max(1, p - 1))} disabled={assignMarksPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                        <span className="text-sm text-slate-400">Page {assignMarksPage} of {Math.ceil(assignMarksData.length / 10)}</span>
+                        <Button variant="outline" size="sm" onClick={() => setAssignMarksPage(p => Math.min(Math.ceil(assignMarksData.length / 10), p + 1))} disabled={assignMarksPage === Math.ceil(assignMarksData.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Published Batches History */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white">Published History</h3>
+                {markBatches.length > 0 && (
+                  <Button variant="destructive" size="sm" onClick={handleDeleteAllBatches}>
+                    Delete All
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search history..."
+                    className="pl-8 bg-slate-900 border-slate-700"
+                    value={marksHistorySearch}
+                    onChange={(e) => setMarksHistorySearch(e.target.value)}
+                  />
+                </div>
+                <Select value={marksHistoryFilterWorkspace} onValueChange={setMarksHistoryFilterWorkspace}>
+                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                    <SelectValue placeholder="All Workspaces" />
                   </SelectTrigger>
                   <SelectContent>
-                    {workspaces.map(ws => (
-                      <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
-                    ))}
+                    <SelectItem value="all">All Workspaces</SelectItem>
+                    {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Subject Name</Label>
-                <Input
-                  className="bg-slate-900 border-slate-700"
-                  placeholder="e.g. Mathematics"
-                  value={assignMarksSubject}
-                  onChange={(e) => setAssignMarksSubject(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Section Title</Label>
-                <Input
-                  className="bg-slate-900 border-slate-700"
-                  placeholder="e.g. Unit Test 1, Section A"
-                  value={assignMarksSectionTitle}
-                  onChange={(e) => setAssignMarksSectionTitle(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label>Upload CSV</Label>
-                  <Button variant="link" size="sm" onClick={handleDownloadSampleCsv} className="text-blue-400 h-auto p-0">
-                    {assignMarksWorkspace ? 'Download Class Template' : 'Download Sample CSV'}
+              {markBatches.length === 0 ? (
+                <p className="text-slate-500">No published marks yet.</p>
+              ) : (
+                <div className="grid gap-4">
+                  {markBatches
+                    .filter(batch =>
+                      (batch.sectionTitle?.toLowerCase().includes(marksHistorySearch.toLowerCase()) || batch.subject?.toLowerCase().includes(marksHistorySearch.toLowerCase())) &&
+                      (marksHistoryFilterWorkspace === 'all' || batch.workspaceId === marksHistoryFilterWorkspace)
+                    )
+                    .map(batch => (
+                      <Card key={batch.id} className={`bg-slate-800 border-slate-700 ${batch.status === 'deleted' ? 'opacity-50' : ''}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-semibold text-white text-lg">{batch.sectionTitle}</h4>
+                              <p className="text-sm text-slate-400">
+                                {batch.subject} • {batch.createdAt?.toDate?.().toLocaleDateString()} • {batch.count} students
+                                {batch.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button variant="outline" size="sm" onClick={() => handleViewBatchMarks(batch.id)} className={`border-blue-500 text-blue-500 hover:bg-blue-500/10 ${viewingBatchId === batch.id ? 'bg-blue-500/20' : ''}`}>
+                                <Eye className="h-4 w-4 mr-2" /> {viewingBatchId === batch.id ? 'Hide Marks' : 'View Marks'}
+                              </Button>
+                              {batch.status === 'active' ? (
+                                <Button variant="destructive" size="sm" onClick={() => handleDeleteBatch(batch.id)}>
+                                  <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                </Button>
+                              ) : (
+                                <Button variant="outline" size="sm" onClick={() => handleUndoBatch(batch.id)} className="border-green-500 text-green-500 hover:bg-green-500/10">
+                                  <RefreshCw className="h-4 w-4 mr-2" /> Undo
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {viewingBatchId === batch.id && (
+                            <div className="mt-4 border-t border-slate-700 pt-4">
+                              <div className="rounded-lg overflow-hidden border border-slate-700">
+                                <table className="w-full text-sm text-left">
+                                  <thead className="bg-slate-900 text-slate-400">
+                                    <tr>
+                                      <th className="p-3">Email</th>
+                                      <th className="p-3">Marks</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-700 bg-slate-800/50">
+                                    {viewingBatchMarks
+                                      .slice((viewingBatchPage - 1) * 10, viewingBatchPage * 10)
+                                      .map((mark, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-700/50">
+                                          <td className="p-3">{mark.studentEmail}</td>
+                                          <td className="p-3 font-mono">{mark.marks}</td>
+                                        </tr>
+                                      ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {viewingBatchMarks.length > 10 && (
+                                <div className="flex items-center justify-center gap-2 mt-4">
+                                  <Button variant="outline" size="sm" onClick={() => setViewingBatchPage(p => Math.max(1, p - 1))} disabled={viewingBatchPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                                  <span className="text-sm text-slate-400">Page {viewingBatchPage} of {Math.ceil(viewingBatchMarks.length / 10)}</span>
+                                  <Button variant="outline" size="sm" onClick={() => setViewingBatchPage(p => Math.min(Math.ceil(viewingBatchMarks.length / 10), p + 1))} disabled={viewingBatchPage === Math.ceil(viewingBatchMarks.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {/* UNOM Section */}
+      {
+        activeSection === 'unom' && (
+          <div className="flex flex-col gap-6 flex-1 pb-10">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-2xl font-bold text-white">UNOM Report</h2>
+              <p className="text-slate-400">Generate comprehensive mark reports.</p>
+            </div>
+
+            <Card className="bg-slate-800 border-2 border-slate-700 text-white">
+              <CardHeader>
+                <CardTitle>Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Subjects */}
+                {/* Title */}
+                <div className="space-y-2">
+                  <Label>Title</Label>
+                  <Input
+                    className="bg-slate-900 border-slate-700"
+                    placeholder="e.g. Semester 1 Final Report"
+                    value={unomTitle}
+                    onChange={(e) => setUnomTitle(e.target.value)}
+                  />
+                </div>
+
+                {/* Subjects */}
+                <div className="space-y-4">
+                  <Label>Subject Codes / Names</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {unomSubjects.map((subject, index) => (
+                      <div key={index} className="flex gap-2">
+                        <Input
+                          className="bg-slate-900 border-slate-700"
+                          placeholder={`Subject ${index + 1}`}
+                          value={subject}
+                          onChange={(e) => handleUnomSubjectChange(index, e.target.value)}
+                        />
+                        {index >= 4 && (
+                          <Button variant="destructive" size="icon" onClick={() => handleRemoveSubject(index)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button variant="outline" onClick={handleAddSubject} className="border-slate-600 text-slate-300 hover:bg-slate-700">
+                    <PlusCircle className="h-4 w-4 mr-2" /> Add More Subject
                   </Button>
                 </div>
-                <Input
-                  type="file"
-                  accept=".csv"
-                  className="bg-slate-900 border-slate-700"
-                  onChange={handleMarksCsvUpload}
-                />
-              </div>
 
-              {assignMarksData.length > 0 && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-semibold">Preview ({assignMarksData.length} records)</h3>
-                    <Button onClick={handlePublishMarks} className="bg-green-600 hover:bg-green-700 text-white">
-                      Publish Marks
-                    </Button>
-                  </div>
 
-                  <div className="border border-slate-700 rounded-lg overflow-hidden">
+
+                {/* Workspace & Actions */}
+                <div className="space-y-2">
+                  <Label>Select Workspace</Label>
+                  <Select value={unomWorkspace} onValueChange={setUnomWorkspace}>
+                    <SelectTrigger className="bg-slate-900 border-slate-700">
+                      <SelectValue placeholder="-- Select workspace --" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workspaces.map(ws => (
+                        <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {unomWorkspace && (() => {
+                  const ws = workspaces.find(w => w.id === unomWorkspace);
+                  const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+
+                  if (!isAuthorized) {
+                    return (
+                      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5" />
+                        <span>Access Restricted: You must be the Class Teacher or Mentor to create UNOM reports for this workspace.</span>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
+
+                <div className="flex gap-4 pt-4">
+                  <Button
+                    onClick={handleCreateUnom}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={!unomWorkspace || (() => {
+                      const ws = workspaces.find(w => w.id === unomWorkspace);
+                      return !(ws && (ws.classTeacher === userEmail || ws.mentor === userEmail));
+                    })()}
+                  >
+                    <PlusCircle className="h-4 w-4 mr-2" /> Generate Template
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Preview Table */}
+            {unomData.length > 0 && (
+              <Card className="bg-slate-800 border-slate-700 text-white">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle>Enter Marks</CardTitle>
+                  <Button onClick={handleSaveUnomReport} className="bg-green-600 hover:bg-green-700 text-white">
+                    <CheckCircle className="h-4 w-4 mr-2" /> Save Report
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-slate-900 text-slate-400">
                         <tr>
-                          <th className="p-3">Email</th>
-                          <th className="p-3">Subject</th>
-                          <th className="p-3">Marks</th>
+                          <th className="p-3 whitespace-nowrap">Email</th>
+                          {unomSubjects.filter(s => s.trim() !== '').map((sub, i) => (
+                            <th key={i} className="p-3 whitespace-nowrap">{sub}</th>
+                          ))}
+                          <th className="p-3 whitespace-nowrap">Total</th>
+                          <th className="p-3 whitespace-nowrap">Percentage</th>
+                          <th className="p-3 whitespace-nowrap">Rank</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-700 bg-slate-800/50">
-                        {assignMarksData
-                          .slice((assignMarksPage - 1) * 10, assignMarksPage * 10)
-                          .map((item, idx) => (
+                        {unomData
+                          .slice((unomPage - 1) * 10, unomPage * 10)
+                          .map((row, idx) => (
                             <tr key={idx} className="hover:bg-slate-700/50">
-                              <td className="p-3">{item.email}</td>
-                              <td className="p-3">{assignMarksSubject || '-'}</td>
-                              <td className="p-3 font-mono">{item.marks}</td>
+                              <td className="p-3">{row.email}</td>
+                              {unomSubjects.filter(s => s.trim() !== '').map((sub, i) => (
+                                <td key={i} className="p-3">
+                                  <Input
+                                    className="h-8 w-20 bg-slate-900 border-slate-700 text-center"
+                                    value={row[sub] ?? ''}
+                                    onChange={(e) => handleUnomMarkChange(row.email, sub, e.target.value)}
+                                  />
+                                </td>
+                              ))}
+                              <td className="p-3 font-mono font-bold">{row.total}</td>
+                              <td className="p-3 font-mono">{row.percentage.toFixed(2)}%</td>
+                              <td className="p-3 font-mono">-</td>
                             </tr>
                           ))}
                       </tbody>
                     </table>
                   </div>
 
-                  {assignMarksData.length > 10 && (
+                  {unomData.length > 10 && (
                     <div className="flex items-center justify-center gap-2 mt-4">
-                      <Button variant="outline" size="sm" onClick={() => setAssignMarksPage(p => Math.max(1, p - 1))} disabled={assignMarksPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                      <span className="text-sm text-slate-400">Page {assignMarksPage} of {Math.ceil(assignMarksData.length / 10)}</span>
-                      <Button variant="outline" size="sm" onClick={() => setAssignMarksPage(p => Math.min(Math.ceil(assignMarksData.length / 10), p + 1))} disabled={assignMarksPage === Math.ceil(assignMarksData.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                      <Button variant="outline" size="sm" onClick={() => setUnomPage(p => Math.max(1, p - 1))} disabled={unomPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                      <span className="text-sm text-slate-400">Page {unomPage} of {Math.ceil(unomData.length / 10)}</span>
+                      <Button variant="outline" size="sm" onClick={() => setUnomPage(p => Math.min(Math.ceil(unomData.length / 10), p + 1))} disabled={unomPage === Math.ceil(unomData.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                     </div>
                   )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Published Batches History */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">Published History</h3>
-              {markBatches.length > 0 && (
-                <Button variant="destructive" size="sm" onClick={handleDeleteAllBatches}>
-                  Delete All
-                </Button>
-              )}
-            </div>
-            {markBatches.length === 0 ? (
-              <p className="text-slate-500">No published marks yet.</p>
-            ) : (
-              <div className="grid gap-4">
-                {markBatches.map(batch => (
-                  <Card key={batch.id} className={`bg-slate-800 border-slate-700 ${batch.status === 'deleted' ? 'opacity-50' : ''}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-semibold text-white text-lg">{batch.sectionTitle}</h4>
-                          <p className="text-sm text-slate-400">
-                            {batch.subject} • {batch.createdAt?.toDate?.().toLocaleDateString()} • {batch.count} students
-                            {batch.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => handleViewBatchMarks(batch.id)} className={`border-blue-500 text-blue-500 hover:bg-blue-500/10 ${viewingBatchId === batch.id ? 'bg-blue-500/20' : ''}`}>
-                            <Eye className="h-4 w-4 mr-2" /> {viewingBatchId === batch.id ? 'Hide Marks' : 'View Marks'}
-                          </Button>
-                          {batch.status === 'active' ? (
-                            <Button variant="destructive" size="sm" onClick={() => handleDeleteBatch(batch.id)}>
-                              <Trash2 className="h-4 w-4 mr-2" /> Delete
-                            </Button>
-                          ) : (
-                            <Button variant="outline" size="sm" onClick={() => handleUndoBatch(batch.id)} className="border-green-500 text-green-500 hover:bg-green-500/10">
-                              <RefreshCw className="h-4 w-4 mr-2" /> Undo
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      {viewingBatchId === batch.id && (
-                        <div className="mt-4 border-t border-slate-700 pt-4">
-                          <div className="rounded-lg overflow-hidden border border-slate-700">
-                            <table className="w-full text-sm text-left">
-                              <thead className="bg-slate-900 text-slate-400">
-                                <tr>
-                                  <th className="p-3">Email</th>
-                                  <th className="p-3">Marks</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-700 bg-slate-800/50">
-                                {viewingBatchMarks
-                                  .slice((viewingBatchPage - 1) * 10, viewingBatchPage * 10)
-                                  .map((mark, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-700/50">
-                                      <td className="p-3">{mark.studentEmail}</td>
-                                      <td className="p-3 font-mono">{mark.marks}</td>
-                                    </tr>
-                                  ))}
-                              </tbody>
-                            </table>
-                          </div>
-
-                          {viewingBatchMarks.length > 10 && (
-                            <div className="flex items-center justify-center gap-2 mt-4">
-                              <Button variant="outline" size="sm" onClick={() => setViewingBatchPage(p => Math.max(1, p - 1))} disabled={viewingBatchPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                              <span className="text-sm text-slate-400">Page {viewingBatchPage} of {Math.ceil(viewingBatchMarks.length / 10)}</span>
-                              <Button variant="outline" size="sm" onClick={() => setViewingBatchPage(p => Math.min(Math.ceil(viewingBatchMarks.length / 10), p + 1))} disabled={viewingBatchPage === Math.ceil(viewingBatchMarks.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                </CardContent>
+              </Card>
             )}
-          </div>
-        </div>
-      )}
 
-      {/* UNOM Section */}
-      {activeSection === 'unom' && (
-        <div className="flex flex-col gap-6 flex-1 pb-10">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-2xl font-bold text-white">UNOM Report</h2>
-            <p className="text-slate-400">Generate comprehensive mark reports.</p>
-          </div>
-
-          <Card className="bg-slate-800 border-2 border-slate-700 text-white">
-            <CardHeader>
-              <CardTitle>Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Subjects */}
-              {/* Title */}
-              <div className="space-y-2">
-                <Label>Title</Label>
-                <Input
-                  className="bg-slate-900 border-slate-700"
-                  placeholder="e.g. Semester 1 Final Report"
-                  value={unomTitle}
-                  onChange={(e) => setUnomTitle(e.target.value)}
-                />
+            {/* Published History */}
+            <div className="space-y-4 flex-1">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white">Published History</h3>
+                {unomReports.length > 0 && workspaces.some(w => w.classTeacher === userEmail || w.mentor === userEmail) && (
+                  <Button variant="destructive" size="sm" onClick={handleDeleteAllUnom}>
+                    Delete All
+                  </Button>
+                )}
               </div>
-
-              {/* Subjects */}
-              <div className="space-y-4">
-                <Label>Subject Codes / Names</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {unomSubjects.map((subject, index) => (
-                    <div key={index} className="flex gap-2">
-                      <Input
-                        className="bg-slate-900 border-slate-700"
-                        placeholder={`Subject ${index + 1}`}
-                        value={subject}
-                        onChange={(e) => handleUnomSubjectChange(index, e.target.value)}
-                      />
-                      {index >= 4 && (
-                        <Button variant="destructive" size="icon" onClick={() => handleRemoveSubject(index)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
+              <div className="flex items-center gap-2 mb-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search history..."
+                    className="pl-8 bg-slate-900 border-slate-700"
+                    value={unomHistorySearch}
+                    onChange={(e) => setUnomHistorySearch(e.target.value)}
+                  />
                 </div>
-                <Button variant="outline" onClick={handleAddSubject} className="border-slate-600 text-slate-300 hover:bg-slate-700">
-                  <PlusCircle className="h-4 w-4 mr-2" /> Add More Subject
-                </Button>
-              </div>
-
-
-
-              {/* Workspace & Actions */}
-              <div className="space-y-2">
-                <Label>Select Workspace</Label>
-                <Select value={unomWorkspace} onValueChange={setUnomWorkspace}>
-                  <SelectTrigger className="bg-slate-900 border-slate-700">
-                    <SelectValue placeholder="-- Select workspace --" />
+                <Select value={unomHistoryFilterWorkspace} onValueChange={setUnomHistoryFilterWorkspace}>
+                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                    <SelectValue placeholder="All Workspaces" />
                   </SelectTrigger>
                   <SelectContent>
-                    {workspaces.map(ws => (
-                      <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
-                    ))}
+                    <SelectItem value="all">All Workspaces</SelectItem>
+                    {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-
-              <div className="flex gap-4 pt-4">
-                <Button onClick={handleCreateUnom} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  <PlusCircle className="h-4 w-4 mr-2" /> Generate Template
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Preview Table */}
-          {unomData.length > 0 && (
-            <Card className="bg-slate-800 border-slate-700 text-white">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Enter Marks</CardTitle>
-                <Button onClick={handleSaveUnomReport} className="bg-green-600 hover:bg-green-700 text-white">
-                  <CheckCircle className="h-4 w-4 mr-2" /> Save Report
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-900 text-slate-400">
-                      <tr>
-                        <th className="p-3 whitespace-nowrap">Email</th>
-                        {unomSubjects.filter(s => s.trim() !== '').map((sub, i) => (
-                          <th key={i} className="p-3 whitespace-nowrap">{sub}</th>
-                        ))}
-                        <th className="p-3 whitespace-nowrap">Total</th>
-                        <th className="p-3 whitespace-nowrap">Percentage</th>
-                        <th className="p-3 whitespace-nowrap">Rank</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700 bg-slate-800/50">
-                      {unomData
-                        .slice((unomPage - 1) * 10, unomPage * 10)
-                        .map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-700/50">
-                            <td className="p-3">{row.email}</td>
-                            {unomSubjects.filter(s => s.trim() !== '').map((sub, i) => (
-                              <td key={i} className="p-3">
-                                <Input
-                                  className="h-8 w-20 bg-slate-900 border-slate-700 text-center"
-                                  value={row[sub] ?? ''}
-                                  onChange={(e) => handleUnomMarkChange(row.email, sub, e.target.value)}
-                                />
-                              </td>
-                            ))}
-                            <td className="p-3 font-mono font-bold">{row.total}</td>
-                            <td className="p-3 font-mono">{row.percentage.toFixed(2)}%</td>
-                            <td className="p-3 font-mono">-</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {unomData.length > 10 && (
-                  <div className="flex items-center justify-center gap-2 mt-4">
-                    <Button variant="outline" size="sm" onClick={() => setUnomPage(p => Math.max(1, p - 1))} disabled={unomPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                    <span className="text-sm text-slate-400">Page {unomPage} of {Math.ceil(unomData.length / 10)}</span>
-                    <Button variant="outline" size="sm" onClick={() => setUnomPage(p => Math.min(Math.ceil(unomData.length / 10), p + 1))} disabled={unomPage === Math.ceil(unomData.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Published History */}
-          <div className="space-y-4 flex-1">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">Published History</h3>
-              {unomReports.length > 0 && (
-                <Button variant="destructive" size="sm" onClick={handleDeleteAllUnom}>
-                  Delete All
-                </Button>
-              )}
-            </div>
-            {unomReports.length === 0 ? (
-              <p className="text-slate-500">No published reports yet.</p>
-            ) : (
-              <div className="grid gap-4">
-                {unomReports.map(report => (
-                  <Card key={report.id} className={`bg-slate-800 border-slate-700 ${report.status === 'deleted' ? 'opacity-50' : ''}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-semibold text-white text-lg">{report.title}</h4>
-                          <p className="text-sm text-slate-400">
-                            {report.createdAt?.toDate?.().toLocaleDateString()} • {report.data?.length || 0} students
-                            {report.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
-                          </p>
-                        </div>
-                        <div className="flex gap-2 items-center">
-                          {viewingUnomId === report.id && (
-                            <div className="relative w-40">
-                              <Search className="absolute left-2 top-2.5 h-3 w-3 text-slate-400" />
-                              <Input
-                                placeholder="Search..."
-                                className="pl-7 bg-slate-900 border-slate-600 h-8 text-xs"
-                                value={unomSearch}
-                                onChange={(e) => setUnomSearch(e.target.value)}
-                              />
+              {unomReports.length === 0 ? (
+                <p className="text-slate-500">No published reports yet.</p>
+              ) : (
+                <div className="grid gap-4">
+                  {unomReports
+                    .filter(report =>
+                      (report.title?.toLowerCase().includes(unomHistorySearch.toLowerCase())) &&
+                      (unomHistoryFilterWorkspace === 'all' || report.workspaceId === unomHistoryFilterWorkspace)
+                    )
+                    .map(report => (
+                      <Card key={report.id} className={`bg-slate-800 border-slate-700 ${report.status === 'deleted' ? 'opacity-50' : ''}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-semibold text-white text-lg">{report.title}</h4>
+                              <p className="text-sm text-slate-400">
+                                {report.createdAt?.toDate?.().toLocaleDateString()} • {report.data?.length || 0} students
+                                {report.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
+                              </p>
                             </div>
-                          )}
-                          <Button variant="outline" size="sm" onClick={() => handleDownloadUnomCsv(report)} className="border-slate-600 text-slate-300 hover:bg-slate-700">
-                            <Download className="h-4 w-4 mr-2" /> CSV
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => {
-                            handleViewUnom(report);
-                            setUnomSearch(''); // Clear search on toggle
-                          }} className={`border-blue-500 text-blue-500 hover:bg-blue-500/10 ${viewingUnomId === report.id ? 'bg-blue-500/20' : ''}`}>
-                            <Eye className="h-4 w-4 mr-2" /> {viewingUnomId === report.id ? 'Hide Report' : 'View Report'}
-                          </Button>
-                          {report.status === 'active' ? (
-                            <Button variant="destructive" size="sm" onClick={() => handleDeleteUnom(report.id)}>
-                              <Trash2 className="h-4 w-4 mr-2" /> Delete
-                            </Button>
-                          ) : (
-                            <Button variant="outline" size="sm" onClick={() => handleUndoUnom(report.id)} className="border-green-500 text-green-500 hover:bg-green-500/10">
-                              <RefreshCw className="h-4 w-4 mr-2" /> Undo
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      {viewingUnomId === report.id && (
-                        <div className="mt-4 border-t border-slate-700 pt-4">
-                          <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto">
-                            <table className="w-full text-sm text-left">
-                              <thead className="bg-slate-900 text-slate-400">
-                                <tr>
-                                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('email')}>
-                                    <div className="flex items-center gap-1">
-                                      Email
-                                      {unomSortConfig?.key === 'email' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                                    </div>
-                                  </th>
-                                  {report.subjects?.map((sub: string, i: number) => (
-                                    <th key={i} className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort(sub)}>
-                                      <div className="flex items-center gap-1">
-                                        {sub}
-                                        {unomSortConfig?.key === sub && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                                      </div>
-                                    </th>
-                                  ))}
-                                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('total')}>
-                                    <div className="flex items-center gap-1">
-                                      Total
-                                      {unomSortConfig?.key === 'total' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                                    </div>
-                                  </th>
-                                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('percentage')}>
-                                    <div className="flex items-center gap-1">
-                                      Percentage
-                                      {unomSortConfig?.key === 'percentage' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                                    </div>
-                                  </th>
-                                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('rank')}>
-                                    <div className="flex items-center gap-1">
-                                      Rank
-                                      {unomSortConfig?.key === 'rank' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                                    </div>
-                                  </th>
-                                  <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('updatedAt')}>
-                                    <div className="flex items-center gap-1">
-                                      Updated At
-                                      {unomSortConfig?.key === 'updatedAt' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-                                    </div>
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-700 bg-slate-800/50">
-                                {(() => {
-                                  let processedData = [...viewingUnomData];
-
-                                  // Filter
-                                  if (unomSearch) {
-                                    processedData = processedData.filter(row =>
-                                      (row.email || '').toLowerCase().includes(unomSearch.toLowerCase()) ||
-                                      (row.rank?.toString() || '').includes(unomSearch)
-                                    );
-                                  }
-
-                                  // Sort
-                                  if (unomSortConfig) {
-                                    processedData.sort((a, b) => {
-                                      const aValue = a[unomSortConfig.key];
-                                      const bValue = b[unomSortConfig.key];
-
-                                      if (aValue === bValue) return 0;
-
-                                      // Handle numeric sorting for marks, total, percentage, rank
-                                      const aNum = parseFloat(aValue);
-                                      const bNum = parseFloat(bValue);
-                                      if (!isNaN(aNum) && !isNaN(bNum)) {
-                                        return unomSortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
-                                      }
-
-                                      // Handle Date sorting for 'updatedAt'
-                                      if (unomSortConfig.key === 'updatedAt') {
-                                        const aDate = a.submittedAt ? new Date(a.submittedAt).getTime() : (report.updatedAt?.toDate ? report.updatedAt.toDate().getTime() : 0);
-                                        const bDate = b.submittedAt ? new Date(b.submittedAt).getTime() : (report.updatedAt?.toDate ? report.updatedAt.toDate().getTime() : 0);
-                                        return unomSortConfig.direction === 'asc' ? aDate - bDate : bDate - aDate;
-                                      }
-
-                                      // Handle string sorting
-                                      if (aValue < bValue) return unomSortConfig.direction === 'asc' ? -1 : 1;
-                                      if (aValue > bValue) return unomSortConfig.direction === 'asc' ? 1 : -1;
-                                      return 0;
-                                    });
-                                  }
-
-                                  return processedData
-                                    .slice((viewingUnomPage - 1) * 10, viewingUnomPage * 10)
-                                    .map((row, idx) => (
-                                      <tr key={idx} className="hover:bg-slate-700/50">
-                                        <td className="p-3">{row.email}</td>
-                                        {report.subjects?.map((sub: string, i: number) => (
-                                          <td key={i} className="p-3 font-mono">{row[sub] !== null ? row[sub] : '-'}</td>
-                                        ))}
-                                        <td className="p-3 font-mono font-bold">{row.total}</td>
-                                        <td className="p-3">{row.percentage ? `${parseFloat(row.percentage).toFixed(2)}%` : '-'}</td>
-                                        <td className="p-3">#{row.rank || '-'}</td>
-                                        <td className="p-3 text-slate-400 text-xs">
-                                          {row.submittedAt ? new Date(row.submittedAt).toLocaleString() : (report.updatedAt?.toDate ? report.updatedAt.toDate().toLocaleString() : (report.updatedAt ? new Date(report.updatedAt).toLocaleString() : '-'))}
-                                        </td>
-                                      </tr>
-                                    ));
-                                })()}
-                              </tbody>
-                            </table>
+                            <div className="flex gap-2 items-center">
+                              {viewingUnomId === report.id && (
+                                <>
+                                  {report.data?.some((d: any) => d.hasUpdated) && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleMarkAllAsMarked(report)}
+                                      className="border-green-600 text-green-500 hover:bg-green-500/10 h-8"
+                                      title="Clear all green dots"
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-2" /> Mark All as Marked
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => {
+                                      toast.promise(fetchUnomReports(), {
+                                        loading: 'Refreshing...',
+                                        success: 'Refreshed',
+                                        error: 'Failed to refresh'
+                                      });
+                                    }}
+                                    className="h-8 w-8 border-slate-600 text-slate-300 hover:bg-slate-700"
+                                    title="Refresh Data"
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                  </Button>
+                                  <div className="relative w-40">
+                                    <Search className="absolute left-2 top-2.5 h-3 w-3 text-slate-400" />
+                                    <Input
+                                      placeholder="Search..."
+                                      className="pl-7 bg-slate-900 border-slate-600 h-8 text-xs"
+                                      value={unomSearch}
+                                      onChange={(e) => setUnomSearch(e.target.value)}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                              <Button variant="outline" size="sm" onClick={() => handleDownloadUnomCsv(report)} className="border-slate-600 text-slate-300 hover:bg-slate-700">
+                                <Download className="h-4 w-4 mr-2" /> CSV
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => {
+                                handleViewUnom(report);
+                                setUnomSearch(''); // Clear search on toggle
+                              }} className={`border-blue-500 text-blue-500 hover:bg-blue-500/10 ${viewingUnomId === report.id ? 'bg-blue-500/20' : ''}`}>
+                                <Eye className="h-4 w-4 mr-2" /> {viewingUnomId === report.id ? 'Hide Report' : 'View Report'}
+                              </Button>
+                              {report.status === 'active' ? (
+                                (() => {
+                                  const ws = workspaces.find(w => w.id === report.workspaceId);
+                                  const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+                                  return isAuthorized ? (
+                                    <Button variant="destructive" size="sm" onClick={() => handleDeleteUnom(report.id)}>
+                                      <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                    </Button>
+                                  ) : null;
+                                })()
+                              ) : (
+                                (() => {
+                                  const ws = workspaces.find(w => w.id === report.workspaceId);
+                                  const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+                                  return isAuthorized ? (
+                                    <Button variant="outline" size="sm" onClick={() => handleUndoUnom(report.id)} className="border-green-500 text-green-500 hover:bg-green-500/10">
+                                      <RefreshCw className="h-4 w-4 mr-2" /> Undo
+                                    </Button>
+                                  ) : null;
+                                })()
+                              )}
+                            </div>
                           </div>
 
-                          {viewingUnomData.length > 10 && (
-                            <div className="flex items-center justify-center gap-2 mt-4">
-                              <Button variant="outline" size="sm" onClick={() => setViewingUnomPage(p => Math.max(1, p - 1))} disabled={viewingUnomPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                              <span className="text-sm text-slate-400">Page {viewingUnomPage} of {Math.ceil(viewingUnomData.length / 10)}</span>
-                              <Button variant="outline" size="sm" onClick={() => setViewingUnomPage(p => Math.min(Math.ceil(viewingUnomData.length / 10), p + 1))} disabled={viewingUnomPage === Math.ceil(viewingUnomData.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                          {viewingUnomId === report.id && (
+                            <div className="mt-4 border-t border-slate-700 pt-4">
+                              <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                  <thead className="bg-slate-900 text-slate-400">
+                                    <tr>
+                                      <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('email')}>
+                                        <div className="flex items-center gap-1">
+                                          Email
+                                          {unomSortConfig?.key === 'email' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                                        </div>
+                                      </th>
+                                      {report.subjects?.map((sub: string, i: number) => (
+                                        <th key={i} className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort(sub)}>
+                                          <div className="flex items-center gap-1">
+                                            {sub}
+                                            {unomSortConfig?.key === sub && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                                          </div>
+                                        </th>
+                                      ))}
+                                      <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('total')}>
+                                        <div className="flex items-center gap-1">
+                                          Total
+                                          {unomSortConfig?.key === 'total' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                                        </div>
+                                      </th>
+                                      <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('percentage')}>
+                                        <div className="flex items-center gap-1">
+                                          Percentage
+                                          {unomSortConfig?.key === 'percentage' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                                        </div>
+                                      </th>
+                                      <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('rank')}>
+                                        <div className="flex items-center gap-1">
+                                          Rank
+                                          {unomSortConfig?.key === 'rank' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                                        </div>
+                                      </th>
+                                      <th className="p-3 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleUnomSort('updatedAt')}>
+                                        <div className="flex items-center gap-1">
+                                          Updated At
+                                          {unomSortConfig?.key === 'updatedAt' && (unomSortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                                        </div>
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-700 bg-slate-800/50">
+                                    {(() => {
+                                      let processedData = [...viewingUnomData];
+
+                                      // Filter
+                                      if (unomSearch) {
+                                        processedData = processedData.filter(row =>
+                                          (row.email || '').toLowerCase().includes(unomSearch.toLowerCase()) ||
+                                          (row.rank?.toString() || '').includes(unomSearch)
+                                        );
+                                      }
+
+                                      // Sort
+                                      if (unomSortConfig) {
+                                        processedData.sort((a, b) => {
+                                          const aValue = a[unomSortConfig.key];
+                                          const bValue = b[unomSortConfig.key];
+
+                                          if (aValue === bValue) return 0;
+
+                                          // Handle numeric sorting for marks, total, percentage, rank
+                                          const aNum = parseFloat(aValue);
+                                          const bNum = parseFloat(bValue);
+                                          if (!isNaN(aNum) && !isNaN(bNum)) {
+                                            return unomSortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
+                                          }
+
+                                          // Handle Date sorting for 'updatedAt'
+                                          if (unomSortConfig.key === 'updatedAt') {
+                                            const aDate = a.submittedAt ? new Date(a.submittedAt).getTime() : (report.updatedAt?.toDate ? report.updatedAt.toDate().getTime() : 0);
+                                            const bDate = b.submittedAt ? new Date(b.submittedAt).getTime() : (report.updatedAt?.toDate ? report.updatedAt.toDate().getTime() : 0);
+                                            return unomSortConfig.direction === 'asc' ? aDate - bDate : bDate - aDate;
+                                          }
+
+                                          // Handle string sorting
+                                          if (aValue < bValue) return unomSortConfig.direction === 'asc' ? -1 : 1;
+                                          if (aValue > bValue) return unomSortConfig.direction === 'asc' ? 1 : -1;
+                                          return 0;
+                                        });
+                                      }
+
+                                      return processedData
+                                        .slice((viewingUnomPage - 1) * 10, viewingUnomPage * 10)
+                                        .map((row, idx) => (
+                                          <tr key={idx} className="hover:bg-slate-700/50">
+                                            <td className="p-3">
+                                              <div className="flex items-center gap-2">
+                                                {row.email}
+                                                {row.hasUpdated && (
+                                                  <div
+                                                    className="h-2 w-2 rounded-full bg-green-500 cursor-pointer hover:bg-green-400 animate-pulse"
+                                                    title="Marks updated by student"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleClearUpdate(report, row.email);
+                                                    }}
+                                                  />
+                                                )}
+                                              </div>
+                                            </td>
+                                            {report.subjects?.map((sub: string, i: number) => (
+                                              <td key={i} className="p-3 font-mono">{row[sub] !== null ? row[sub] : '-'}</td>
+                                            ))}
+                                            <td className="p-3 font-mono font-bold">{row.total}</td>
+                                            <td className="p-3">{row.percentage ? `${parseFloat(row.percentage).toFixed(2)}%` : '-'}</td>
+                                            <td className="p-3">#{row.rank || '-'}</td>
+                                            <td className="p-3 text-slate-400 text-xs">
+                                              {row.submittedAt ? new Date(row.submittedAt).toLocaleString() : (report.updatedAt?.toDate ? report.updatedAt.toDate().toLocaleString() : (report.updatedAt ? new Date(report.updatedAt).toLocaleString() : '-'))}
+                                            </td>
+                                          </tr>
+                                        ));
+                                    })()}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {viewingUnomData.length > 10 && (
+                                <div className="flex items-center justify-center gap-2 mt-4">
+                                  <Button variant="outline" size="sm" onClick={() => setViewingUnomPage(p => Math.max(1, p - 1))} disabled={viewingUnomPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                                  <span className="text-sm text-slate-400">Page {viewingUnomPage} of {Math.ceil(viewingUnomData.length / 10)}</span>
+                                  <Button variant="outline" size="sm" onClick={() => setViewingUnomPage(p => Math.min(Math.ceil(viewingUnomData.length / 10), p + 1))} disabled={viewingUnomPage === Math.ceil(viewingUnomData.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* ATTENDANCE REGISTER */}
       {
@@ -4009,14 +4320,22 @@ const TeacherDashboard = () => {
                           {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <Button variant="destructive" onClick={handleDeleteAllAttendance} title="Delete All Attendance for this Workspace">
-                        Delete All
-                      </Button>
-                      {deletedBackup && (
-                        <Button variant="outline" onClick={handleUndoDelete} className="border-slate-600 text-slate-300 hover:bg-slate-700">
-                          Undo
-                        </Button>
-                      )}
+                      {attendanceWorkspace && (() => {
+                        const ws = workspaces.find(w => w.id === attendanceWorkspace);
+                        const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+                        return isAuthorized ? (
+                          <>
+                            <Button variant="destructive" onClick={handleDeleteAllAttendance} title="Delete All Attendance for this Workspace">
+                              Delete All
+                            </Button>
+                            {deletedBackup && (
+                              <Button variant="outline" onClick={handleUndoDelete} className="border-slate-600 text-slate-300 hover:bg-slate-700">
+                                Undo
+                              </Button>
+                            )}
+                          </>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
@@ -4030,13 +4349,49 @@ const TeacherDashboard = () => {
                           setAttendanceDate(e.target.value);
                           if (attendanceWorkspace) handleFetchAttendance(attendanceWorkspace, e.target.value, false);
                         }}
+                        disabled={!attendanceWorkspace || (() => {
+                          const ws = workspaces.find(w => w.id === attendanceWorkspace);
+                          return !(ws && (ws.classTeacher === userEmail || ws.mentor === userEmail));
+                        })()}
                       />
-                      <Button variant="destructive" size="icon" onClick={handleDeleteAttendance} title="Delete Entire Attendance">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {attendanceWorkspace && (() => {
+                        const ws = workspaces.find(w => w.id === attendanceWorkspace);
+                        const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+                        return isAuthorized ? (
+                          <Button variant="destructive" size="icon" onClick={handleDeleteAttendance} title="Delete Entire Attendance">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                 </div>
+
+                {attendanceWorkspace && (() => {
+                  const ws = workspaces.find(w => w.id === attendanceWorkspace);
+                  const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+
+                  if (!isAuthorized) {
+                    return (
+                      <div className="mt-6 p-6 bg-slate-900/50 border border-slate-700 rounded-lg flex flex-col items-center justify-center text-center gap-4">
+                        <div className="p-3 bg-red-500/10 rounded-full">
+                          <AlertTriangle className="h-8 w-8 text-red-500" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-lg font-medium text-white">Access Restricted</h3>
+                          <p className="text-slate-400 max-w-md">
+                            You must be the appointed <strong>Class Teacher</strong> or <strong>Mentor</strong> to mark attendance for this workspace.
+                          </p>
+                        </div>
+                        <Button variant="outline" onClick={() => setActiveSection('view-attendance')} className="border-slate-600 text-slate-300 hover:bg-slate-700">
+                          Go to View Attendance
+                        </Button>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
 
                 {attendanceList.length > 0 && (
                   <>
