@@ -87,13 +87,22 @@ const Login = () => {
           } catch (createErr) {
             console.error("Failed to create secondary user, falling back to anonymous:", createErr);
             await signInAnonymously(secondaryAuth);
-            toast.warning("Attendance features limited (Guest Mode)");
+            // toast.warning("Attendance features limited (Guest Mode)"); // Suppress to avoid confusion
           }
-        } else {
-          // Fallback to anonymous for other errors (wrong password, etc)
-          console.log("Falling back to anonymous auth for Secondary DB");
+        } else if (secErr.code === 'auth/wrong-password') {
+          // Password mismatch between Main and Secondary DB
+          console.warn("Password mismatch for Secondary DB. Falling back to Guest.");
           await signInAnonymously(secondaryAuth);
-          toast.warning("Attendance features limited (Guest Mode)");
+          // toast.info("Attendance access: Guest Mode (Password Mismatch)"); // Informative but not an error
+        } else {
+          // Fallback to anonymous for other errors
+          console.log("Falling back to anonymous auth for Secondary DB:", secErr.code);
+          try {
+            await signInAnonymously(secondaryAuth);
+          } catch (anonErr) {
+            console.error("Anonymous auth failed:", anonErr);
+          }
+          // toast.warning("Attendance features limited");
         }
       }
 
