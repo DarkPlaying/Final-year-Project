@@ -1737,12 +1737,38 @@ const TeacherDashboard = () => {
     }
   };
 
-  const handleUnomMarkChange = (email: string, subject: string, value: string) => {
+  const handleUnomMarkChange = (email: string, field: string, value: string) => {
     const newData = [...unomData];
     const rowIndex = newData.findIndex(r => r.email === email);
     if (rowIndex === -1) return;
 
-    newData[rowIndex][subject] = value;
+    // Validation
+    if (value !== '') {
+      const num = parseFloat(value);
+      if (!isNaN(num)) {
+        if (field.endsWith('_internal') && num > 25) return;
+        if (field.endsWith('_external') && num > 75) return;
+      }
+    }
+
+    newData[rowIndex][field] = value;
+
+    // If modifying internal/external, update the subject total
+    let baseSubject = field;
+    if (field.endsWith('_internal')) {
+      baseSubject = field.replace('_internal', '');
+    } else if (field.endsWith('_external')) {
+      baseSubject = field.replace('_external', '');
+    }
+
+    if (field !== baseSubject) {
+      const intVal = parseInt(newData[rowIndex][`${baseSubject}_internal`] || '0');
+      const extVal = parseInt(newData[rowIndex][`${baseSubject}_external`] || '0');
+      // Auto-calculate total if inputs are numbers
+      if (!isNaN(intVal) && !isNaN(extVal)) {
+        newData[rowIndex][baseSubject] = (intVal + extVal).toString();
+      }
+    }
 
     // Recalculate stats for this row
     let total = 0;
@@ -1755,19 +1781,10 @@ const TeacherDashboard = () => {
         total += val;
         subjectCount++;
       }
-      // Treat null/empty as 0 for calculation if needed, or just ignore.
-      // Current logic ignores NaN, which covers null/empty string if parsed.
     });
 
     newData[rowIndex].total = total;
     newData[rowIndex].percentage = subjectCount > 0 ? (total / (validSubjects.length * 100)) * 100 : 0;
-
-    // Recalculate Ranks (simple sort)
-    // We shouldn't sort while editing as rows will jump. 
-    // Let's just update stats. Ranking can be done on save or distinct action.
-    // For now, let's keep rank 0 or update if we want. 
-    // Updating rank on every keystroke causes jumping rows if we sort. 
-    // So let's NOT sort here.
 
     setUnomData(newData);
   };
@@ -1882,14 +1899,28 @@ const TeacherDashboard = () => {
     if (!report || !report.data) return;
 
     const subjects = report.subjects || [];
-    const headers = ['Email', ...subjects, 'Total', 'Percentage', 'Rank'];
+
+    // Create headers with Internal, External, and Total for each subject
+    const subjectHeaders = subjects.flatMap((sub: string) => [
+      `${sub} (Int)`,
+      `${sub} (Ext)`,
+      `${sub} (Tot)`
+    ]);
+
+    const headers = ['Email', ...subjectHeaders, 'Grand Total', 'Percentage', 'Rank'];
 
     const csvRows = [
       headers.join(','),
       ...report.data.map((row: any) => {
+        const subjectValues = subjects.flatMap((sub: string) => [
+          row[`${sub}_internal`] || '-',
+          row[`${sub}_external`] || '-',
+          row[sub] || '-'
+        ]);
+
         const values = [
           row.email,
-          ...subjects.map((sub: string) => row[sub] || ''),
+          ...subjectValues,
           row.total || 0,
           `${parseFloat(row.percentage || 0).toFixed(2)}%`,
           row.rank || '-'
@@ -4002,12 +4033,36 @@ const TeacherDashboard = () => {
                             <tr key={idx} className="hover:bg-slate-700/50">
                               <td className="p-3">{row.email}</td>
                               {unomSubjects.filter(s => s.trim() !== '').map((sub, i) => (
-                                <td key={i} className="p-3">
-                                  <Input
-                                    className="h-8 w-20 bg-slate-900 border-slate-700 text-center"
-                                    value={row[sub] ?? ''}
-                                    onChange={(e) => handleUnomMarkChange(row.email, sub, e.target.value)}
-                                  />
+                                <td key={i} className="p-3 min-w-[200px]">
+                                  <div className="flex gap-1 items-center justify-center">
+                                    <div className="flex flex-col gap-1">
+                                      <Input
+                                        placeholder="Int"
+                                        className="h-7 w-14 text-xs bg-slate-900 border-slate-700 text-center px-1"
+                                        value={row[`${sub}_internal`] ?? ''}
+                                        onChange={(e) => handleUnomMarkChange(row.email, `${sub}_internal`, e.target.value)}
+                                      />
+                                      <span className="text-[10px] text-slate-500 text-center">Int</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <Input
+                                        placeholder="Ext"
+                                        className="h-7 w-14 text-xs bg-slate-900 border-slate-700 text-center px-1"
+                                        value={row[`${sub}_external`] ?? ''}
+                                        onChange={(e) => handleUnomMarkChange(row.email, `${sub}_external`, e.target.value)}
+                                      />
+                                      <span className="text-[10px] text-slate-500 text-center">Ext</span>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <Input
+                                        placeholder="Tot"
+                                        className="h-7 w-14 text-xs bg-slate-900 border-slate-700 text-center font-bold px-1"
+                                        value={row[sub] ?? ''}
+                                        onChange={(e) => handleUnomMarkChange(row.email, sub, e.target.value)}
+                                      />
+                                      <span className="text-[10px] text-slate-500 text-center">Tot</span>
+                                    </div>
+                                  </div>
                                 </td>
                               ))}
                               <td className="p-3 font-mono font-bold">{row.total}</td>

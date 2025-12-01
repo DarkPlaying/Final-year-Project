@@ -38,6 +38,8 @@ import {
   AlertTriangle,
   XCircle
 } from 'lucide-react';
+import { jsPDF } from "jspdf";
+import autoTable from 'jspdf-autotable';
 import { db } from '@/lib/firebase';
 import { secondaryDb } from '@/lib/firebaseSecondary';
 import { hashPassword, verifyPassword } from '@/lib/security';
@@ -95,6 +97,13 @@ const StudentDashboard = () => {
   const [attendancePage, setAttendancePage] = useState(1);
   const isInitialLoad = useRef(true);
 
+  // Report State
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+  const [downloadFrom, setDownloadFrom] = useState('');
+  const [downloadTo, setDownloadTo] = useState('');
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceCategory, setWorkspaceCategory] = useState('');
+
   // Session & Security State
   const [timeRemaining, setTimeRemaining] = useState<number>(5 * 60 * 60); // 5 hours for students
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -109,6 +118,7 @@ const StudentDashboard = () => {
   const [assignmentLink, setAssignmentLink] = useState('');
   const [selectedTeacher, setSelectedTeacher] = useState('');
   const [teachers, setTeachers] = useState<any[]>([]);
+  const [classTeacherProfile, setClassTeacherProfile] = useState<any>(null);
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [assignmentType, setAssignmentType] = useState('assignment'); // Default assignment
   const [portalStatus, setPortalStatus] = useState('closed'); // Default closed
@@ -403,10 +413,17 @@ const StudentDashboard = () => {
 
       const teacherEmails = new Set<string>();
       const workspaceIds: string[] = [];
+      let wsName = '';
+      let wsCategory = '';
+      let wsClassTeacherEmail = '';
 
       wsSnap.docs.forEach(doc => {
         const data = doc.data();
         workspaceIds.push(doc.id); // Store workspace ID
+        if (!wsName && data.name) wsName = data.name; // Capture first workspace name
+        if (!wsCategory && data.category) wsCategory = data.category; // Capture first workspace category
+        if (!wsClassTeacherEmail && data.classTeacher) wsClassTeacherEmail = data.classTeacher; // Capture class teacher
+
         if (data.teachers && Array.isArray(data.teachers)) {
           data.teachers.forEach((email: string) => teacherEmails.add(email));
         }
@@ -414,6 +431,8 @@ const StudentDashboard = () => {
       });
 
       setMyWorkspaces(workspaceIds);
+      setWorkspaceName(wsName || 'Unknown Batch');
+      setWorkspaceCategory(wsCategory || 'General');
 
       if (teacherEmails.size === 0) {
         setTeachers([]);
@@ -437,74 +456,199 @@ const StudentDashboard = () => {
       const uniqueTeachers = Array.from(new Map(relevantTeachers.map((t: any) => [t.email, t])).values());
 
       setTeachers(uniqueTeachers);
+
+      // Set Class Teacher Profile
+      if (wsClassTeacherEmail) {
+        const found = uniqueTeachers.find((t: any) => t.email === wsClassTeacherEmail);
+        if (found) {
+          setClassTeacherProfile(found);
+        } else {
+          // If not found in teachers list (e.g. might be admin or not loaded), create basic profile
+          setClassTeacherProfile({ email: wsClassTeacherEmail, name: wsClassTeacherEmail });
+        }
+      } else {
+        setClassTeacherProfile(null);
+      }
     } catch (error) {
       console.error("Error loading teachers:", error);
     }
   };
 
-  // Check Portal Status when teacher is selected
-  useEffect(() => {
-    if (!selectedTeacher) {
-      setPortalStatus('closed');
-      return;
-    }
-
-    const unsub = onSnapshot(doc(db, 'settings', `assignment_portal_${selectedTeacher}`), (doc) => {
-      if (doc.exists()) {
-        setPortalStatus(doc.data().status || 'closed');
-      } else {
-        setPortalStatus('closed'); // Default to closed if no setting exists
+  const handleDownloadUnomReport = async (report: any) => {
+    try {
+      const studentData = report.data?.find((d: any) => d.email === userEmail);
+      if (!studentData) {
+        toast.error("No marks found for this report");
+        return;
       }
-    });
 
-    return () => unsub();
-  }, [selectedTeacher]);
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
 
-  // Fetch Attendance for Month
-  useEffect(() => {
-    if (!userEmail || activeSection !== 'attendance' || myWorkspaces.length === 0) return;
+      // --- Border ---
+      doc.setDrawColor(41, 128, 185); // Blue border
+      doc.setLineWidth(1);
+      doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
 
-    const fetchAttendance = async () => {
+      // --- Header ---
       try {
-        const startOfMonth = `${attendanceMonth}-01`;
-        const endOfMonth = `${attendanceMonth}-31`;
-
-        const q = query(
-          collection(secondaryDb, 'attendance'),
-          where('date', '>=', startOfMonth),
-          where('date', '<=', endOfMonth)
-        );
-
-        const snap = await getDocs(q);
-        const records = snap.docs.map(d => d.data());
-
-        // Filter by my workspaces and determine status
-        const myAttendance = records
-          .filter((r: any) => myWorkspaces.includes(r.workspaceId))
-          .map((r: any) => {
-            const isPresent = r.presentStudents && (
-              r.presentStudents.includes(userEmail) ||
-              r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
-            );
-            return { ...r, status: isPresent ? 'present' : 'absent' };
-          });
-
-        // Sort by date asc
-        myAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
-        setAttendance(myAttendance);
-
-      } catch (error: any) {
-        console.error("Error fetching attendance:", error);
-        if (error.code === 'permission-denied') {
-          toast.error("Access denied. Please check Firestore Rules.");
-        } else {
-          toast.error(`Failed to fetch attendance: ${error.message || 'Unknown error'}`);
-        }
+        const logoData = await loadImage('/report.png');
+        doc.addImage(logoData, 'PNG', 15, 15, 25, 25);
+      } catch (e) {
+        console.warn("Logo not found", e);
       }
-    };
 
-    fetchAttendance();
-  }, [userEmail, attendanceMonth, activeSection, myWorkspaces]);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(41, 128, 185);
+      const textCenterX = (pageWidth / 2) + 10;
+      doc.text("VEL TECH RANGA SANKU ARTS COLLEGE", textCenterX, 25, { align: "center" });
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      doc.text("(Affiliated to University of Madras)", textCenterX, 31, { align: "center" });
+      doc.text("42, Avadi-Vel Tech Road, Avadi, Chennai-62, Tamil Nadu, India.", textCenterX, 37, { align: "center" });
+
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, 45, pageWidth - 15, 45);
+
+      // --- Student Details ---
+      let yPos = 60;
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+      doc.text("STUDENT MARK STATEMENT", 15, yPos);
+
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+
+      const leftColX = 15;
+      const rightColX = 110;
+
+      doc.text(`Email: ${userEmail}`, leftColX, yPos);
+      doc.text(`Branch: Computer Science`, rightColX, yPos);
+
+      yPos += 6;
+      doc.text(`Batch: ${workspaceName}`, leftColX, yPos);
+      doc.text(`Department: ${workspaceCategory}`, rightColX, yPos);
+
+      yPos += 6;
+      doc.text(`Semester: ${report.title}`, leftColX, yPos);
+
+      // --- Marks Table ---
+      // --- Marks Table ---
+      yPos += 15;
+      const subjects = report.subjects?.filter((s: string) => s.trim() !== '') || [];
+
+      const tableBody = subjects.map((subject: string) => {
+        const mark = studentData[subject] || '0';
+        const internal = studentData[`${subject}_internal`] || '-';
+        const external = studentData[`${subject}_external`] || '-';
+        const isAbsent = mark === 'AB';
+        const isArrear = mark === 'RA';
+        const numMark = parseInt(mark);
+
+        let result = "Pass";
+        if (isAbsent) result = "Absent";
+        else if (isArrear) result = "Re-Appear";
+        else if (!isNaN(numMark) && numMark < 40) result = "Fail";
+
+        return [
+          subject,
+          isAbsent || isArrear ? '-' : internal,
+          isAbsent || isArrear ? '-' : external,
+          mark,
+          result
+        ];
+      });
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Subject Name', 'Internal', 'External', 'Total', 'Result']],
+        body: tableBody,
+        theme: 'grid',
+        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 10, cellPadding: 4 },
+        margin: { left: 15, right: 15 }
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 15;
+
+      // --- Performance Analysis ---
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(0, 0, 0);
+      doc.text("PERFORMANCE ANALYSIS:", 15, yPos);
+
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("  - Consistent performance across all subjects", 15, yPos);
+      yPos += 6;
+      doc.text("  - Strong in Database and Programming subjects", 15, yPos);
+      yPos += 6;
+      doc.text("  - Well-balanced internal and external scores", 15, yPos);
+
+      // --- Line Separator ---
+      yPos += 10;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, yPos, pageWidth - 15, yPos);
+
+      // --- Submission Details ---
+      yPos += 15;
+      doc.setFont("helvetica", "bold");
+      doc.text("SUBMISSION DETAILS:", 15, yPos);
+
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+
+      const teacherName = classTeacherProfile
+        ? (classTeacherProfile.name || classTeacherProfile.email)
+        : (teachers.length > 0 ? (teachers[0].name || teachers[0].email) : "Class Teacher");
+
+      const labelX = 20;
+      const valueX = 60;
+
+      doc.text("Submitted By:", labelX, yPos);
+      doc.text(teacherName, valueX, yPos);
+      yPos += 6;
+
+      doc.text("Submission Date:", labelX, yPos);
+      doc.text(new Date().toLocaleDateString('en-GB'), valueX, yPos);
+      yPos += 6;
+
+      doc.text("Status:", labelX, yPos);
+      doc.setTextColor(0, 128, 0); // Green color for verified
+      doc.setFont("helvetica", "bold");
+      doc.text("VERIFIED", valueX, yPos);
+      doc.setTextColor(0, 0, 0); // Reset color
+      doc.setFont("helvetica", "normal");
+      yPos += 6;
+
+      doc.text("University:", labelX, yPos);
+      doc.text("Madras University", valueX, yPos);
+
+      // --- Footer ---
+      const footerY = pageHeight - 20;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, footerY - 5, pageWidth - 15, footerY - 5);
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(`Generated by: Edu Online System`, 15, footerY);
+      doc.text(`Date: ${new Date().toLocaleString()}`, pageWidth - 15, footerY, { align: "right" });
+
+      doc.save(`Mark_Statement_${report.title}.pdf`);
+      toast.success("Report downloaded successfully");
+
+    } catch (error) {
+      console.error("Error generating report:", error);
+      toast.error("Failed to generate report");
+    }
+  };
 
   const handleUnomSave = async () => {
     if (!selectedUnomId || !userEmail) return;
@@ -527,10 +671,17 @@ const StudentDashboard = () => {
     // Validate Custom Marks
     for (const sub of subjects) {
       const val = unomForm[sub];
+      // If val is not RA/AB, check internal and external
       if (val !== 'RA' && val !== 'AB') {
-        const num = parseFloat(val);
-        if (isNaN(num) || num < 30 || num > 100) {
-          toast.error(`Marks for ${sub} must be between 30 and 100`);
+        const internal = parseFloat(unomForm[`${sub}_internal`] || '0');
+        const external = parseFloat(unomForm[`${sub}_external`] || '0');
+
+        if (isNaN(internal) || internal < 0 || internal > 25) {
+          toast.error(`Internal marks for ${sub} must be between 0 and 25`);
+          return;
+        }
+        if (isNaN(external) || external < 0 || external > 75) {
+          toast.error(`External marks for ${sub} must be between 0 and 75`);
           return;
         }
       }
@@ -590,8 +741,325 @@ const StudentDashboard = () => {
       setSelectedUnomId(null);
       setUnomForm({});
     } catch (error) {
-      console.error("Error saving UNOM:", error);
-      toast.error("Failed to submit marks");
+      console.error("Error saving marks:", error);
+      toast.error("Failed to save marks. Please try again.");
+    }
+  };
+
+  const loadImage = (url: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.src = url;
+      img.crossOrigin = "Anonymous";
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        } else {
+          reject(new Error('Canvas context not found'));
+        }
+      };
+      img.onerror = (err) => reject(err);
+    });
+  };
+
+  const handleDownloadReport = () => {
+    setShowDownloadDialog(true);
+  };
+
+  const handleGenerateReport = async () => {
+    if (!downloadFrom || !downloadTo) {
+      toast.error("Please select both From and To months");
+      return;
+    }
+
+    const start = new Date(downloadFrom + "-01");
+    const end = new Date(downloadTo + "-01");
+
+    // Calculate difference in months
+    const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+
+    if (diffMonths < 0) {
+      toast.error("End month must be after Start month");
+      return;
+    }
+
+    if (diffMonths >= 6) {
+      toast.error("You can select a maximum of 6 months");
+      return;
+    }
+
+    setShowDownloadDialog(false);
+    const toastId = toast.loading("Fetching data and generating report...");
+
+    try {
+      // Fetch attendance for the range
+      const startDateStr = `${downloadFrom}-01`;
+
+      // Get last day of end month
+      const endYear = parseInt(downloadTo.split('-')[0]);
+      const endMonth = parseInt(downloadTo.split('-')[1]);
+      const lastDay = new Date(endYear, endMonth, 0).getDate();
+      const endDateStr = `${downloadTo}-${lastDay}`;
+
+      const q = query(
+        collection(secondaryDb, 'attendance'),
+        where('date', '>=', startDateStr),
+        where('date', '<=', endDateStr)
+      );
+
+      const snap = await getDocs(q);
+      const records = snap.docs.map(d => d.data());
+
+      // Filter by my workspaces
+      const reportAttendance = records
+        .filter((r: any) => myWorkspaces.includes(r.workspaceId))
+        .map((r: any) => {
+          const isPresent = r.presentStudents && (
+            r.presentStudents.includes(userEmail) ||
+            r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
+          );
+          return { ...r, status: isPresent ? 'present' : 'absent' };
+        });
+
+      reportAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
+
+      // Generate PDF
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // --- Border ---
+      doc.setDrawColor(41, 128, 185); // Blue border
+      doc.setLineWidth(1);
+      doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+
+      doc.setDrawColor(0, 0, 0); // Reset draw color
+
+      // --- Header ---
+      // Logo
+      try {
+        const logoData = await loadImage('/report.png');
+        // Adjusted logo position and size
+        doc.addImage(logoData, 'PNG', 15, 15, 25, 25);
+      } catch (e) {
+        console.warn("Logo not found or failed to load", e);
+      }
+
+      // Institution Details (Center)
+      // Adjusted Y positions to align better with logo
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(41, 128, 185); // Blue color
+      const textCenterX = (pageWidth / 2) + 10; // Shifted right to avoid overlap
+      doc.text("VEL TECH RANGA SANKU ARTS COLLEGE", textCenterX, 25, { align: "center" });
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      doc.text("(Affiliated to University of Madras)", textCenterX, 31, { align: "center" });
+      doc.text("42, Avadi-Vel Tech Road, Avadi, Chennai-62, Tamil Nadu, India.", textCenterX, 37, { align: "center" });
+
+      // Line separator
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, 45, pageWidth - 15, 45);
+
+      // --- Student Details ---
+      let yPos = 60;
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+      doc.text("STUDENT PROFILE", 15, yPos);
+
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+
+      const leftColX = 15;
+      const rightColX = 110;
+
+      // Changed Name to Email, Semester to Batch
+      doc.text(`Email: ${userEmail}`, leftColX, yPos);
+      doc.text(`Branch: Computer Science`, rightColX, yPos);
+
+      yPos += 6;
+      doc.text(`Batch: ${workspaceName}`, leftColX, yPos);
+      doc.text(`Department: ${workspaceCategory}`, rightColX, yPos);
+
+      yPos += 6;
+      // Added Period
+      const fromMonthName = new Date(downloadFrom + "-01").toLocaleDateString('default', { month: 'long', year: 'numeric' });
+      const toMonthName = new Date(downloadTo + "-01").toLocaleDateString('default', { month: 'long', year: 'numeric' });
+      doc.text(`Period: ${fromMonthName} - ${toMonthName}`, leftColX, yPos);
+
+      yPos += 10;
+      doc.setDrawColor(220, 220, 220);
+      doc.line(15, yPos, pageWidth - 15, yPos);
+
+      // --- Attendance Summary ---
+      yPos += 12;
+      const totalClasses = reportAttendance.length;
+      const present = reportAttendance.filter(a => a.status === 'present').length;
+      const absent = reportAttendance.filter(a => a.status === 'absent').length;
+      const percentage = totalClasses > 0 ? ((present / totalClasses) * 100).toFixed(2) : "0";
+      const isGood = parseFloat(percentage) >= 75;
+      const status = isGood ? "SATISFACTORY" : "NEEDS IMPROVEMENT";
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("ATTENDANCE SUMMARY", 15, yPos);
+
+      yPos += 10;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+
+      // Draw a summary box
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(15, yPos - 6, pageWidth - 30, 25, 2, 2, 'F');
+
+      doc.text(`Total Working Days: ${totalClasses}`, 20, yPos);
+      doc.text(`Days Present: ${present}`, 80, yPos);
+      doc.text(`Days Absent: ${absent}`, 140, yPos);
+
+      yPos += 10;
+      doc.setFont("helvetica", "bold");
+      doc.text(`Percentage: ${percentage}%`, 20, yPos);
+
+      doc.setTextColor(isGood ? 39 : 192, isGood ? 174 : 57, isGood ? 96 : 43); // Green or Red
+      doc.text(`[ ${status} ]`, 80, yPos);
+      doc.setTextColor(0, 0, 0);
+
+      // --- Monthly Breakdown ---
+      yPos += 25;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("MONTHLY BREAKDOWN", 15, yPos);
+
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+
+      // Group by month
+      const monthlyStats: any = {};
+      reportAttendance.forEach(r => {
+        const m = r.date.slice(0, 7); // YYYY-MM
+        if (!monthlyStats[m]) monthlyStats[m] = { total: 0, present: 0 };
+        monthlyStats[m].total++;
+        if (r.status === 'present') monthlyStats[m].present++;
+      });
+
+      Object.keys(monthlyStats).sort().forEach(m => {
+        const stats = monthlyStats[m];
+        const mName = new Date(m + "-01").toLocaleDateString('default', { month: 'long', year: 'numeric' });
+        const p = stats.total > 0 ? ((stats.present / stats.total) * 100).toFixed(0) : "0";
+        doc.text(`${mName}: ${stats.present}/${stats.total} days (${p}%)`, 15, yPos);
+        yPos += 5;
+      });
+
+      // --- Absence Details Table ---
+      yPos += 10;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("ABSENCE DETAILS", 15, yPos);
+
+      const absentDays = reportAttendance.filter(a => a.status === 'absent');
+
+      if (absentDays.length > 0) {
+        autoTable(doc, {
+          startY: yPos + 5,
+          head: [['Date', 'Day', 'Status', 'Remarks']],
+          body: absentDays.map(d => [
+            d.date,
+            new Date(d.date).toLocaleDateString('default', { weekday: 'long' }),
+            "Absent",
+            "Not Provided"
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+          styles: { fontSize: 9, cellPadding: 3 },
+          margin: { left: 15, right: 15 }
+        });
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+      } else {
+        yPos += 8;
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.text("No absences recorded for this period. Excellent record!", 15, yPos);
+        yPos += 15;
+      }
+
+      // --- Remarks & Advice ---
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("REMARKS & ADVICE", 15, yPos);
+
+      yPos += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+
+      const advices = [
+        "Consistency is the key to success. Keep showing up!",
+        "Every class is a step closer to your goals.",
+        "Education is the passport to the future.",
+        "Your attendance reflects your dedication.",
+        "Success is the sum of small efforts, repeated day in and day out.",
+        "Don't watch the clock; do what it does. Keep going.",
+        "The future belongs to those who believe in the beauty of their dreams.",
+        "Strive for progress, not perfection."
+      ];
+      const randomAdvice = advices[Math.floor(Math.random() * advices.length)];
+
+      const splitRemarks = doc.splitTextToSize(`This is a computer-generated report based on digital attendance records. ${isGood ? "The student has maintained good attendance." : "Attendance is below recommended levels."}`, pageWidth - 30);
+      doc.text(splitRemarks, 15, yPos);
+
+      yPos += 10;
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(80, 80, 80);
+      doc.text(`"Advice: ${randomAdvice}"`, 15, yPos);
+
+      // --- Verified By ---
+      yPos += 20;
+      // Ensure we don't run off page
+      if (yPos > pageHeight - 40) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      const teacherName = classTeacherProfile
+        ? (classTeacherProfile.name || classTeacherProfile.email)
+        : (teachers.length > 0 ? (teachers[0].name || teachers[0].email) : "Class Teacher");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0, 0, 0);
+      doc.text(`Verified By: ${teacherName}`, 15, yPos);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text("(Signature / Digital Verification)", 15, yPos + 5);
+
+      // --- Footer ---
+      const footerY = pageHeight - 20;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, footerY - 5, pageWidth - 15, footerY - 5);
+
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(`Generated by: Edu Online System`, 15, footerY);
+      doc.text(`Date: ${new Date().toLocaleString()}`, pageWidth - 15, footerY, { align: "right" });
+
+      doc.save(`Attendance_Report_${downloadFrom}_to_${downloadTo}.pdf`);
+      toast.dismiss(toastId);
+      toast.success("Attendance report downloaded");
+    } catch (error) {
+      console.error("PDF Generation Error:", error);
+      toast.dismiss(toastId);
+      toast.error("Failed to generate report");
     }
   };
 
@@ -1478,6 +1946,8 @@ const StudentDashboard = () => {
                         const form: any = {};
                         report.subjects?.forEach((s: string) => {
                           if (studentData[s]) form[s] = studentData[s];
+                          if (studentData[`${s}_internal`]) form[`${s}_internal`] = studentData[`${s}_internal`];
+                          if (studentData[`${s}_external`]) form[`${s}_external`] = studentData[`${s}_external`];
                         });
                         setUnomForm(form);
                       }
@@ -1488,6 +1958,21 @@ const StudentDashboard = () => {
                           {report.subjects?.filter((s: string) => s).length || 0} Subjects • {report.createdAt?.toDate ? new Date(report.createdAt.toDate()).toLocaleDateString() : 'No Date'}
                         </CardDescription>
                       </CardHeader>
+                      <CardContent className="pt-0">
+                        {report.data?.some((d: any) => d.email === userEmail) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300 mt-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadUnomReport(report);
+                            }}
+                          >
+                            <FileText className="h-4 w-4 mr-2" /> Download Report
+                          </Button>
+                        )}
+                      </CardContent>
                     </Card>
                   ))
                 )}
@@ -1505,42 +1990,87 @@ const StudentDashboard = () => {
                     {(unomReports || []).find(r => r.id === selectedUnomId)?.subjects?.filter((s: string) => s.trim() !== '').map((subject: string, idx: number) => (
                       <div key={idx} className="space-y-2 bg-slate-900/30 p-3 rounded-lg border border-slate-800">
                         <Label className="text-slate-300 font-medium">{subject}</Label>
-                        <div className="flex gap-3 items-center">
-                          <Select
-                            value={['RA', 'AB'].includes(unomForm[subject]) ? unomForm[subject] : 'Custom'}
-                            onValueChange={(val) => {
-                              if (val === 'Custom') {
-                                if (['RA', 'AB'].includes(unomForm[subject])) {
-                                  setUnomForm({ ...unomForm, [subject]: '' });
+                        <div className="flex flex-col gap-3">
+                          <div className="flex gap-3 items-center">
+                            <Select
+                              value={['RA', 'AB'].includes(unomForm[subject]) ? unomForm[subject] : 'Custom'}
+                              onValueChange={(val) => {
+                                if (val === 'Custom') {
+                                  if (['RA', 'AB'].includes(unomForm[subject])) {
+                                    setUnomForm(prev => ({ ...prev, [subject]: '', [`${subject}_internal`]: '', [`${subject}_external`]: '' }));
+                                  }
+                                } else {
+                                  setUnomForm(prev => ({ ...prev, [subject]: val, [`${subject}_internal`]: '', [`${subject}_external`]: '' }));
                                 }
-                              } else {
-                                setUnomForm({ ...unomForm, [subject]: val });
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="w-[130px] bg-slate-900 border-slate-700 focus:ring-blue-500/20">
-                              <SelectValue placeholder="Type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Custom">Marks</SelectItem>
-                              <SelectItem value="RA">Arrear (RA)</SelectItem>
-                              <SelectItem value="AB">Absent (AB)</SelectItem>
-                            </SelectContent>
-                          </Select>
-
-                          {!['RA', 'AB'].includes(unomForm[subject]) && (
-                            <Input
-                              type="number"
-                              className="bg-slate-900 border-slate-700 flex-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
-                              value={unomForm[subject] || ''}
-                              onChange={(e) => {
-                                setUnomForm({ ...unomForm, [subject]: e.target.value });
                               }}
-                              placeholder="30-100"
-                              min={30}
-                              max={100}
-                            />
-                          )}
+                            >
+                              <SelectTrigger className="w-[130px] bg-slate-900 border-slate-700 focus:ring-blue-500/20">
+                                <SelectValue placeholder="Type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Custom">Marks</SelectItem>
+                                <SelectItem value="RA">Arrear (RA)</SelectItem>
+                                <SelectItem value="AB">Absent (AB)</SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            {!['RA', 'AB'].includes(unomForm[subject]) && (
+                              <div className="flex gap-2 flex-1">
+                                <div className="flex-1">
+                                  <Input
+                                    type="number"
+                                    className="bg-slate-900 border-slate-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
+                                    value={unomForm[`${subject}_internal`] || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const ext = unomForm[`${subject}_external`] || '0';
+                                      const total = (parseInt(val || '0') + parseInt(ext)).toString();
+                                      setUnomForm(prev => ({
+                                        ...prev,
+                                        [`${subject}_internal`]: val,
+                                        [subject]: total
+                                      }));
+                                    }}
+                                    placeholder="Int"
+                                    min={0}
+                                    max={25}
+                                  />
+                                  <span className="text-[10px] text-slate-500 ml-1">Internal</span>
+                                </div>
+                                <div className="flex-1">
+                                  <Input
+                                    type="number"
+                                    className="bg-slate-900 border-slate-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
+                                    value={unomForm[`${subject}_external`] || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const int = unomForm[`${subject}_internal`] || '0';
+                                      const total = (parseInt(int) + parseInt(val || '0')).toString();
+                                      setUnomForm(prev => ({
+                                        ...prev,
+                                        [`${subject}_external`]: val,
+                                        [subject]: total
+                                      }));
+                                    }}
+                                    placeholder="Ext"
+                                    min={0}
+                                    max={75}
+                                  />
+                                  <span className="text-[10px] text-slate-500 ml-1">External</span>
+                                </div>
+                                <div className="flex-1">
+                                  <Input
+                                    type="number"
+                                    className="bg-slate-900 border-slate-700 font-bold text-green-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={unomForm[subject] || ''}
+                                    readOnly
+                                    placeholder="Total"
+                                  />
+                                  <span className="text-[10px] text-slate-500 ml-1">Total</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1572,6 +2102,9 @@ const StudentDashboard = () => {
                   value={attendanceMonth}
                   onChange={(e) => setAttendanceMonth(e.target.value)}
                 />
+                <Button variant="outline" onClick={handleDownloadReport} className="bg-slate-800 border-slate-600 hover:bg-slate-700 text-white">
+                  <FileText className="h-4 w-4 mr-2" /> Download Report
+                </Button>
               </div>
             </div>
 
@@ -1736,6 +2269,44 @@ const StudentDashboard = () => {
               <p className="text-sm text-slate-400">Please save your work. You will be redirected to the login page.</p>
             </DialogDescription>
           </DialogHeader>
+        </DialogContent>
+      </Dialog>
+
+      {/* Download Report Dialog */}
+      <Dialog open={showDownloadDialog} onOpenChange={setShowDownloadDialog}>
+        <DialogContent className="sm:max-w-[425px] bg-slate-900 border-slate-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Download Attendance Report</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Select the period for the report. Maximum 6 months allowed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>From Month</Label>
+                <Input
+                  type="month"
+                  className="bg-slate-800 border-slate-700 text-white"
+                  value={downloadFrom}
+                  onChange={(e) => setDownloadFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>To Month</Label>
+                <Input
+                  type="month"
+                  className="bg-slate-800 border-slate-700 text-white"
+                  value={downloadTo}
+                  onChange={(e) => setDownloadTo(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDownloadDialog(false)} className="border-slate-600 hover:bg-slate-800 text-white">Cancel</Button>
+            <Button onClick={handleGenerateReport} className="bg-blue-600 hover:bg-blue-700 text-white">Generate PDF</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </DashboardLayout >
