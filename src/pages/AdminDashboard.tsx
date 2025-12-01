@@ -1877,14 +1877,14 @@ const AdminDashboard = () => {
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">AI CSV Generator</h2>
             <Button variant="outline" asChild>
-              <a href="https://web-production-fefe7.up.railway.app/" target="_blank" rel="noopener noreferrer">
+              <a href="https://web-production-39641.up.railway.app/" target="_blank" rel="noopener noreferrer">
                 Open in New Tab
               </a>
             </Button>
           </div>
           <div className="w-full h-full border rounded-lg overflow-hidden bg-black">
             <iframe
-              src="https://web-production-fefe7.up.railway.app/"
+              src="https://web-production-39641.up.railway.app/"
               className="w-full h-full border-none"
               title="AI CSV Generator"
             />
