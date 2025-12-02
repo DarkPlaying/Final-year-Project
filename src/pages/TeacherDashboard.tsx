@@ -3245,11 +3245,11 @@ const TeacherDashboard = () => {
                     <div className="grid grid-cols-2 gap-2 w-full md:w-auto">
                       <div className="flex flex-col gap-1">
                         <Label className="whitespace-nowrap text-slate-400 text-xs">From:</Label>
-                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 pr-8 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
+                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:[filter:invert(1)] [&::-webkit-calendar-picker-indicator]:mr-2" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
                       </div>
                       <div className="flex flex-col gap-1">
                         <Label className="whitespace-nowrap text-slate-400 text-xs">To:</Label>
-                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 pr-8 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
+                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:[filter:invert(1)] [&::-webkit-calendar-picker-indicator]:mr-2" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
                       </div>
                     </div>
                     <div className="flex items-center gap-2 w-full md:w-auto">
