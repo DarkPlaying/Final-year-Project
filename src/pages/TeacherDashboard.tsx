@@ -2806,10 +2806,23 @@ const TeacherDashboard = () => {
               )}
               <div className="flex gap-2 pt-2">
                 {!driveAccessToken && (
-                  <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-0" onClick={handleGoogleAuth}>Sign In with Google</Button>
+                  <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-0 flex-1 md:flex-none" onClick={handleGoogleAuth}>
+                    <span className="hidden md:inline">Sign In with Google</span>
+                    <span className="md:hidden">Sign In</span>
+                  </Button>
                 )}
-                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleSendAnnouncement}>
-                  {editingAnnouncement ? 'Update Announcement' : '+ Create Announcement'}
+                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex-1 md:flex-none" onClick={handleSendAnnouncement}>
+                  {editingAnnouncement ? (
+                    <>
+                      <span className="hidden md:inline">Update Announcement</span>
+                      <span className="md:hidden">Update</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="hidden md:inline">+ Create Announcement</span>
+                      <span className="md:hidden">+ Create</span>
+                    </>
+                  )}
                 </Button>
                 {editingAnnouncement && <Button variant="ghost" onClick={() => { setEditingAnnouncement(null); setAnnounceTitle(''); setAnnounceDesc(''); setAnnounceLink(''); }}>Cancel</Button>}
               </div>
@@ -3227,32 +3240,36 @@ const TeacherDashboard = () => {
 
             <Card className="bg-slate-800 border-slate-700 text-white">
               <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-4 overflow-x-auto p-1">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <Label className="whitespace-nowrap text-slate-400">From:</Label>
-                      <Input type="date" className="bg-slate-950 border-slate-700 w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-1">
+                  <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
+                    <div className="grid grid-cols-2 gap-2 w-full md:w-auto">
+                      <div className="flex flex-col gap-1">
+                        <Label className="whitespace-nowrap text-slate-400 text-xs">From:</Label>
+                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <Label className="whitespace-nowrap text-slate-400 text-xs">To:</Label>
+                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Label className="whitespace-nowrap text-slate-400">To:</Label>
-                      <Input type="date" className="bg-slate-950 border-slate-700 w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label className="whitespace-nowrap text-slate-400">Bulk Mark:</Label>
-                      <Select value={bulkMark} onValueChange={setBulkMark}>
-                        <SelectTrigger className="w-[70px] bg-slate-950 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="-" /></SelectTrigger>
-                        <SelectContent>
-                          {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label className="whitespace-nowrap text-slate-400">Search:</Label>
-                      <Input className="bg-slate-950 border-slate-700 w-64 text-slate-300 h-8" placeholder="Title / email" value={assignmentSearch} onChange={e => setAssignmentSearch(e.target.value)} />
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                      <div className="flex items-center gap-2 flex-1 md:flex-none">
+                        <Label className="whitespace-nowrap text-slate-400 hidden md:block">Bulk Mark:</Label>
+                        <Select value={bulkMark} onValueChange={setBulkMark}>
+                          <SelectTrigger className="w-full md:w-[70px] bg-slate-950 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="-" /></SelectTrigger>
+                          <SelectContent>
+                            {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2 flex-[2] md:flex-none">
+                        <Label className="whitespace-nowrap text-slate-400 hidden md:block">Search:</Label>
+                        <Input className="bg-slate-950 border-slate-700 w-full md:w-64 text-slate-300 h-8" placeholder="Title / email" value={assignmentSearch} onChange={e => setAssignmentSearch(e.target.value)} />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 pl-2 border-l border-slate-700">
+                  <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto md:pl-2 md:border-l border-slate-700 pb-2 md:pb-0">
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap h-8 text-xs px-3" onClick={handleBulkAssign}>Assign Grade</Button>
                     <Button variant="secondary" className="bg-white text-slate-900 hover:bg-slate-200 whitespace-nowrap h-8 text-xs px-3" onClick={handleAssignAndDelete}>Assign & Delete</Button>
                     <Button variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700 whitespace-nowrap h-8 text-xs px-3" onClick={handleUndoDeleteAssignment} disabled={deletedAssignmentsBackup.length === 0}>Undo</Button>
@@ -3520,17 +3537,17 @@ const TeacherDashboard = () => {
                       ?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()))
                       .slice((marksPage - 1) * 20, marksPage * 20)
                       .map((email: string, idx: number) => (
-                        <div key={idx} className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700">
-                          <div className="flex items-center gap-4">
-                            <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                        <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
+                          <div className="flex items-center gap-4 w-full">
+                            <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
                               <UserCheck className="h-5 w-5" />
                             </div>
-                            <div>
-                              <p className="font-medium text-white">#{idx + 1} {studentMap.get(email) || email}</p>
-                              <p className="text-xs text-slate-500">{email}</p>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-white truncate">#{idx + 1} {studentMap.get(email) || email}</p>
+                              <p className="text-xs text-slate-500 truncate">{email}</p>
                             </div>
                           </div>
-                          <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleFetchStudentMarks(email)}>
+                          <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white w-full md:w-auto" onClick={() => handleFetchStudentMarks(email)}>
                             View Marks
                           </Button>
                         </div>
@@ -4013,7 +4030,7 @@ const TeacherDashboard = () => {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto">
+                  <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto max-w-[calc(100vw-4rem)] md:max-w-none">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-slate-900 text-slate-400">
                         <tr>
@@ -4210,7 +4227,7 @@ const TeacherDashboard = () => {
 
                           {viewingUnomId === report.id && (
                             <div className="mt-4 border-t border-slate-700 pt-4">
-                              <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto">
+                              <div className="rounded-lg overflow-hidden border border-slate-700 overflow-x-auto max-w-[calc(100vw-4rem)] md:max-w-none">
                                 <table className="w-full text-sm text-left">
                                   <thead className="bg-slate-900 text-slate-400">
                                     <tr>
