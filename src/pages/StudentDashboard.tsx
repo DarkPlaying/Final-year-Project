@@ -1670,7 +1670,7 @@ const StudentDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-white">Attend Test and Assignment</h2>
-                <p className="text-slate-400">View and take upcoming or ongoing exams and assignments for your courses.</p>
+                <p className="text-slate-400">View and take upcoming or ongoing tests and assignments for your courses.</p>
               </div>
               <div className="relative w-64">
                 <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
@@ -1688,7 +1688,7 @@ const StudentDashboard = () => {
               <div className="space-y-1">
                 <h4 className="text-sm font-medium text-yellow-500">Important Notice</h4>
                 <p className="text-sm text-yellow-500/90">
-                  Make sure the title of Test or Assignment must be same while sending assignment or exam. Otherwise marks cannot be given.
+                  Make sure the title of Test or Assignment must be same while sending assignment or Test. Otherwise marks cannot be given.
                 </p>
               </div>
             </div>
@@ -1748,7 +1748,7 @@ const StudentDashboard = () => {
               <div className="space-y-1">
                 <h4 className="text-sm font-medium text-yellow-500">Important Notice</h4>
                 <p className="text-sm text-yellow-500/90">
-                  Make sure the title of Test or Assignment must be same while sending assignment or exam. Otherwise marks cannot be given.
+                  Make sure the title of test or assignment must be same while sending assignment or test. Otherwise marks cannot be given.
                 </p>
               </div>
             </div>
@@ -1756,8 +1756,8 @@ const StudentDashboard = () => {
             <Card className="bg-slate-800 border-slate-700 text-white">
               <CardContent className="space-y-4 pt-6">
                 <div className="space-y-2">
-                  <Label>Assignment Title</Label>
-                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Algebra Homework 1" value={assignmentTitle} onChange={e => setAssignmentTitle(e.target.value)} />
+                  <Label>Assignment / Test Title</Label>
+                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Assignmnet 1 / Weekly test 1" value={assignmentTitle} onChange={e => setAssignmentTitle(e.target.value)} />
                 </div>
 
                 <div className="space-y-2">
@@ -1784,7 +1784,7 @@ const StudentDashboard = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Google Drive Link (Optional)</Label>
+                  <Label>Google Drive Link (Paste as Link Optional)</Label>
                   <Input className="bg-slate-900 border-slate-700" placeholder="https://..." value={assignmentLink} onChange={e => setAssignmentLink(e.target.value)} />
                 </div>
 
@@ -1851,7 +1851,7 @@ const StudentDashboard = () => {
         activeSection === 'marks' && (
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-white">View Marks</h2>
-            <p className="text-slate-400">View your marks across assignments and exams.</p>
+            <p className="text-slate-400">View your marks across assignments and tests.</p>
 
             <Card className="bg-slate-800 border-slate-700 text-white">
               <CardContent className="p-0">
@@ -1859,7 +1859,7 @@ const StudentDashboard = () => {
                   <Table>
                     <TableHeader>
                       <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Assignment/Exam</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Assignment/Test</TableHead>
                         <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Date</TableHead>
                         <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Marks</TableHead>
                         <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Status</TableHead>

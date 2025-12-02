@@ -2166,10 +2166,10 @@ const TeacherDashboard = () => {
     { icon: <Sparkles className="h-5 w-5" />, label: 'AI Test Generator', onClick: () => setActiveSection('ai-generator'), active: activeSection === 'ai-generator' },
     { icon: <MessageSquare className="h-5 w-5" />, label: 'Queries', onClick: () => setActiveSection('queries'), active: activeSection === 'queries' },
     { icon: <CheckSquare className="h-5 w-5" />, label: 'Assignments', onClick: () => setActiveSection('assignments'), active: activeSection === 'assignments' },
-    { icon: <ClipboardList className="h-5 w-5" />, label: 'View Test Marks', onClick: () => setActiveSection('view-marks'), active: activeSection === 'view-marks' },
+    { icon: <ClipboardList className="h-5 w-5" />, label: 'View Marks', onClick: () => setActiveSection('view-marks'), active: activeSection === 'view-marks' },
     { icon: <Calendar className="h-5 w-5" />, label: 'View Attendance', onClick: () => setActiveSection('view-attendance'), active: activeSection === 'view-attendance' },
     { icon: <UserCheck className="h-5 w-5" />, label: 'Attendance', onClick: () => setActiveSection('attendance'), active: activeSection === 'attendance' },
-    { icon: <CheckCircle className="h-5 w-5" />, label: 'Assign Marks', onClick: () => setActiveSection('assign-marks'), active: activeSection === 'assign-marks' },
+    { icon: <CheckCircle className="h-5 w-5" />, label: 'Assign Exam Marks', onClick: () => setActiveSection('assign-marks'), active: activeSection === 'assign-marks' },
     { icon: <FileText className="h-5 w-5" />, label: 'UNOM', onClick: () => setActiveSection('unom'), active: activeSection === 'unom' },
   ];
 
@@ -2529,7 +2529,7 @@ const TeacherDashboard = () => {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Exam Title</Label>
-                <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Mid-term Mathematics Exam" value={examTitle} onChange={e => setExamTitle(e.target.value)} />
+                <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Weekly Test 1" value={examTitle} onChange={e => setExamTitle(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Type</Label>
@@ -2543,10 +2543,10 @@ const TeacherDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Textarea className="bg-slate-900 border-slate-700" placeholder="Enter exam details..." value={examDesc} onChange={e => setExamDesc(e.target.value)} />
+                <Textarea className="bg-slate-900 border-slate-700" placeholder="Enter exam details...(must attend 5 marks)" value={examDesc} onChange={e => setExamDesc(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Google Drive / Form Link (Optional)</Label>
+                <Label>Google Drive / Form Link (Paste as Link Optional)</Label>
                 <div className="flex gap-2">
                   <Input className="bg-slate-900 border-slate-700" placeholder="https://..." value={examLink} onChange={e => setExamLink(e.target.value)} />
                   <div className="relative">
@@ -2633,7 +2633,7 @@ const TeacherDashboard = () => {
               <div className="relative flex-1">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                 <Input
-                  placeholder="Search exams..."
+                  placeholder="Search tests..."
                   className="pl-8 bg-slate-900 border-slate-700"
                   value={examSearch}
                   onChange={(e) => setExamSearch(e.target.value)}
@@ -2655,7 +2655,7 @@ const TeacherDashboard = () => {
             ).length === 0 ? (
               <Card className="bg-slate-800 border-slate-700 text-white">
                 <CardContent className="p-8 text-center text-slate-500">
-                  {exams.length === 0 ? "No exams created yet. Create one above." : "No exams match your search."}
+                  {exams.length === 0 ? "No tests created yet. Create one above." : "No tests match your search."}
                 </CardContent>
               </Card>
             ) : (
@@ -2754,7 +2754,7 @@ const TeacherDashboard = () => {
                 <Textarea className="bg-slate-900 border-slate-700" placeholder="Enter details..." value={announceDesc} onChange={e => setAnnounceDesc(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Google Drive / Form Link</Label>
+                <Label>Google Drive / Form Link(Paste as Link Optional)</Label>
                 <div className="flex gap-2">
                   <Input className="bg-slate-900 border-slate-700" placeholder="https://..." value={announceLink} onChange={e => setAnnounceLink(e.target.value)} />
                   <div className="relative">
@@ -2944,14 +2944,14 @@ const TeacherDashboard = () => {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>Syllabus Name</Label>
-                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Mathematics Course Syllabus 2025" value={syllabusName} onChange={e => setSyllabusName(e.target.value)} />
+                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., RDBMS" value={syllabusName} onChange={e => setSyllabusName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Units (comma separated)</Label>
-                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Algebra, Calculus, Geometry" value={syllabusUnits} onChange={e => setSyllabusUnits(e.target.value)} />
+                  <Input className="bg-slate-900 border-slate-700" placeholder="e.g., Unit 1 - 3" value={syllabusUnits} onChange={e => setSyllabusUnits(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Google Drive Link (Optional)</Label>
+                  <Label>Google Drive Link (Paste as Link Optional)</Label>
                   <div className="flex gap-2">
                     <Input className="bg-slate-900 border-slate-700" placeholder="https://..." value={syllabusLink} onChange={e => setSyllabusLink(e.target.value)} />
                     <div className="relative">
@@ -3750,7 +3750,7 @@ const TeacherDashboard = () => {
                   <Label>Subject Name</Label>
                   <Input
                     className="bg-slate-900 border-slate-700"
-                    placeholder="e.g. Mathematics"
+                    placeholder="e.g. RDBMS"
                     value={assignMarksSubject}
                     onChange={(e) => setAssignMarksSubject(e.target.value)}
                   />
@@ -3759,7 +3759,7 @@ const TeacherDashboard = () => {
                   <Label>Section Title</Label>
                   <Input
                     className="bg-slate-900 border-slate-700"
-                    placeholder="e.g. Unit Test 1, Section A"
+                    placeholder="e.g. Cycle Test 1"
                     value={assignMarksSectionTitle}
                     onChange={(e) => setAssignMarksSectionTitle(e.target.value)}
                   />

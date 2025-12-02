@@ -1655,7 +1655,7 @@ const AdminDashboard = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div className="space-y-2">
-                  <Label>Workspace Name (e.g., Class 12 Math)</Label>
+                  <Label>Workspace Name (e.g., Batch 2023 - 2025)</Label>
                   <Input
                     value={newWorkspace.name}
                     onChange={e => setNewWorkspace({ ...newWorkspace, name: e.target.value })}
@@ -1663,7 +1663,7 @@ const AdminDashboard = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Category (e.g., Grade 12, Science)</Label>
+                  <Label>Category (e.g., BSC A)</Label>
                   <Input
                     value={newWorkspace.category}
                     onChange={e => setNewWorkspace({ ...newWorkspace, category: e.target.value })}

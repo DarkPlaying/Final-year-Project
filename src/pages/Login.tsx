@@ -313,7 +313,7 @@ const Login = () => {
                   <input
                     type="text"
                     className="peer relative z-10 border-2 border-input h-12 w-full rounded-md bg-background px-4 font-thin outline-none transition-all duration-200 ease-in-out focus:bg-muted focus:border-primary placeholder:font-normal placeholder:text-muted-foreground text-foreground"
-                    placeholder="Enter your username"
+                    placeholder="Enter your email"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     disabled={isLoading}
