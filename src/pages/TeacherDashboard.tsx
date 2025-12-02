@@ -3216,12 +3216,12 @@ const TeacherDashboard = () => {
       {
         activeSection === 'assignments' && (
           <div className="space-y-6">
-            <div className="flex items-end justify-between">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div className="flex flex-col gap-1">
                 <h2 className="text-2xl font-bold text-white">Assignment Reviews</h2>
                 <p className="text-slate-400">Review and grade student assignments. Control whether the submission portal is open for students.</p>
               </div>
-              <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-700 mb-1">
+              <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-700 mb-1 self-start md:self-auto">
                 <span className={`text-xs uppercase tracking-wider px-3 font-semibold ${portalStatus === 'closed' ? 'text-orange-500' : 'text-slate-500'}`}>Portal: {portalStatus}</span>
                 <Button
                   className={`h-8 px-3 text-xs font-medium ${portalStatus === 'open' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} transition-all border-0`}
@@ -3245,11 +3245,11 @@ const TeacherDashboard = () => {
                     <div className="grid grid-cols-2 gap-2 w-full md:w-auto">
                       <div className="flex flex-col gap-1">
                         <Label className="whitespace-nowrap text-slate-400 text-xs">From:</Label>
-                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
+                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [color-scheme:dark]" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
                       </div>
                       <div className="flex flex-col gap-1">
                         <Label className="whitespace-nowrap text-slate-400 text-xs">To:</Label>
-                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
+                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [color-scheme:dark]" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
                       </div>
                     </div>
                     <div className="flex items-center gap-2 w-full md:w-auto">
@@ -3278,21 +3278,21 @@ const TeacherDashboard = () => {
               </CardContent>
             </Card>
 
-            <div className="flex justify-end items-center gap-6">
-              <div className="flex items-center gap-2">
-                <Label className="whitespace-nowrap text-slate-400">Workspace:</Label>
+            <div className="flex flex-col md:flex-row justify-end items-start md:items-center gap-4 md:gap-6">
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <Label className="whitespace-nowrap text-slate-400 w-20 md:w-auto">Workspace:</Label>
                 <Select value={assignmentFilterWorkspace} onValueChange={setAssignmentFilterWorkspace}>
-                  <SelectTrigger className="w-[150px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All Workspaces" /></SelectTrigger>
+                  <SelectTrigger className="w-full md:w-[150px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All Workspaces" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Workspaces</SelectItem>
                     {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center gap-2">
-                <Label className="whitespace-nowrap text-slate-400">Type:</Label>
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <Label className="whitespace-nowrap text-slate-400 w-20 md:w-auto">Type:</Label>
                 <Select value={assignmentFilterType} onValueChange={(v: any) => setAssignmentFilterType(v)}>
-                  <SelectTrigger className="w-[110px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All" /></SelectTrigger>
+                  <SelectTrigger className="w-full md:w-[110px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
                     <SelectItem value="exam">Exam</SelectItem>
@@ -3399,18 +3399,18 @@ const TeacherDashboard = () => {
                       })
                         .slice((assignmentPage - 1) * 20, assignmentPage * 20)
                         .map(a => (
-                          <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex items-center gap-4">
-                            <input
-                              type="checkbox"
-                              className="rounded border-slate-600 bg-slate-800"
-                              checked={selectedAssignments.includes(a.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) setSelectedAssignments([...selectedAssignments, a.id]);
-                                else setSelectedAssignments(selectedAssignments.filter(id => id !== a.id));
-                              }}
-                            />
-                            <div className="flex items-center gap-4 flex-1">
-                              <div className="p-3 bg-slate-700 rounded-lg">
+                          <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex flex-col md:flex-row items-start md:items-center gap-4">
+                            <div className="flex items-center gap-4 w-full md:w-auto flex-1">
+                              <input
+                                type="checkbox"
+                                className="rounded border-slate-600 bg-slate-800 shrink-0"
+                                checked={selectedAssignments.includes(a.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) setSelectedAssignments([...selectedAssignments, a.id]);
+                                  else setSelectedAssignments(selectedAssignments.filter(id => id !== a.id));
+                                }}
+                              />
+                              <div className="p-3 bg-slate-700 rounded-lg shrink-0">
                                 <FileText className="h-6 w-6 text-orange-400" />
                               </div>
                               <div className="flex-1 min-w-0">
@@ -3422,20 +3422,20 @@ const TeacherDashboard = () => {
                                   </span>
                                 </div>
                               </div>
+                            </div>
 
-                              <div className="flex items-center gap-4">
-                                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => window.open(a.googleDriveLink || a.driveLink || a.url, '_blank')}>View PDF</Button>
+                            <div className="flex items-center gap-4 w-full md:w-auto justify-end">
+                              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => window.open(a.googleDriveLink || a.driveLink || a.url, '_blank')}>View PDF</Button>
 
-                                <div className="flex items-center gap-2 bg-slate-950 p-1 rounded border border-slate-700">
-                                  <span className="text-xs text-slate-400 pl-2">Marks:</span>
-                                  <Select onValueChange={(v) => handleUpdateMarks(a.id, Number(v))}>
-                                    <SelectTrigger className="w-[60px] h-7 bg-transparent border-0 focus:ring-0 text-white"><SelectValue placeholder={a.marks || '-'} /></SelectTrigger>
-                                    <SelectContent>
-                                      {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
-                                    </SelectContent>
-                                  </Select>
-                                  <Button size="sm" variant="secondary" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white border-0">Save</Button>
-                                </div>
+                              <div className="flex items-center gap-2 bg-slate-950 p-1 rounded border border-slate-700">
+                                <span className="text-xs text-slate-400 pl-2">Marks:</span>
+                                <Select onValueChange={(v) => handleUpdateMarks(a.id, Number(v))}>
+                                  <SelectTrigger className="w-[60px] h-7 bg-transparent border-0 focus:ring-0 text-white"><SelectValue placeholder={a.marks || '-'} /></SelectTrigger>
+                                  <SelectContent>
+                                    {[0, 2, 4, 6, 8, 10].map(m => <SelectItem key={m} value={m.toString()}>{m}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                                <Button size="sm" variant="secondary" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white border-0">Save</Button>
                               </div>
                             </div>
                           </div>
