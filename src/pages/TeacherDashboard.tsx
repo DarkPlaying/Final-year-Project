@@ -71,6 +71,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { AITestGenerator } from '@/components/AITestGenerator';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // Google Drive Config
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -130,8 +131,8 @@ const TeacherDashboard = () => {
 
   // Assignment Portal & Filters
   const [portalStatus, setPortalStatus] = useState<'open' | 'closed'>('closed');
-  const [filterFrom, setFilterFrom] = useState('');
-  const [filterTo, setFilterTo] = useState('');
+  const [filterFrom, setFilterFrom] = useState<Date | undefined>(undefined);
+  const [filterTo, setFilterTo] = useState<Date | undefined>(undefined);
   const [bulkMark, setBulkMark] = useState('');
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [selectAllAssignments, setSelectAllAssignments] = useState(false);
@@ -436,6 +437,15 @@ const TeacherDashboard = () => {
     return () => unsubPortal();
   }, [userEmail]);
 
+  useEffect(() => {
+    if (filterFrom && filterTo && filterFrom > filterTo) {
+      const temp = filterFrom;
+      setFilterFrom(filterTo);
+      setFilterTo(temp);
+      toast.info("Date range corrected: 'From' date was after 'To' date");
+    }
+  }, [filterFrom, filterTo]);
+
   const togglePortal = async () => {
     const newStatus = portalStatus === 'open' ? 'closed' : 'open';
     try {
@@ -501,7 +511,7 @@ const TeacherDashboard = () => {
 
       let matchesDate = true;
       if (filterFrom && a.createdAt?.toDate) {
-        matchesDate = matchesDate && a.createdAt.toDate() >= new Date(filterFrom);
+        matchesDate = matchesDate && a.createdAt.toDate() >= filterFrom;
       }
       if (filterTo && a.createdAt?.toDate) {
         const endDate = new Date(filterTo);
@@ -3024,7 +3034,7 @@ const TeacherDashboard = () => {
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 mb-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                   <Input
@@ -3035,7 +3045,7 @@ const TeacherDashboard = () => {
                   />
                 </div>
                 <Select value={syllabusFilterWorkspace} onValueChange={setSyllabusFilterWorkspace}>
-                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                  <SelectTrigger className="w-full md:w-[180px] bg-slate-900 border-slate-700 text-slate-300">
                     <SelectValue placeholder="All Workspaces" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3243,13 +3253,13 @@ const TeacherDashboard = () => {
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-1">
                   <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
                     <div className="grid grid-cols-2 gap-2 w-full md:w-auto">
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2">
                         <Label className="whitespace-nowrap text-slate-400 text-xs">From:</Label>
-                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:[filter:invert(1)] [&::-webkit-calendar-picker-indicator]:mr-2" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
+                        <DatePicker date={filterFrom} setDate={setFilterFrom} className="w-full md:w-36 h-8" />
                       </div>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2">
                         <Label className="whitespace-nowrap text-slate-400 text-xs">To:</Label>
-                        <Input type="date" className="bg-slate-950 border-slate-700 w-full md:w-36 text-slate-300 h-8 [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:[filter:invert(1)] [&::-webkit-calendar-picker-indicator]:mr-2" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
+                        <DatePicker date={filterTo} setDate={setFilterTo} className="w-full md:w-36 h-8" />
                       </div>
                     </div>
                     <div className="flex items-center gap-2 w-full md:w-auto">
@@ -3315,7 +3325,7 @@ const TeacherDashboard = () => {
                         let matchesDate = true;
                         if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
                           const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                          matchesDate = matchesDate && date >= new Date(filterFrom);
+                          matchesDate = matchesDate && date >= filterFrom;
                         }
                         if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
                           const endDate = new Date(filterTo);
@@ -3351,7 +3361,7 @@ const TeacherDashboard = () => {
                   let matchesDate = true;
                   if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
                     const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                    matchesDate = matchesDate && date >= new Date(filterFrom);
+                    matchesDate = matchesDate && date >= filterFrom;
                   }
                   if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
                     const endDate = new Date(filterTo);
@@ -3383,7 +3393,7 @@ const TeacherDashboard = () => {
                         let matchesDate = true;
                         if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
                           const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                          matchesDate = matchesDate && date >= new Date(filterFrom);
+                          matchesDate = matchesDate && date >= filterFrom;
                         }
                         if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
                           const endDate = new Date(filterTo);
@@ -3823,7 +3833,7 @@ const TeacherDashboard = () => {
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 mb-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                   <Input
@@ -3834,7 +3844,7 @@ const TeacherDashboard = () => {
                   />
                 </div>
                 <Select value={marksHistoryFilterWorkspace} onValueChange={setMarksHistoryFilterWorkspace}>
-                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                  <SelectTrigger className="w-full md:w-[180px] bg-slate-900 border-slate-700 text-slate-300">
                     <SelectValue placeholder="All Workspaces" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3855,7 +3865,7 @@ const TeacherDashboard = () => {
                     .map(batch => (
                       <Card key={batch.id} className={`bg-slate-800 border-slate-700 ${batch.status === 'deleted' ? 'opacity-50' : ''}`}>
                         <CardContent className="p-4">
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-0">
                             <div>
                               <h4 className="font-semibold text-white text-lg">{batch.sectionTitle}</h4>
                               <p className="text-sm text-slate-400">
@@ -3863,7 +3873,7 @@ const TeacherDashboard = () => {
                                 {batch.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
                               </p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
                               <Button variant="outline" size="sm" onClick={() => handleViewBatchMarks(batch.id)} className={`border-blue-500 text-blue-500 hover:bg-blue-500/10 ${viewingBatchId === batch.id ? 'bg-blue-500/20' : ''}`}>
                                 <Eye className="h-4 w-4 mr-2" /> {viewingBatchId === batch.id ? 'Hide Marks' : 'View Marks'}
                               </Button>
@@ -4112,7 +4122,7 @@ const TeacherDashboard = () => {
                   </Button>
                 )}
               </div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 mb-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                   <Input
@@ -4123,7 +4133,7 @@ const TeacherDashboard = () => {
                   />
                 </div>
                 <Select value={unomHistoryFilterWorkspace} onValueChange={setUnomHistoryFilterWorkspace}>
-                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700 text-slate-300">
+                  <SelectTrigger className="w-full md:w-[180px] bg-slate-900 border-slate-700 text-slate-300">
                     <SelectValue placeholder="All Workspaces" />
                   </SelectTrigger>
                   <SelectContent>
@@ -4144,7 +4154,7 @@ const TeacherDashboard = () => {
                     .map(report => (
                       <Card key={report.id} className={`bg-slate-800 border-slate-700 ${report.status === 'deleted' ? 'opacity-50' : ''}`}>
                         <CardContent className="p-4">
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-0">
                             <div>
                               <h4 className="font-semibold text-white text-lg">{report.title}</h4>
                               <p className="text-sm text-slate-400">
@@ -4152,9 +4162,9 @@ const TeacherDashboard = () => {
                                 {report.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
                               </p>
                             </div>
-                            <div className="flex gap-2 items-center">
+                            <div className="flex flex-col gap-2 w-full md:w-auto mt-2 md:mt-0">
                               {viewingUnomId === report.id && (
-                                <>
+                                <div className="flex gap-2 items-center flex-wrap justify-end w-full">
                                   {report.data?.some((d: any) => d.hasUpdated) && (
                                     <Button
                                       variant="outline"
@@ -4163,7 +4173,7 @@ const TeacherDashboard = () => {
                                       className="border-green-600 text-green-500 hover:bg-green-500/10 h-8"
                                       title="Clear all green dots"
                                     >
-                                      <CheckCircle className="h-4 w-4 mr-2" /> Mark All as Marked
+                                      <CheckCircle className="h-4 w-4 mr-2" /> Mark All
                                     </Button>
                                   )}
                                   <Button
@@ -4181,47 +4191,49 @@ const TeacherDashboard = () => {
                                   >
                                     <RefreshCw className="h-4 w-4" />
                                   </Button>
-                                  <div className="relative w-40">
+                                  <div className="relative flex-1 md:flex-none md:w-40">
                                     <Search className="absolute left-2 top-2.5 h-3 w-3 text-slate-400" />
                                     <Input
                                       placeholder="Search..."
-                                      className="pl-7 bg-slate-900 border-slate-600 h-8 text-xs"
+                                      className="pl-7 bg-slate-900 border-slate-600 h-8 text-xs w-full"
                                       value={unomSearch}
                                       onChange={(e) => setUnomSearch(e.target.value)}
                                     />
                                   </div>
-                                </>
+                                </div>
                               )}
-                              <Button variant="outline" size="sm" onClick={() => handleDownloadUnomCsv(report)} className="border-slate-600 text-slate-300 hover:bg-slate-700">
-                                <Download className="h-4 w-4 mr-2" /> CSV
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => {
-                                handleViewUnom(report);
-                                setUnomSearch(''); // Clear search on toggle
-                              }} className={`border-blue-500 text-blue-500 hover:bg-blue-500/10 ${viewingUnomId === report.id ? 'bg-blue-500/20' : ''}`}>
-                                <Eye className="h-4 w-4 mr-2" /> {viewingUnomId === report.id ? 'Hide Report' : 'View Report'}
-                              </Button>
-                              {report.status === 'active' ? (
-                                (() => {
-                                  const ws = workspaces.find(w => w.id === report.workspaceId);
-                                  const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
-                                  return isAuthorized ? (
-                                    <Button variant="destructive" size="sm" onClick={() => handleDeleteUnom(report.id)}>
-                                      <Trash2 className="h-4 w-4 mr-2" /> Delete
-                                    </Button>
-                                  ) : null;
-                                })()
-                              ) : (
-                                (() => {
-                                  const ws = workspaces.find(w => w.id === report.workspaceId);
-                                  const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
-                                  return isAuthorized ? (
-                                    <Button variant="outline" size="sm" onClick={() => handleUndoUnom(report.id)} className="border-green-500 text-green-500 hover:bg-green-500/10">
-                                      <RefreshCw className="h-4 w-4 mr-2" /> Undo
-                                    </Button>
-                                  ) : null;
-                                })()
-                              )}
+                              <div className="flex gap-2 items-center w-full md:w-auto">
+                                <Button variant="outline" size="sm" onClick={() => handleDownloadUnomCsv(report)} className="flex-1 md:flex-none border-slate-600 text-slate-300 hover:bg-slate-700">
+                                  <Download className="h-4 w-4 mr-2" /> CSV
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => {
+                                  handleViewUnom(report);
+                                  setUnomSearch(''); // Clear search on toggle
+                                }} className={`flex-1 md:flex-none border-blue-500 text-blue-500 hover:bg-blue-500/10 ${viewingUnomId === report.id ? 'bg-blue-500/20' : ''}`}>
+                                  <Eye className="h-4 w-4 mr-2" /> {viewingUnomId === report.id ? 'Hide' : 'View'}
+                                </Button>
+                                {report.status === 'active' ? (
+                                  (() => {
+                                    const ws = workspaces.find(w => w.id === report.workspaceId);
+                                    const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+                                    return isAuthorized ? (
+                                      <Button variant="destructive" size="sm" onClick={() => handleDeleteUnom(report.id)} className="flex-1 md:flex-none">
+                                        <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                      </Button>
+                                    ) : null;
+                                  })()
+                                ) : (
+                                  (() => {
+                                    const ws = workspaces.find(w => w.id === report.workspaceId);
+                                    const isAuthorized = ws && (ws.classTeacher === userEmail || ws.mentor === userEmail);
+                                    return isAuthorized ? (
+                                      <Button variant="outline" size="sm" onClick={() => handleUndoUnom(report.id)} className="flex-1 md:flex-none border-green-500 text-green-500 hover:bg-green-500/10">
+                                        <RefreshCw className="h-4 w-4 mr-2" /> Undo
+                                      </Button>
+                                    ) : null;
+                                  })()
+                                )}
+                              </div>
                             </div>
                           </div>
 
