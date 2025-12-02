@@ -1859,10 +1859,10 @@ const StudentDashboard = () => {
                   <Table>
                     <TableHeader>
                       <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                        <TableHead className="text-slate-400">Assignment/Exam</TableHead>
-                        <TableHead className="text-slate-400">Date</TableHead>
-                        <TableHead className="text-slate-400">Marks</TableHead>
-                        <TableHead className="text-slate-400">Status</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Assignment/Exam</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Date</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Marks</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1876,10 +1876,10 @@ const StudentDashboard = () => {
                             .slice((marksPage - 1) * 10, marksPage * 10)
                             .map(m => (
                               <TableRow key={m.id} className="border-slate-700 hover:bg-slate-800/50">
-                                <TableCell className="font-medium text-slate-200">{m.assignmentTitle || m.title}</TableCell>
-                                <TableCell className="text-slate-400">{m.submittedAt?.toDate().toLocaleDateString()}</TableCell>
-                                <TableCell className="text-green-400 font-bold">{m.marks}</TableCell>
-                                <TableCell className="text-slate-400 capitalize">{m.status}</TableCell>
+                                <TableCell className="font-medium text-slate-200 text-xs md:text-sm p-2 md:p-4 max-w-[120px] md:max-w-none truncate">{m.assignmentTitle || m.title}</TableCell>
+                                <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4">{m.submittedAt?.toDate().toLocaleDateString()}</TableCell>
+                                <TableCell className="text-green-400 font-bold text-xs md:text-sm p-2 md:p-4">{m.marks}</TableCell>
+                                <TableCell className="text-slate-400 capitalize text-xs md:text-sm p-2 md:p-4">{m.status}</TableCell>
                               </TableRow>
                             ))}
                           {marks.length > 10 && (
@@ -1917,10 +1917,10 @@ const StudentDashboard = () => {
                   <Table>
                     <TableHeader>
                       <TableRow className="border-slate-700 hover:bg-slate-800/50">
-                        <TableHead className="text-slate-400">Title</TableHead>
-                        <TableHead className="text-slate-400">Subject</TableHead>
-                        <TableHead className="text-slate-400">Marks</TableHead>
-                        <TableHead className="text-slate-400">Date</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Title</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Subject</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Marks</TableHead>
+                        <TableHead className="text-slate-400 text-xs md:text-sm p-2 md:p-4">Date</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1934,10 +1934,10 @@ const StudentDashboard = () => {
                             .slice((examMarksPage - 1) * 10, examMarksPage * 10)
                             .map(m => (
                               <TableRow key={m.id} className="border-slate-700 hover:bg-slate-800/50">
-                                <TableCell className="font-medium text-slate-200">{m.sectionTitle || '-'}</TableCell>
-                                <TableCell className="text-slate-400">{m.subject || '-'}</TableCell>
-                                <TableCell className="text-green-400 font-bold">{m.marks}</TableCell>
-                                <TableCell className="text-slate-400">
+                                <TableCell className="font-medium text-slate-200 text-xs md:text-sm p-2 md:p-4 max-w-[100px] md:max-w-none truncate">{m.sectionTitle || '-'}</TableCell>
+                                <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4 max-w-[100px] md:max-w-none truncate">{m.subject || '-'}</TableCell>
+                                <TableCell className="text-green-400 font-bold text-xs md:text-sm p-2 md:p-4">{m.marks}</TableCell>
+                                <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4">
                                   {m.publishedAt?.toDate ? m.publishedAt.toDate().toLocaleDateString() : (m.publishedAt ? new Date(m.publishedAt).toLocaleDateString() : '-')}
                                 </TableCell>
                               </TableRow>
