@@ -2137,7 +2137,7 @@ const StudentDashboard = () => {
                 <Label className="text-slate-300">Select Month:</Label>
                 <Input
                   type="month"
-                  className="bg-slate-900 border-slate-700 w-48 text-white"
+                  className="bg-slate-900 border-slate-700 w-48 text-white [color-scheme:dark]"
                   value={attendanceMonth}
                   onChange={(e) => setAttendanceMonth(e.target.value)}
                 />
