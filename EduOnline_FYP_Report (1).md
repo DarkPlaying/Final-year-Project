@@ -438,7 +438,7 @@ Currently, many educational institutions rely on:
 ```
                       ┌──────────────────┐
                       │ TEACHER CREATES  │
-                      │ EXAM REQUEST     │
+                      │ Assignment REQUEST     │
                       └────────┬─────────┘
                                │
                 ┌──────────────┼──────────────┐
@@ -454,12 +454,12 @@ Currently, many educational institutions rely on:
                                │
                         ┌──────▼──────┐
                         │ FIRESTORE   │
-                        │ Exams Coll. │
+                        │ Assignment Coll. │
                         └──────┬──────┘
                                │
                         ┌──────▼──────┐
                         │ STUDENT     │
-                        │ TAKES EXAM  │
+                        │ TAKES Assignment │
                         └──────┬──────┘
                                │
                         ┌──────▼──────┐
@@ -468,7 +468,7 @@ Currently, many educational institutions rely on:
                         └──────┬──────┘
                                │
                         ┌──────▼──────────┐
-                        │ UPDATE EXAM     │
+                        │ UPDATE Assignment     │
                         │ SUBMISSIONS     │
                         │ COLLECTION      │
                         └─────────────────┘
@@ -1640,27 +1640,16 @@ Production live
 # REFERENCES
 
 [1] React Documentation. (2024). "React: A JavaScript library for building user interfaces." Retrieved from https://react.dev/
-
 [2] Firebase Documentation. (2024). "Firebase - Build and scale apps on a trusted platform." Retrieved from https://firebase.google.com/docs
-
 [3] Google Generative AI. (2024). "Gemini API: Generate content with Google's AI models." Retrieved from https://ai.google.dev/
-
 [4] Tailwind CSS. (2024). "Utility-first CSS framework." Retrieved from https://tailwindcss.com/docs
-
 [5] Shadcn UI. (2024). "Beautifully designed components built with Radix UI and Tailwind CSS." Retrieved from https://ui.shadcn.com/
-
 [6] University of Madras. (2023). "B.Sc Degree Programme in Computer Science Syllabus 2023-2024." Retrieved from https://www.unom.ac.in/
-
 [7] Lucide React. (2024). "Beautiful & consistent icon library." Retrieved from https://lucide.dev/
-
 [8] Recharts. (2024). "Composable charting library built on React components." Retrieved from https://recharts.org/
-
 [9] TypeScript Documentation. (2024). "TypeScript: Typed JavaScript at Any Scale." Retrieved from https://www.typescriptlang.org/docs/
-
 [10] Vite Documentation. (2024). "Next Generation Frontend Tooling." Retrieved from https://vitejs.dev/
-
 [11] Mozilla Developer Network. (2024). "MDN Web Docs - Web Technologies." Retrieved from https://developer.mozilla.org/
-
 [12] OAuth 2.0 Authorization Framework. (2024). "RFC 6749 - The OAuth 2.0 Authorization Framework." Retrieved from https://tools.ietf.org/html/rfc6749
 
 [13] Cloud Security Alliance. (2024). "Cloud Computing Security Reference Architecture." Retrieved from https://cloudsecurityalliance.org/
