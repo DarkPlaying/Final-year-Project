@@ -1486,12 +1486,17 @@ const StudentDashboard = () => {
         {notificationPermission === 'denied' && (
           <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-lg max-w-md">
             <p className="text-red-400 font-semibold mb-2">Notifications are Blocked</p>
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-gray-300 mb-4">
               Please click the lock icon 🔒 in your browser address bar and set Notifications to "Allow", then refresh the page.
             </p>
-            <Button onClick={() => window.location.reload()} variant="outline" className="mt-4 w-full border-red-500 text-red-400 hover:bg-red-500/20">
-              I've Enabled Them, Refresh Page
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button onClick={requestNotificationPermission} variant="secondary" className="w-full">
+                Try Requesting Again
+              </Button>
+              <Button onClick={() => window.location.reload()} variant="outline" className="w-full border-red-500 text-red-400 hover:bg-red-500/20">
+                I've Enabled Them, Refresh Page
+              </Button>
+            </div>
           </div>
         )}
       </div>
