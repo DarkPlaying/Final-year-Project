@@ -129,6 +129,10 @@ const StudentDashboard = () => {
   const [assignmentType, setAssignmentType] = useState('assignment'); // Default assignment
   const [portalStatus, setPortalStatus] = useState('closed'); // Default closed
 
+  // Notification Permission State
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(Notification.permission);
+  const [isCheckingPermission, setIsCheckingPermission] = useState(true);
+
   // Google Drive Auth State
   const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
   const tokenClient = useRef<any>(null);
@@ -399,52 +403,52 @@ const StudentDashboard = () => {
 
   // FCM Notification Setup
   // FCM Notification Setup
+  // Notification Permission Check & Setup
   useEffect(() => {
-    const setupNotifications = async () => {
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
+    const checkPermission = async () => {
+      // Update state with current permission
+      setNotificationPermission(Notification.permission);
+      setIsCheckingPermission(false);
 
-          // 1. Get FCM Token and Save to Firestore
-          const VAPID_KEY = "BI6gIoKbfp7M4KLmwyy-KLEfmyL0-fBn6cHR-X8ze9HUYC6JaP3f5_STbpG3yXORpifNhOcV6VNUV_ug0EbIphw";
-          if (VAPID_KEY) {
-            try {
-              const token = await getToken(messaging, { vapidKey: VAPID_KEY });
-              if (token && userId) {
-                console.log("FCM Token:", token);
-                await updateDoc(doc(db, 'users', userId), { fcmToken: token });
-              }
-            } catch (err) {
-              console.error("Error getting FCM token:", err);
-            }
-          }
-
-          // 2. Initialize Service Worker polling (Backup) - DISABLED to prevent duplicates/local polling
-          // if (navigator.serviceWorker.controller) {
-          //   navigator.serviceWorker.controller.postMessage({
-          //     type: 'INIT_NOTIFICATIONS',
-          //     userId: userId || 'anonymous'
-          //   });
-          // } else {
-          //   navigator.serviceWorker.ready.then((registration) => {
-          //     if (registration.active) {
-          //       registration.active.postMessage({
-          //         type: 'INIT_NOTIFICATIONS',
-          //         userId: userId || 'anonymous'
-          //       });
-          //     }
-          //   });
-          // }
-        }
-      } catch (error) {
-        console.error("Error requesting notification permission:", error);
+      if (Notification.permission === 'granted' && userId) {
+        // Permission already granted, setup FCM
+        setupFCM();
       }
     };
 
-    if (userId) {
-      setupNotifications();
-    }
+    checkPermission();
   }, [userId]);
+
+  const requestNotificationPermission = async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+
+      if (permission === 'granted' && userId) {
+        setupFCM();
+        toast.success("Notifications enabled!");
+      } else if (permission === 'denied') {
+        toast.error("Notifications blocked. Please enable them in browser settings.");
+      }
+    } catch (error) {
+      console.error("Error requesting permission:", error);
+    }
+  };
+
+  const setupFCM = async () => {
+    const VAPID_KEY = "BI6gIoKbfp7M4KLmwyy-KLEfmyL0-fBn6cHR-X8ze9HUYC6JaP3f5_STbpG3yXORpifNhOcV6VNUV_ug0EbIphw";
+    if (VAPID_KEY) {
+      try {
+        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+        if (token && userId) {
+          console.log("FCM Token:", token);
+          await updateDoc(doc(db, 'users', userId), { fcmToken: token });
+        }
+      } catch (err) {
+        console.error("Error getting FCM token:", err);
+      }
+    }
+  };
 
   // Real-time listener for foreground notifications (Toast only)
   useEffect(() => {
@@ -1459,6 +1463,40 @@ const StudentDashboard = () => {
     { icon: <Calendar className="h-5 w-5" />, label: 'View Attendance', onClick: () => setActiveSection('attendance'), active: activeSection === 'attendance' },
     { icon: <Megaphone className="h-5 w-5" />, label: 'Announcements', onClick: () => setActiveSection('announcements'), active: activeSection === 'announcements' },
   ];
+
+  if (isCheckingPermission) {
+    return <div className="flex items-center justify-center h-screen bg-gray-900 text-white">Checking permissions...</div>;
+  }
+
+  if (notificationPermission !== 'granted') {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-6 text-center">
+        <Bell className="w-16 h-16 text-blue-500 mb-4 animate-bounce" />
+        <h1 className="text-2xl font-bold mb-2">Notifications Required</h1>
+        <p className="text-gray-400 mb-6 max-w-md">
+          To ensure you never miss an exam, assignment, or announcement, you must enable notifications for this dashboard.
+        </p>
+
+        {notificationPermission === 'default' && (
+          <Button onClick={requestNotificationPermission} className="bg-blue-600 hover:bg-blue-700">
+            Enable Notifications
+          </Button>
+        )}
+
+        {notificationPermission === 'denied' && (
+          <div className="bg-red-500/10 border border-red-500/50 p-4 rounded-lg max-w-md">
+            <p className="text-red-400 font-semibold mb-2">Notifications are Blocked</p>
+            <p className="text-sm text-gray-300">
+              Please click the lock icon 🔒 in your browser address bar and set Notifications to "Allow", then refresh the page.
+            </p>
+            <Button onClick={() => window.location.reload()} variant="outline" className="mt-4 w-full border-red-500 text-red-400 hover:bg-red-500/20">
+              I've Enabled Them, Refresh Page
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <DashboardLayout
