@@ -69,6 +69,8 @@ import {
   Timestamp,
   setDoc
 } from 'firebase/firestore';
+import { database } from '@/lib/firebase';
+import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update } from 'firebase/database';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { AITestGenerator } from '@/components/AITestGenerator';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -84,6 +86,9 @@ const TeacherDashboard = () => {
   const [userEmail, setUserEmail] = useState('');
   const [userId, setUserId] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
+
+  // Realtime Presence State
+  const [studentPresence, setStudentPresence] = useState<Record<string, any>>({});
 
   // Dashboard Stats
   const [stats, setStats] = useState({
@@ -101,6 +106,7 @@ const TeacherDashboard = () => {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [studentMap, setStudentMap] = useState<Map<string, string>>(new Map());
+  const [studentIdMap, setStudentIdMap] = useState<Map<string, string>>(new Map());
 
   // Form States
   const [selectedWorkspace, setSelectedWorkspace] = useState('');
@@ -258,6 +264,17 @@ const TeacherDashboard = () => {
     const unsubAssignments = subscribeAssignments(email);
     const unsubAnnouncements = subscribeAnnouncements(email);
 
+    // Listen to Student Presence
+    const statusRef = ref(database, '/status');
+    const unsubPresence = onValue(statusRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setStudentPresence(data);
+      } else {
+        setStudentPresence({});
+      }
+    });
+
     // Init Google Drive
     initGoogleDrive();
 
@@ -326,6 +343,7 @@ const TeacherDashboard = () => {
       unsubAnnouncements();
       unsubMaintenance();
       unsubSession();
+      unsubPresence();
     };
   }, []);
 
@@ -493,6 +511,13 @@ const TeacherDashboard = () => {
         });
       });
       await batch.commit();
+
+      // Send Notification to students whose assignments were graded
+      const studentEmails = targets.map(a => a.studentEmail).filter(email => email);
+      // Deduplicate emails
+      const uniqueEmails = [...new Set(studentEmails)];
+      await sendNotificationToStudents(uniqueEmails, "Assignment Graded", `Your assignment has been graded. Score: ${mark}`);
+
       toast.success(`Assigned ${mark} marks to ${targets.length} assignments`);
       setBulkMark('');
       setSelectedAssignments([]);
@@ -703,12 +728,17 @@ const TeacherDashboard = () => {
       // Students (fetch all to map names)
       const studentsSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'student')));
       const sMap = new Map<string, string>();
+      const idMap = new Map<string, string>();
       studentsSnap.forEach(doc => {
         const d = doc.data();
-        // If name is missing, store empty string so we can fallback to email in UI
-        if (d.email) sMap.set(d.email, d.name || '');
+        if (d.email) {
+          sMap.set(d.email, d.name || '');
+          // Prefer the 'uid' field if it exists (Auth UID), otherwise use document ID
+          idMap.set(d.email, d.uid || doc.id);
+        }
       });
       setStudentMap(sMap);
+      setStudentIdMap(idMap);
 
       // Exams
       const examsSnap = await getDocs(query(collection(db, 'exams'), where('teacherEmail', '==', email)));
@@ -823,6 +853,49 @@ const TeacherDashboard = () => {
   };
 
   // --- Actions ---
+
+  const sendNotificationToStudents = async (studentEmails: string[], title: string, body: string, link: string = '/') => {
+    if (studentEmails.length === 0) return;
+
+    // Find user IDs for these emails
+    // Optimization: We need a map of email -> userId. We can build this when loading students.
+    // For now, let's assume we can query or have it.
+    // In loadDashboardData, we loaded students. Let's ensure we have userId map.
+
+    // We need to fetch userIds if we don't have them. 
+    // Let's assume we update loadDashboardData to store email -> uid map.
+
+    const updates: Record<string, any> = {};
+
+    studentEmails.forEach(email => {
+      // Find UID from studentMap (which currently stores name). 
+      // We need to update studentMap to store object or have a separate map.
+      // Let's use a new map `studentIdMap` which we will add.
+      const uid = studentIdMap.get(email);
+      if (uid) {
+        const newNotifKey = push(ref(database, `notifications/${uid}`)).key;
+        if (newNotifKey) {
+          updates[`notifications/${uid}/${newNotifKey}`] = {
+            title,
+            body,
+            link,
+            timestamp: rtdbServerTimestamp(),
+            sender: userEmail,
+            read: false
+          };
+        }
+      }
+    });
+
+    if (Object.keys(updates).length > 0) {
+      try {
+        await update(ref(database), updates);
+        console.log(`Notifications sent to ${Object.keys(updates).length} students`);
+      } catch (e) {
+        console.error("Error sending notifications:", e);
+      }
+    }
+  };
   const handleCreateExam = async () => {
     if (!examTitle || !selectedWorkspace) {
       toast.error('Title and Workspace are required');
@@ -859,7 +932,12 @@ const TeacherDashboard = () => {
           timestamp: serverTimestamp()
         });
 
-        toast.success('Exam created');
+        // Send Push Notification
+        const notifTitle = examType === 'assignment' ? "New Assignment" : "New Test";
+        const notifBody = `${notifTitle}: ${examTitle}`;
+        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, notifTitle, notifBody, examLink);
+
+        toast.success(`${examType === 'assignment' ? 'Assignment' : 'Test'} created`);
       }
 
       // Reset form
@@ -918,6 +996,9 @@ const TeacherDashboard = () => {
           teacherEmail: userEmail,
           timestamp: serverTimestamp()
         });
+
+        // Send Push Notification
+        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Syllabus", `New Syllabus Uploaded: ${syllabusName}`, syllabusLink);
 
         toast.success('Syllabus uploaded');
       }
@@ -978,6 +1059,9 @@ const TeacherDashboard = () => {
           teacherEmail: userEmail,
           timestamp: serverTimestamp()
         });
+
+        // Send Push Notification
+        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Announcement", `New Announcement: ${announceTitle}`, announceLink);
 
         toast.success('Announcement sent');
       }
@@ -1091,6 +1175,14 @@ const TeacherDashboard = () => {
         status: 'graded',
         gradedAt: serverTimestamp()
       });
+
+      // Fetch submission to get student email for notification
+      // Optimization: We could pass studentEmail to this function or look it up from assignments list
+      const submission = assignments.find(a => a.id === id);
+      if (submission && submission.studentEmail) {
+        await sendNotificationToStudents([submission.studentEmail], "Assignment Graded", `Your assignment has been graded. Score: ${marks}`);
+      }
+
       toast.success('Marks updated');
     } catch (error) {
       toast.error('Failed to update marks');
@@ -1513,6 +1605,11 @@ const TeacherDashboard = () => {
       });
 
       await batch.commit();
+
+      // Send Notification
+      const studentEmails = assignMarksData.map(item => item.email);
+      await sendNotificationToStudents(studentEmails, "Marks Published", `Marks published for ${assignMarksSubject} (${assignMarksSectionTitle})`);
+
       toast.success(`Published marks for ${matchedCount} students`);
       setAssignMarksData([]);
       setAssignMarksSubject('');
@@ -1829,6 +1926,10 @@ const TeacherDashboard = () => {
         data: dataToSave,
         status: 'active'
       });
+
+      // Send Notification
+      const studentEmails = dataToSave.map(row => row.email);
+      await sendNotificationToStudents(studentEmails, "UNOM Report", `New UNOM Report: ${unomTitle}`, unomLink);
 
       toast.success("UNOM Report saved successfully");
       fetchUnomReports();
@@ -2610,7 +2711,20 @@ const TeacherDashboard = () => {
                 {!driveAccessToken && (
                   <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-0" onClick={handleGoogleAuth}>Sign In with Google</Button>
                 )}
-                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleCreateExam}>
+                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={async () => {
+                  await handleCreateExam();
+                  // Push Notification to RTDB
+                  if (selectedWorkspace && examTitle) {
+                    const notifRef = ref(database, '/notifications');
+                    push(notifRef, {
+                      type: 'exam',
+                      title: examTitle,
+                      workspaceId: selectedWorkspace,
+                      timestamp: rtdbServerTimestamp(),
+                      message: `New Exam: ${examTitle}`
+                    });
+                  }
+                }}>
                   {editingExam ? 'Update Exam' : '+ Create Exam'}
                 </Button>
                 {editingExam && <Button variant="ghost" onClick={() => { setEditingExam(null); setExamTitle(''); setExamDesc(''); setExamLink(''); }}>Cancel</Button>}
@@ -2821,7 +2935,20 @@ const TeacherDashboard = () => {
                     <span className="md:hidden">Sign In</span>
                   </Button>
                 )}
-                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex-1 md:flex-none" onClick={handleSendAnnouncement}>
+                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex-1 md:flex-none" onClick={async () => {
+                  await handleSendAnnouncement();
+                  // Push Notification to RTDB
+                  if (selectedWorkspace && announceTitle) {
+                    const notifRef = ref(database, '/notifications');
+                    push(notifRef, {
+                      type: 'announcement',
+                      title: announceTitle,
+                      workspaceId: selectedWorkspace,
+                      timestamp: rtdbServerTimestamp(),
+                      message: `Announcement: ${announceTitle}`
+                    });
+                  }
+                }}>
                   {editingAnnouncement ? (
                     <>
                       <span className="hidden md:inline">Update Announcement</span>
@@ -3015,7 +3142,20 @@ const TeacherDashboard = () => {
                   {!driveAccessToken && (
                     <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-0" onClick={handleGoogleAuth}>Sign In with Google</Button>
                   )}
-                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleCreateSyllabus}>
+                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={async () => {
+                    await handleCreateSyllabus();
+                    // Push Notification to RTDB
+                    if (selectedWorkspace && syllabusName) {
+                      const notifRef = ref(database, '/notifications');
+                      push(notifRef, {
+                        type: 'syllabus',
+                        title: syllabusName,
+                        workspaceId: selectedWorkspace,
+                        timestamp: rtdbServerTimestamp(),
+                        message: `New Syllabus: ${syllabusName}`
+                      });
+                    }
+                  }}>
                     {editingSyllabus ? 'Update Syllabus' : 'Upload Syllabus'}
                   </Button>
                   {editingSyllabus && <Button variant="ghost" onClick={() => { setEditingSyllabus(null); setSyllabusName(''); setSyllabusUnits(''); setSyllabusLink(''); }}>Cancel</Button>}
@@ -3549,11 +3689,35 @@ const TeacherDashboard = () => {
                       .map((email: string, idx: number) => (
                         <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
                           <div className="flex items-center gap-4 w-full">
-                            <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-                              <UserCheck className="h-5 w-5" />
+                            <div className="relative">
+                              <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                                <UserCheck className="h-5 w-5" />
+                              </div>
+                              {(() => {
+                                const presenceEntry = Object.values(studentPresence).find((p: any) => p.email === email);
+                                const isOnline = presenceEntry?.connections ? Object.keys(presenceEntry.connections).length > 0 : false;
+                                return (
+                                  <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-slate-900 ${isOnline ? 'bg-green-500' : 'bg-slate-500'}`} title={isOnline ? 'Online' : 'Offline'} />
+                                );
+                              })()}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="font-medium text-white truncate">#{idx + 1} {studentMap.get(email) || email}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium text-white truncate">#{idx + 1} {studentMap.get(email) || email}</p>
+                                {(() => {
+                                  const presenceEntry = Object.values(studentPresence).find((p: any) => p.email === email);
+                                  const isOnline = presenceEntry?.connections ? Object.keys(presenceEntry.connections).length > 0 : false;
+
+                                  if (!isOnline && typeof presenceEntry?.last_changed === 'number') {
+                                    return (
+                                      <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded-full border border-slate-700">
+                                        Last seen: {new Date(presenceEntry.last_changed).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
                               <p className="text-xs text-slate-500 truncate">{email}</p>
                             </div>
                           </div>

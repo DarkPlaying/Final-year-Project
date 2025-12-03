@@ -55,7 +55,12 @@ import {
   orderBy,
   onSnapshot
 } from 'firebase/firestore';
+import { usePresence } from '@/hooks/usePresence';
 import { getAuth, signInAnonymously } from 'firebase/auth';
+import { database } from '@/lib/firebase';
+import { ref, onChildAdded, query as rtdbQuery, limitToLast, orderByChild } from 'firebase/database';
+import { messaging } from '@/lib/firebase';
+import { getToken, onMessage, deleteToken } from 'firebase/messaging';
 
 // Google Drive Config
 const EXAM_CLIENT_ID = '815335775209-mkgtp7o17o48e5ul7lmgn4uljko3e8ag.apps.googleusercontent.com'; // User provided Client ID
@@ -63,6 +68,7 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const ASSIGNMENT_DRIVE_FOLDER_ID = '1l7eC3pUZIdlzfp5wp1hfgWZjj_p-m2gc'; // User provided folder
 
 const StudentDashboard = () => {
+  usePresence(); // Track online status
   const [activeSection, setActiveSection] = useState('overview');
   const [userEmail, setUserEmail] = useState('');
   const [userId, setUserId] = useState('');
@@ -126,6 +132,10 @@ const StudentDashboard = () => {
   // Google Drive Auth State
   const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
   const tokenClient = useRef<any>(null);
+
+  const addNotification = (type: string, message: string) => {
+    setNotifications(prev => [{ id: Date.now(), type, message, time: new Date(), read: false }, ...prev]);
+  };
 
   useEffect(() => {
     const email = localStorage.getItem('userEmail');
@@ -333,13 +343,127 @@ const StudentDashboard = () => {
       isInitialLoad.current = false;
     }, 2000);
 
+    // Realtime Notifications Listener
+    const notificationsRef = ref(database, 'notifications');
+    const notificationsQuery = rtdbQuery(notificationsRef, limitToLast(1));
+
+    const unsubRTDB = onChildAdded(notificationsQuery, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      const now = Date.now();
+      // Check if notification is recent (last 30 seconds) to avoid spam on reload
+      // We use a loose check because serverTimestamp might be slightly different
+      // If timestamp is missing, assume it's new
+      const notifTime = data.timestamp ? (typeof data.timestamp === 'number' ? data.timestamp : now) : now;
+
+      if (now - notifTime < 30000) {
+        if ('Notification' in window) {
+          if (Notification.permission === 'granted') {
+            try {
+              new Notification(data.title || 'New Notification', {
+                body: data.message,
+                icon: '/favicon.ico'
+              });
+            } catch (e) {
+              console.error("Notification error:", e);
+            }
+          } else if (Notification.permission !== 'denied') {
+            Notification.requestPermission().then(permission => {
+              if (permission === 'granted') {
+                try {
+                  new Notification(data.title || 'New Notification', {
+                    body: data.message,
+                    icon: '/favicon.ico'
+                  });
+                } catch (e) {
+                  console.error("Notification error:", e);
+                }
+              }
+            });
+          }
+        }
+
+        addNotification(String(data.type || 'info'), String(data.message || ''));
+      }
+    });
+
     return () => {
       unsubExams();
       unsubSyllabi();
       unsubAnnouncements();
       unsubAssignments();
+      unsubRTDB();
     };
   }, [userEmail]);
+
+  // FCM Notification Setup
+  // FCM Notification Setup
+  useEffect(() => {
+    const setupNotifications = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+
+          // 1. Get FCM Token and Save to Firestore
+          const VAPID_KEY = "BI6gIoKbfp7M4KLmwyy-KLEfmyL0-fBn6cHR-X8ze9HUYC6JaP3f5_STbpG3yXORpifNhOcV6VNUV_ug0EbIphw";
+          if (VAPID_KEY) {
+            try {
+              const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+              if (token && userId) {
+                console.log("FCM Token:", token);
+                await updateDoc(doc(db, 'users', userId), { fcmToken: token });
+              }
+            } catch (err) {
+              console.error("Error getting FCM token:", err);
+            }
+          }
+
+          // 2. Initialize Service Worker polling (Backup) - DISABLED to prevent duplicates/local polling
+          // if (navigator.serviceWorker.controller) {
+          //   navigator.serviceWorker.controller.postMessage({
+          //     type: 'INIT_NOTIFICATIONS',
+          //     userId: userId || 'anonymous'
+          //   });
+          // } else {
+          //   navigator.serviceWorker.ready.then((registration) => {
+          //     if (registration.active) {
+          //       registration.active.postMessage({
+          //         type: 'INIT_NOTIFICATIONS',
+          //         userId: userId || 'anonymous'
+          //       });
+          //     }
+          //   });
+          // }
+        }
+      } catch (error) {
+        console.error("Error requesting notification permission:", error);
+      }
+    };
+
+    if (userId) {
+      setupNotifications();
+    }
+  }, [userId]);
+
+  // Real-time listener for foreground notifications (Toast only)
+  useEffect(() => {
+    if (!userId) return;
+
+    const loadTime = Date.now(); // Capture time when component mounts
+    const notifRef = ref(database, `notifications/${userId}`);
+
+    const unsub = onChildAdded(notifRef, (snapshot) => {
+      const data = snapshot.val();
+      // Only show notifications that arrive AFTER the page has loaded
+      if (data && data.timestamp > loadTime) {
+        toast.info(data.title, { description: data.body });
+        addNotification('system', `${data.title}: ${data.body}`);
+      }
+    });
+
+    return () => unsub();
+  }, [userId]);
 
   // Exam Marks Listener
   useEffect(() => {
@@ -440,9 +564,7 @@ const StudentDashboard = () => {
     return () => unsub();
   }, [userEmail, myWorkspaces, attendanceMonth]);
 
-  const addNotification = (type: string, message: string) => {
-    setNotifications(prev => [{ id: Date.now(), type, message, time: new Date(), read: false }, ...prev]);
-  };
+
 
   const loadTeachers = async (email: string) => {
     try {
@@ -1204,7 +1326,13 @@ const StudentDashboard = () => {
     return metaJson.webViewLink;
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await deleteToken(messaging);
+      console.log('Token deleted');
+    } catch (error) {
+      console.error('Error deleting token:', error);
+    }
     localStorage.clear();
     window.location.replace('/');
   };

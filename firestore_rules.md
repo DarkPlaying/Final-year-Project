@@ -19,62 +19,102 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function getRole() {
+      return getUserData().role;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getRole() == 'admin';
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && getRole() == 'teacher';
+    }
+
+    function isStudent() {
+      return isAuthenticated() && getRole() == 'student';
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
     // --- Collection Rules ---
 
     // Users: 
+    // - Read: Authenticated users can read (needed for finding teachers/students)
+    // - Write: Only Admin can create/delete. Users can update their own profile (e.g. password) but NOT role.
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // Allow sync/update
+      allow create: if isAdmin(); // Only admin creates users
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role); // Prevent role escalation
     }
 
     // Workspaces:
+    // - Read: Authenticated users
+    // - Write: Admins only
     match /workspaces/{workspaceId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // Allow admins/teachers to manage
+      allow write: if isAdmin();
     }
 
-    // Content (Exams, Syllabi, Announcements, Teacher Uploads):
+    // Content (Exams, Syllabi, Announcements):
+    // - Read: Authenticated users
+    // - Write: Admins or Teachers
     match /exams/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
     }
     match /syllabi/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
     }
     match /announcements/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
     }
     match /teacher_uploads/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
     }
 
     // Submissions:
+    // - Read: Teachers/Admins OR the student who owns the submission
+    // - Create: Students
+    // - Update: Teachers (grading) OR Student (resubmitting if allowed)
     match /submissions/{docId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow read: if isAdmin() || isTeacher() || (isAuthenticated() && resource.data.studentEmail == getUserData().email);
+      allow create: if isAuthenticated(); // Students create submissions
+      allow update: if isAdmin() || isTeacher() || (isAuthenticated() && resource.data.studentEmail == getUserData().email);
+      allow delete: if isAdmin() || isTeacher();
     }
 
     // Queries:
+    // - Read/Write: Authenticated users (Students ask, Teachers answer)
     match /queries/{docId} {
       allow read, write: if isAuthenticated();
     }
 
     // System & Settings:
+    // - Read: Authenticated users (to check maintenance mode etc)
+    // - Write: Admins only
     match /settings/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
     match /system/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // Archived Users:
     match /deleted_users/{docId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAdmin();
     }
 
     // Default deny
@@ -101,14 +141,49 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Since secondary DB uses Anonymous Auth, we can't easily check roles from the 'users' collection 
+    // because the user might not be fully synced or the auth token doesn't carry custom claims yet.
+    // However, we can rely on the fact that the client app enforces logic. 
+    // BUT for true security, we should ideally sync roles or use Custom Claims.
+    
+    // For this specific setup where we use signInAnonymously() for the secondary DB, 
+    // we are limited. The best we can do without a backend to mint custom tokens is:
+    // 1. Allow read/write if authenticated (which we have).
+    // 2. Try to validate data structure where possible.
+    
+    // CRITICAL: To truly secure this secondary DB, you should implement Custom Authentication 
+    // where the main app generates a token with the user's role for the secondary app.
+    // Since we are using Anonymous Auth, we are trusting the client. 
+    // Below is a slightly better version than "allow all", but still relies on client honesty for roles.
+
     // Allow anonymous users (authenticated via code) to access these collections
-    match /attendance/{docId} { allow read, write: if isAuthenticated(); }
-    match /mark_batches/{docId} { allow read, write: if isAuthenticated(); }
-    match /marks/{docId} { allow read, write: if isAuthenticated(); }
-    match /unom_reports/{docId} { allow read, write: if isAuthenticated(); }
+    
+    // Attendance: 
+    match /attendance/{docId} { 
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Ideally restrict to teachers
+    }
+
+    // Marks:
+    match /mark_batches/{docId} { 
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // Ideally restrict to teachers
+    }
+    match /marks/{docId} { 
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); 
+    }
+
+    // UNOM Reports:
+    match /unom_reports/{docId} { 
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
     
     // Allow syncing users
-    match /users/{userId} { allow read, write: if isAuthenticated(); }
+    match /users/{userId} { 
+      allow read, write: if isAuthenticated(); 
+    }
 
     match /{document=**} { allow read, write: if false; }
   }
