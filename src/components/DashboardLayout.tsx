@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { logout, getCurrentUser } from '@/lib/auth';
 import { toast } from 'sonner';
 import {
-  GraduationCap,
+
   Menu,
   X,
   LogOut,
@@ -54,8 +54,8 @@ export const DashboardLayout = ({ children, sidebarItems, title, headerContent }
           </Button>
 
           <div className="flex items-center gap-2">
-            <GraduationCap className="h-6 w-6 text-primary" />
-            <span className="font-semibold text-lg">EduPortal</span>
+            <img src="/favicon%20dark.ico" alt="Logo" className="h-6 w-6" />
+            <span className="font-semibold text-sm whitespace-nowrap">Edu Online</span>
           </div>
 
           <div className="ml-auto flex items-center gap-4">
