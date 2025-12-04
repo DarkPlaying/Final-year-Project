@@ -2952,20 +2952,7 @@ const TeacherDashboard = () => {
                     <span className="md:hidden">Sign In</span>
                   </Button>
                 )}
-                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex-1 md:flex-none" onClick={async () => {
-                  await handleSendAnnouncement();
-                  // Push Notification to RTDB
-                  if (selectedWorkspace && announceTitle) {
-                    const notifRef = ref(database, '/notifications');
-                    push(notifRef, {
-                      type: 'announcement',
-                      title: announceTitle,
-                      workspaceId: selectedWorkspace,
-                      timestamp: rtdbServerTimestamp(),
-                      message: `Announcement: ${announceTitle}`
-                    });
-                  }
-                }}>
+                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex-1 md:flex-none" onClick={handleSendAnnouncement}>
                   {editingAnnouncement ? (
                     <>
                       <span className="hidden md:inline">Update Announcement</span>
@@ -3159,20 +3146,7 @@ const TeacherDashboard = () => {
                   {!driveAccessToken && (
                     <Button variant="outline" className="bg-blue-600 hover:bg-blue-700 text-white border-0" onClick={handleGoogleAuth}>Sign In with Google</Button>
                   )}
-                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={async () => {
-                    await handleCreateSyllabus();
-                    // Push Notification to RTDB
-                    if (selectedWorkspace && syllabusName) {
-                      const notifRef = ref(database, '/notifications');
-                      push(notifRef, {
-                        type: 'syllabus',
-                        title: syllabusName,
-                        workspaceId: selectedWorkspace,
-                        timestamp: rtdbServerTimestamp(),
-                        message: `New Syllabus: ${syllabusName}`
-                      });
-                    }
-                  }}>
+                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleCreateSyllabus}>
                     {editingSyllabus ? 'Update Syllabus' : 'Upload Syllabus'}
                   </Button>
                   {editingSyllabus && <Button variant="ghost" onClick={() => { setEditingSyllabus(null); setSyllabusName(''); setSyllabusUnits(''); setSyllabusLink(''); }}>Cancel</Button>}
