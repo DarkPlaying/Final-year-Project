@@ -2688,7 +2688,7 @@ const TeacherDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Select Workspace</Label>
-                <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); }}>
+                <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); setSelectedStudents([]); }}>
                   <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue placeholder="-- Select workspace --" /></SelectTrigger>
                   <SelectContent>
                     {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
@@ -2898,7 +2898,7 @@ const TeacherDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Select Workspace</Label>
-                <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); }}>
+                <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); setSelectedStudents([]); }}>
                   <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue placeholder="-- Select workspace --" /></SelectTrigger>
                   <SelectContent>
                     {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
@@ -3095,7 +3095,7 @@ const TeacherDashboard = () => {
                 </div>
                 <div className="space-y-2">
                   <Label>Select Workspace</Label>
-                  <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); }}>
+                  <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); setSelectedStudents([]); }}>
                     <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue placeholder="-- Select workspace --" /></SelectTrigger>
                     <SelectContent>
                       {workspaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
