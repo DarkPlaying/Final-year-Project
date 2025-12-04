@@ -2714,17 +2714,6 @@ const TeacherDashboard = () => {
                 )}
                 <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={async () => {
                   await handleCreateExam();
-                  // Push Notification to RTDB
-                  if (selectedWorkspace && examTitle) {
-                    const notifRef = ref(database, '/notifications');
-                    push(notifRef, {
-                      type: 'exam',
-                      title: examTitle,
-                      workspaceId: selectedWorkspace,
-                      timestamp: rtdbServerTimestamp(),
-                      message: `New Exam: ${examTitle}`
-                    });
-                  }
                 }}>
                   {editingExam ? 'Update Exam' : '+ Create Exam'}
                 </Button>
