@@ -292,7 +292,7 @@ const StudentDashboard = () => {
           if (change.type === 'added') {
             const data = change.doc.data();
             if (data.students?.includes(userEmail)) {
-              toast.info(`New Exam: ${data.title}`, { description: 'A new exam has been posted.' });
+              // toast.info(`New Exam: ${data.title}`, { description: 'A new exam has been posted.' });
               addNotification('exam', `New Exam: ${data.title}`);
             }
           }
@@ -312,7 +312,7 @@ const StudentDashboard = () => {
           if (change.type === 'added') {
             const data = change.doc.data();
             if (data.students?.includes(userEmail)) {
-              toast.info(`New Syllabus: ${data.name}`, { description: 'New syllabus material available.' });
+              // toast.info(`New Syllabus: ${data.name}`, { description: 'New syllabus material available.' });
               addNotification('syllabus', `New Syllabus: ${data.name}`);
             }
           }
@@ -332,7 +332,7 @@ const StudentDashboard = () => {
           if (change.type === 'added') {
             const data = change.doc.data();
             if (data.students?.includes(userEmail)) {
-              toast.info(`New Announcement: ${data.title}`, { description: data.description });
+              // toast.info(`New Announcement: ${data.title}`, { description: data.description });
               addNotification('announcement', `Announcement: ${data.title}`);
             }
           }
@@ -352,7 +352,7 @@ const StudentDashboard = () => {
           const data = change.doc.data();
           if (change.type === 'modified') {
             if (data.status === 'graded') {
-              toast.success(`Assignment Graded: ${data.assignmentTitle}`, { description: `You received ${data.marks} marks.` });
+              // toast.success(`Assignment Graded: ${data.assignmentTitle}`, { description: `You received ${data.marks} marks.` });
               addNotification('marks', `Graded: ${data.assignmentTitle} (${data.marks} marks)`);
             }
           }
@@ -370,6 +370,8 @@ const StudentDashboard = () => {
     const notificationsQuery = rtdbQuery(notificationsRef, limitToLast(1));
 
     const unsubRTDB = onChildAdded(notificationsQuery, (snapshot) => {
+      // Legacy global notification listener - disabled to prevent duplicates with FCM
+      /*
       const data = snapshot.val();
       if (!data) return;
 
@@ -408,6 +410,7 @@ const StudentDashboard = () => {
 
         addNotification(String(data.type || 'info'), String(data.message || ''));
       }
+      */
     });
 
     return () => {

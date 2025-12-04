@@ -11,6 +11,10 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if request.auth != null;
     }
+    match /mark_batches/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
     match /unom_reports/{document=**} {
       allow read: if request.auth != null;
       allow write: if request.auth != null;
