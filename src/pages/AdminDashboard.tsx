@@ -84,7 +84,7 @@ import {
   getFirestore
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -387,6 +387,11 @@ const AdminDashboard = () => {
       toast.success("Backup successfully uploaded to Drive!");
       logOperation(`Backup: ${fileName}`, 'success');
 
+      // Update last backup timestamp
+      await setDoc(doc(db, 'system', 'backup_routine'), {
+        lastBackup: serverTimestamp()
+      }, { merge: true });
+
     } catch (error: any) {
       console.error(error);
       toast.dismiss();
@@ -395,6 +400,46 @@ const AdminDashboard = () => {
       setIsBackingUp(false);
     }
   };
+
+  // Check if backup is due based on routine
+  const checkBackupSchedule = async () => {
+    const docSnap = await getDoc(doc(db, 'system', 'backup_routine'));
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      setBackupRoutine(data.routine || 'daily');
+
+      if (data.lastBackup && data.routine) {
+        const lastDate = data.lastBackup.toDate();
+        const now = new Date();
+        const diffTime = Math.abs(now.getTime() - lastDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        let isDue = false;
+        switch (data.routine) {
+          case 'daily': isDue = diffDays >= 1; break;
+          case 'weekly': isDue = diffDays >= 7; break;
+          case 'monthly': isDue = diffDays >= 30; break;
+          case '6months': isDue = diffDays >= 180; break;
+          case 'yearly': isDue = diffDays >= 365; break;
+        }
+
+        if (isDue) {
+          toast.warning("⚠️ Scheduled Backup is Due!", {
+            description: "Please sign in to Drive and click 'Download & Upload' to perform the routine backup.",
+            duration: 10000,
+            action: {
+              label: "Go to Backup",
+              onClick: () => setActiveSection('backup')
+            }
+          });
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    checkBackupSchedule();
+  }, []);
 
   const handleSaveRoutine = async () => {
     try {
