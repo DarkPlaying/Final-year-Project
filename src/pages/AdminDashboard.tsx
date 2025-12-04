@@ -59,7 +59,8 @@ import {
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 import { db } from '@/lib/firebase';
-import { secondaryDb } from '@/lib/firebaseSecondary';
+import { secondaryDb, secondaryAuth } from '@/lib/firebaseSecondary';
+import { signInAnonymously } from 'firebase/auth';
 import { createUserInBothSystems } from '@/lib/createUser';
 import { hashPassword } from '@/lib/security';
 import {
@@ -302,7 +303,11 @@ const AdminDashboard = () => {
     toast.loading("Starting backup...");
 
     try {
-      // 1. Fetch Data from Secondary DB
+      // 1. Authenticate with Secondary DB (Anonymously) to ensure access
+      // Note: Firestore rules on secondary DB must allow read for anonymous users or authenticated users
+      await signInAnonymously(secondaryAuth);
+
+      // 2. Fetch Data from Secondary DB
       const collectionsToBackup = ['attendance', 'marks', 'unom_reports', 'users', 'workspaces'];
       const backupData: any = {};
 

@@ -11,8 +11,11 @@ const secondaryFirebaseConfig = {
     appId: import.meta.env.VITE_ATTENDANCE_APP_ID
 };
 
+import { getAuth } from "firebase/auth";
+
 // Initialize the secondary app
 // We use a unique name "SecondaryAppInstance" to avoid conflicts with the main app
 const secondaryApp = initializeApp(secondaryFirebaseConfig, "SecondaryAppInstance");
 
 export const secondaryDb = getFirestore(secondaryApp);
+export const secondaryAuth = getAuth(secondaryApp);
