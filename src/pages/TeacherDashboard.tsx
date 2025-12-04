@@ -2029,30 +2029,119 @@ const TeacherDashboard = () => {
 
     const subjects = report.subjects || [];
 
-    // Create headers with Internal, External, and Total for each subject
+    // Headers matching the requested format
+    // S.NO, VANO, REGNO, NAME, [Sub1 EX, Sub1 IN, Sub1 TOT]..., TOTAL, PASS %, ARREAR COUNT, PASS/FAIL, NO OF SUB PASS, NO OF SUB FAIL, NO OF ABSENT
     const subjectHeaders = subjects.flatMap((sub: string) => [
-      `${sub} (Int)`,
-      `${sub} (Ext)`,
-      `${sub} (Tot)`
+      `${sub} EX`,
+      `${sub} IN`,
+      `${sub} TOT`
     ]);
 
-    const headers = ['Email', ...subjectHeaders, 'Grand Total', 'Percentage', 'Rank'];
+    const headers = [
+      'S.NO',
+      'VANO',
+      'REGNO',
+      'NAME',
+      ...subjectHeaders,
+      'TOTAL',
+      'PASS %',
+      'ARREAR COUNT',
+      'PASS/FAIL',
+      'NO OF SUB PASS',
+      'NO OF SUB FAIL',
+      'NO OF ABSENT'
+    ];
 
     const csvRows = [
       headers.join(','),
-      ...report.data.map((row: any) => {
-        const subjectValues = subjects.flatMap((sub: string) => [
-          row[`${sub}_internal`] || '-',
-          row[`${sub}_external`] || '-',
-          row[sub] || '-'
-        ]);
+      ...report.data.map((row: any, index: number) => {
+        let totalMarks = 0;
+        let arrearCount = 0;
+        let passCount = 0;
+        let failCount = 0;
+        let absentCount = 0;
+        let subjectCount = 0;
+
+        const subjectValues = subjects.flatMap((sub: string) => {
+          const internalStr = row[`${sub}_internal`] || '0';
+          const externalStr = row[`${sub}_external`] || '0';
+          const totalStr = row[sub] || '0';
+
+          const internal = parseInt(internalStr);
+          const external = parseInt(externalStr);
+
+          let total = 0;
+          let isRA = false;
+          let isAB = false;
+
+          if (totalStr === 'AB') {
+            isAB = true;
+          } else if (typeof totalStr === 'string' && totalStr.startsWith('RA')) {
+            isRA = true;
+            // Extract mark if available (e.g., RA_25)
+            if (totalStr.includes('_')) {
+              total = parseInt(totalStr.split('_')[1]);
+            } else {
+              total = 0; // Just RA
+            }
+          } else {
+            total = parseInt(totalStr);
+          }
+
+          if (isNaN(total)) total = 0;
+
+          // Stats Calculation
+          subjectCount++;
+          if (isAB) {
+            absentCount++;
+            arrearCount++;
+          } else if (isRA) {
+            failCount++;
+            arrearCount++;
+            totalMarks += total;
+          } else {
+            // Normal mark
+            if (total < 40) {
+              failCount++;
+              arrearCount++;
+            } else {
+              passCount++;
+            }
+            totalMarks += total;
+          }
+
+          // Return formatted columns for this subject
+          // If AB, show AB in TOT. If RA, show RA or mark? 
+          // Excel shows numbers usually. If RA_25, show 25. If just RA, show RA.
+          let displayTotal = totalStr;
+          if (isRA && totalStr.includes('_')) {
+            displayTotal = totalStr.split('_')[1]; // Show just the mark
+          }
+
+          return [
+            externalStr === '' ? '-' : externalStr,
+            internalStr === '' ? '-' : internalStr,
+            displayTotal
+          ];
+        });
+
+        const passPercentage = subjectCount > 0 ? (totalMarks / (subjectCount * 100)) * 100 : 0;
+        const resultStatus = arrearCount > 0 ? 'FAIL' : 'PASS';
+        const name = studentMap.get(row.email) || '';
 
         const values = [
-          row.email,
+          (index + 1).toString(), // S.NO
+          '', // VANO
+          row.email, // REGNO (Using email as identifier)
+          name, // NAME
           ...subjectValues,
-          row.total || 0,
-          `${parseFloat(row.percentage || 0).toFixed(2)}%`,
-          row.rank || '-'
+          totalMarks.toString(),
+          `${passPercentage.toFixed(2)}%`,
+          arrearCount.toString(),
+          resultStatus,
+          passCount.toString(),
+          failCount.toString(),
+          absentCount.toString()
         ];
         return values.map(v => `"${v}"`).join(',');
       })
