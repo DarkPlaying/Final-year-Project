@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { logout, getCurrentUser } from '@/lib/auth';
@@ -9,6 +9,7 @@ import {
   X,
   LogOut,
   User as UserIcon,
+  Download,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -30,8 +31,27 @@ interface DashboardLayoutProps {
  */
 export const DashboardLayout = ({ children, sidebarItems, title, headerContent }: DashboardLayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const navigate = useNavigate();
   const user = getCurrentUser();
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -105,6 +125,12 @@ export const DashboardLayout = ({ children, sidebarItems, title, headerContent }
                 <p className="text-xs text-muted-foreground truncate capitalize">{user?.role}</p>
               </div>
             </div>
+            {deferredPrompt && (
+              <Button variant="outline" size="sm" className="w-full justify-start text-muted-foreground hover:text-foreground mb-2" onClick={handleInstallClick}>
+                <Download className="h-4 w-4 mr-2" />
+                Install App
+              </Button>
+            )}
             <Button variant="outline" size="sm" className="w-full justify-start text-muted-foreground hover:text-foreground" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
