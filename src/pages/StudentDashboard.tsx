@@ -2290,7 +2290,7 @@ const StudentDashboard = () => {
                       <div key={idx} className="space-y-2 bg-slate-900/30 p-3 rounded-lg border border-slate-800">
                         <Label className="text-slate-300 font-medium">{subject}</Label>
                         <div className="flex flex-col gap-3">
-                          <div className="flex gap-3 items-center">
+                          <div className="flex gap-3 items-start">
                             <Select
                               value={unomForm[subject] === 'AB' ? 'AB' : (String(unomForm[subject] || '').startsWith('RA') ? 'RA' : 'Custom')}
                               onValueChange={(val) => {
