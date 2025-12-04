@@ -1001,7 +1001,8 @@ const TeacherDashboard = () => {
         });
 
         // Send Push Notification
-        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Syllabus", `New Syllabus Uploaded: ${syllabusName}`, syllabusLink);
+        // Send Push Notification
+        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Syllabus", `New Syllabus Uploaded: ${syllabusName}`, syllabusLink, 'syllabus');
 
         toast.success('Syllabus uploaded');
       }
@@ -1064,7 +1065,8 @@ const TeacherDashboard = () => {
         });
 
         // Send Push Notification
-        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Announcement", `New Announcement: ${announceTitle}`, announceLink);
+        // Send Push Notification
+        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Announcement", `New Announcement: ${announceTitle}`, announceLink, 'announcement');
 
         toast.success('Announcement sent');
       }
@@ -1183,10 +1185,7 @@ const TeacherDashboard = () => {
       // Optimization: We could pass studentEmail to this function or look it up from assignments list
       const submission = assignments.find(a => a.id === id);
       if (submission && submission.studentEmail) {
-        const submission = assignments.find(a => a.id === id);
-        if (submission && submission.studentEmail) {
-          await sendNotificationToStudents([submission.studentEmail], "Assignment Graded", `Your assignment has been graded. Score: ${marks}`, '/', 'marks');
-        }
+        await sendNotificationToStudents([submission.studentEmail], "Assignment Graded", `Your assignment has been graded. Score: ${marks}`, '/', 'marks');
       }
 
       toast.success('Marks updated');

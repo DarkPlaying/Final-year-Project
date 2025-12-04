@@ -78,6 +78,7 @@ const StudentDashboard = () => {
   const [showMobileSearch, setShowMobileSearch] = useState(false);
 
   // Handle URL Navigation from Notifications
+  // Handle URL Navigation from Notifications
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const section = params.get('section');
@@ -85,6 +86,8 @@ const StudentDashboard = () => {
       if (section === 'exam' || section === 'assignment') setActiveSection('exams');
       else if (section === 'marks') setActiveSection('marks');
       else if (section === 'unom') setActiveSection('submitUnom');
+      else if (section === 'syllabus') setActiveSection('syllabus');
+      else if (section === 'announcement') setActiveSection('announcements');
       else setActiveSection(section);
 
       // Clean up URL
@@ -474,6 +477,8 @@ const StudentDashboard = () => {
                 if (type === 'exam' || type === 'assignment') setActiveSection('exams');
                 else if (type === 'marks') setActiveSection('marks');
                 else if (type === 'unom') setActiveSection('submitUnom');
+                else if (type === 'syllabus') setActiveSection('syllabus');
+                else if (type === 'announcement') setActiveSection('announcements');
                 else setActiveSection('notifications');
               }
             }
