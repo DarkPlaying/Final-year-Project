@@ -66,12 +66,12 @@ notificationsRef.on('child_added', (userSnapshot) => {
                 if (fcmToken) {
                     const message = {
                         token: fcmToken,
-                        notification: {
-                            title: notification.title,
-                            body: notification.body
-                        },
+                        // notification: { ... }  <-- REMOVED to prevent auto-display
                         data: {
-                            url: notification.link || '/'
+                            title: notification.title,
+                            body: notification.body,
+                            url: notification.link || '/',
+                            icon: 'https://educationfyp.vercel.app/logo.png' // Ensure this URL is correct/accessible
                         },
                         webpush: {
                             fcm_options: {

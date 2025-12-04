@@ -25,11 +25,40 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
     console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    const notificationTitle = payload.notification.title;
+
+    // Parse data payload
+    const { title, body, icon, url } = payload.data;
+
+    const notificationTitle = title;
     const notificationOptions = {
-        body: payload.notification.body,
-        icon: '/favicon.ico'
+        body: body,
+        icon: icon || '/favicon.ico', // Use provided icon or fallback
+        data: { url: url } // Store URL to handle click later
     };
 
     self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// Handle Notification Click
+self.addEventListener('notificationclick', function (event) {
+    console.log('[firebase-messaging-sw.js] Notification click Received.', event);
+    event.notification.close();
+
+    const urlToOpen = event.notification.data?.url || '/';
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+            // If a window is already open, focus it
+            for (let i = 0; i < clientList.length; i++) {
+                const client = clientList[i];
+                if (client.url.includes(urlToOpen) && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            // Otherwise open a new window
+            if (clients.openWindow) {
+                return clients.openWindow(urlToOpen);
+            }
+        })
+    );
 });
