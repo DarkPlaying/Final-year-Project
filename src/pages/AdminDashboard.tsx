@@ -52,7 +52,10 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
-  Search
+  Search,
+  Database,
+  CloudUpload,
+  Save
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 import { db } from '@/lib/firebase';
@@ -172,6 +175,15 @@ const AdminDashboard = () => {
   const [workspacePage, setWorkspacePage] = useState(1);
   const [workspaceStudentPages, setWorkspaceStudentPages] = useState<Record<string, number>>({});
 
+  // Backup State
+  const [backupRoutine, setBackupRoutine] = useState('daily');
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
+  const tokenClient = useRef<any>(null);
+  const BACKUP_FOLDER_ID = '1ie0qArIerEv6Adct4s3meChXYImT6RgR';
+  const GOOGLE_CLIENT_ID = '815335775209-mkgtp7o17o48e5ul7lmgn4uljko3e8ag.apps.googleusercontent.com'; // Using same as student dashboard
+  const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogout = () => {
@@ -237,6 +249,121 @@ const AdminDashboard = () => {
       clearInterval(timer);
     };
   }, []);
+
+  // Initialize Google Drive
+  useEffect(() => {
+    const checkGoogle = setInterval(() => {
+      if ((window as any).google) {
+        initGoogleDrive();
+        clearInterval(checkGoogle);
+      }
+    }, 500);
+    return () => clearInterval(checkGoogle);
+  }, []);
+
+  const initGoogleDrive = () => {
+    if (!(window as any).google) return;
+
+    tokenClient.current = (window as any).google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: SCOPES,
+      callback: (response: any) => {
+        if (response.error !== undefined) {
+          console.error(response);
+          toast.error("Google Auth Failed");
+          return;
+        }
+        setDriveAccessToken(response.access_token);
+        toast.success("Google Drive Connected");
+      },
+    });
+  };
+
+  const handleGoogleAuth = () => {
+    if (tokenClient.current) {
+      tokenClient.current.requestAccessToken();
+    } else {
+      initGoogleDrive();
+      if (tokenClient.current) {
+        tokenClient.current.requestAccessToken();
+      } else {
+        toast.error('Google API not loaded yet. Please refresh the page.');
+      }
+    }
+  };
+
+  const handleBackupToDrive = async () => {
+    if (!driveAccessToken) {
+      toast.error("Please sign in with Google first");
+      return;
+    }
+
+    setIsBackingUp(true);
+    toast.loading("Starting backup...");
+
+    try {
+      // 1. Fetch Data from Secondary DB
+      const collectionsToBackup = ['attendance', 'marks', 'unom_reports', 'users', 'workspaces'];
+      const backupData: any = {};
+
+      for (const colName of collectionsToBackup) {
+        const snap = await getDocs(collection(secondaryDb, colName));
+        backupData[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `EduOnline_Backup_${timestamp}.json`;
+      const fileContent = JSON.stringify(backupData, null, 2);
+      const file = new File([fileContent], fileName, { type: 'application/json' });
+
+      // 2. Upload to Drive
+      const metadata = {
+        name: fileName,
+        mimeType: 'application/json',
+        parents: [BACKUP_FOLDER_ID]
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+        body: form
+      });
+
+      if (!res.ok) {
+        throw new Error('Upload failed');
+      }
+
+      toast.dismiss();
+      toast.success("Backup successfully uploaded to Drive!");
+      logOperation(`Backup: ${fileName}`, 'success');
+
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Backup failed");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleSaveRoutine = async () => {
+    try {
+      await setDoc(doc(db, 'system', 'backup_routine'), {
+        routine: backupRoutine,
+        updatedAt: serverTimestamp(),
+        updatedBy: localStorage.getItem('userEmail')
+      });
+      toast.success(`Backup routine set to: ${backupRoutine}`);
+      logOperation(`Set Backup Routine: ${backupRoutine}`, 'info');
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to save routine");
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1256,6 +1383,7 @@ const AdminDashboard = () => {
     { icon: <MessageSquare size={20} />, label: 'View Queries', onClick: () => setActiveSection('queries'), active: activeSection === 'queries' },
     { icon: <Bot size={20} />, label: 'AI CSV Generator', onClick: () => setActiveSection('aiCsv'), active: activeSection === 'aiCsv' },
     { icon: <Settings size={20} />, label: 'Settings', onClick: () => setActiveSection('settings'), active: activeSection === 'settings' },
+    { icon: <Database size={20} />, label: 'Backup Files', onClick: () => setActiveSection('backup'), active: activeSection === 'backup' },
   ];
 
   const headerContent = (
@@ -2106,6 +2234,90 @@ const AdminDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      {/* BACKUP FILES */}
+      {
+        activeSection === 'backup' && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-white">Backup Files</h2>
+            <p className="text-slate-400">Manage database backups and sync with Google Drive.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Routine Backup */}
+              <Card className="bg-slate-800 border-slate-700 text-white">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CalendarIcon className="h-5 w-5 text-blue-400" /> Backup Routine
+                  </CardTitle>
+                  <CardDescription>Schedule automated backups for the secondary database.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Select Routine</Label>
+                    <Select value={backupRoutine} onValueChange={setBackupRoutine}>
+                      <SelectTrigger className="bg-slate-900 border-slate-700">
+                        <SelectValue placeholder="Select routine" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="6months">Every 6 Months</SelectItem>
+                        <SelectItem value="yearly">Yearly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={handleSaveRoutine} className="w-full bg-blue-600 hover:bg-blue-700">
+                    <Save className="h-4 w-4 mr-2" /> Save Routine & Start Backup
+                  </Button>
+                  <p className="text-xs text-slate-500 text-center">
+                    Note: "Start Backup" will save the preference. Automated backups require a backend cron job.
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Instant Backup */}
+              <Card className="bg-slate-800 border-slate-700 text-white">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CloudUpload className="h-5 w-5 text-green-400" /> Instant Download to Drive
+                  </CardTitle>
+                  <CardDescription>Immediately backup the secondary database to your Google Drive.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!driveAccessToken ? (
+                    <Button variant="outline" onClick={handleGoogleAuth} className="w-full border-slate-600 hover:bg-slate-700">
+                      <img src="https://www.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png" alt="Drive" className="w-5 h-5 mr-2" />
+                      Sign In with Google
+                    </Button>
+                  ) : (
+                    <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-center">
+                      <p className="text-green-400 text-sm font-medium mb-2">Connected to Google Drive</p>
+                      <Button
+                        onClick={handleBackupToDrive}
+                        disabled={isBackingUp}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        {isBackingUp ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Backing up...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4 mr-2" /> Download & Upload to Drive
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    Target Folder: <a href="https://drive.google.com/drive/folders/1ie0qArIerEv6Adct4s3meChXYImT6RgR?usp=sharing" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">EduOnline Backups</a>
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )
+      }
     </DashboardLayout>
   );
 };
