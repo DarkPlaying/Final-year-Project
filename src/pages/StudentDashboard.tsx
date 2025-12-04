@@ -444,6 +444,30 @@ const StudentDashboard = () => {
           console.log("FCM Token:", token);
           await updateDoc(doc(db, 'users', userId), { fcmToken: token });
         }
+
+        // Foreground Notification Listener
+        onMessage(messaging, (payload) => {
+          console.log('Foreground Message received:', payload);
+          const { title, body, icon } = payload.data || {};
+
+          // Show Toast
+          toast(title || 'New Notification', {
+            description: body,
+            action: {
+              label: 'View',
+              onClick: () => setActiveSection('notifications')
+            }
+          });
+
+          // Also show browser notification if permission granted
+          if (Notification.permission === 'granted') {
+            new Notification(title || 'New Notification', {
+              body: body,
+              icon: icon || '/report.png'
+            });
+          }
+        });
+
       } catch (err) {
         console.error("Error getting FCM token:", err);
       }
