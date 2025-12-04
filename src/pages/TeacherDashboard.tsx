@@ -2945,12 +2945,12 @@ const TeacherDashboard = () => {
                 <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex-1 md:flex-none" onClick={handleSendAnnouncement}>
                   {editingAnnouncement ? (
                     <>
-                      <span className="hidden md:inline">Update Announcement</span>
+                      <span className="hidden md:inline">Update Announcement (v2)</span>
                       <span className="md:hidden">Update</span>
                     </>
                   ) : (
                     <>
-                      <span className="hidden md:inline">+ Create Announcement</span>
+                      <span className="hidden md:inline">+ Create Announcement (v2)</span>
                       <span className="md:hidden">+ Create</span>
                     </>
                   )}

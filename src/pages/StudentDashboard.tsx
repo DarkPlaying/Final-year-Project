@@ -775,12 +775,21 @@ const StudentDashboard = () => {
       const subjects = report.subjects?.filter((s: string) => s.trim() !== '') || [];
 
       const tableBody = subjects.map((subject: string) => {
-        const mark = studentData[subject] || '0';
+        const markVal = studentData[subject] || '0';
         const internal = studentData[`${subject}_internal`] || '-';
         const external = studentData[`${subject}_external`] || '-';
-        const isAbsent = mark === 'AB';
-        const isArrear = mark === 'RA';
-        const numMark = parseInt(mark);
+
+        const isAbsent = markVal === 'AB';
+        const isArrear = typeof markVal === 'string' && (markVal === 'RA' || markVal.startsWith('RA_'));
+
+        let displayMark = markVal;
+        if (isArrear && markVal.startsWith('RA_')) {
+          displayMark = markVal.split('_')[1] + " (RA)";
+        } else if (isArrear) {
+          displayMark = "RA";
+        }
+
+        const numMark = isArrear && markVal.startsWith('RA_') ? parseInt(markVal.split('_')[1]) : parseInt(markVal);
 
         let result = "Pass";
         if (isAbsent) result = "Absent";
@@ -791,7 +800,7 @@ const StudentDashboard = () => {
           subject,
           isAbsent || isArrear ? '-' : internal,
           isAbsent || isArrear ? '-' : external,
-          mark,
+          displayMark,
           result
         ];
       });
@@ -901,26 +910,44 @@ const StudentDashboard = () => {
     // Validate Custom Marks
     for (const sub of subjects) {
       const val = unomForm[sub];
-      // If val is not RA/AB, check internal and external
-      if (val !== 'RA' && val !== 'AB') {
-        const internal = parseFloat(unomForm[`${sub}_internal`] || '0');
-        const external = parseFloat(unomForm[`${sub}_external`] || '0');
 
-        if (isNaN(internal) || internal < 0 || internal > 25) {
-          toast.error(`Internal marks for ${sub} must be between 0 and 25`);
+      if (val === 'AB') continue;
+
+      if (typeof val === 'string' && val.startsWith('RA')) {
+        const markStr = val.split('_')[1];
+        if (!markStr) {
+          toast.error(`Please enter marks for RA in ${sub}`);
           return;
         }
-        if (isNaN(external) || external < 0 || external > 75) {
-          toast.error(`External marks for ${sub} must be between 0 and 75`);
+        const mark = parseFloat(markStr);
+        if (isNaN(mark) || mark < 0 || mark >= 35) {
+          toast.error(`Marks for ${sub} (RA) must be between 0 and 34`);
           return;
         }
+        continue;
+      }
+
+      // Normal marks
+      const internal = parseFloat(unomForm[`${sub}_internal`] || '0');
+      const external = parseFloat(unomForm[`${sub}_external`] || '0');
+
+      if (isNaN(internal) || internal < 0 || internal > 25) {
+        toast.error(`Internal marks for ${sub} must be between 0 and 25`);
+        return;
+      }
+      if (isNaN(external) || external < 0 || external > 75) {
+        toast.error(`External marks for ${sub} must be between 0 and 75`);
+        return;
       }
     }
 
     subjects.forEach((sub: string) => {
       const valStr = unomForm[sub];
-      if (valStr === 'RA' || valStr === 'AB') {
-        // Count as subject but 0 marks
+      if (valStr === 'AB') {
+        count++;
+      } else if (typeof valStr === 'string' && valStr.startsWith('RA')) {
+        const mark = parseFloat(valStr.split('_')[1] || '0');
+        total += mark;
         count++;
       } else {
         const val = parseFloat(valStr);
@@ -950,7 +977,7 @@ const StudentDashboard = () => {
 
     // 2. Identify rankable students (No RA/AB in ANY subject)
     const rankableStudents = newData.filter((d: any) => {
-      return !subjects.some((s: string) => d[s] === 'RA' || d[s] === 'AB');
+      return !subjects.some((s: string) => d[s] === 'AB' || (typeof d[s] === 'string' && d[s].startsWith('RA')));
     });
 
     // 3. Sort rankable students
@@ -2270,12 +2297,14 @@ const StudentDashboard = () => {
                         <div className="flex flex-col gap-3">
                           <div className="flex gap-3 items-center">
                             <Select
-                              value={['RA', 'AB'].includes(unomForm[subject]) ? unomForm[subject] : 'Custom'}
+                              value={unomForm[subject] === 'AB' ? 'AB' : (String(unomForm[subject] || '').startsWith('RA') ? 'RA' : 'Custom')}
                               onValueChange={(val) => {
                                 if (val === 'Custom') {
-                                  if (['RA', 'AB'].includes(unomForm[subject])) {
+                                  if (['AB'].includes(unomForm[subject]) || String(unomForm[subject]).startsWith('RA')) {
                                     setUnomForm(prev => ({ ...prev, [subject]: '', [`${subject}_internal`]: '', [`${subject}_external`]: '' }));
                                   }
+                                } else if (val === 'RA') {
+                                  setUnomForm(prev => ({ ...prev, [subject]: 'RA', [`${subject}_internal`]: '', [`${subject}_external`]: '' }));
                                 } else {
                                   setUnomForm(prev => ({ ...prev, [subject]: val, [`${subject}_internal`]: '', [`${subject}_external`]: '' }));
                                 }
@@ -2291,60 +2320,80 @@ const StudentDashboard = () => {
                               </SelectContent>
                             </Select>
 
-                            {!['RA', 'AB'].includes(unomForm[subject]) && (
+                            {unomForm[subject] !== 'AB' && (
                               <div className="flex gap-2 flex-1">
-                                <div className="flex-1">
-                                  <Input
-                                    type="number"
-                                    className="bg-slate-900 border-slate-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
-                                    value={unomForm[`${subject}_internal`] || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      const ext = unomForm[`${subject}_external`] || '0';
-                                      const total = (parseInt(val || '0') + parseInt(ext)).toString();
-                                      setUnomForm(prev => ({
-                                        ...prev,
-                                        [`${subject}_internal`]: val,
-                                        [subject]: total
-                                      }));
-                                    }}
-                                    placeholder="Int"
-                                    min={0}
-                                    max={25}
-                                  />
-                                  <span className="text-[10px] text-slate-500 ml-1">Internal</span>
-                                </div>
-                                <div className="flex-1">
-                                  <Input
-                                    type="number"
-                                    className="bg-slate-900 border-slate-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
-                                    value={unomForm[`${subject}_external`] || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      const int = unomForm[`${subject}_internal`] || '0';
-                                      const total = (parseInt(int) + parseInt(val || '0')).toString();
-                                      setUnomForm(prev => ({
-                                        ...prev,
-                                        [`${subject}_external`]: val,
-                                        [subject]: total
-                                      }));
-                                    }}
-                                    placeholder="Ext"
-                                    min={0}
-                                    max={75}
-                                  />
-                                  <span className="text-[10px] text-slate-500 ml-1">External</span>
-                                </div>
-                                <div className="flex-1">
-                                  <Input
-                                    type="number"
-                                    className="bg-slate-900 border-slate-700 font-bold text-green-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    value={unomForm[subject] || ''}
-                                    readOnly
-                                    placeholder="Total"
-                                  />
-                                  <span className="text-[10px] text-slate-500 ml-1">Total</span>
-                                </div>
+                                {String(unomForm[subject] || '').startsWith('RA') ? (
+                                  <div className="flex-1">
+                                    <Input
+                                      type="number"
+                                      className="bg-slate-900 border-slate-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
+                                      value={unomForm[subject] === 'RA' ? '' : unomForm[subject].split('_')[1]}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setUnomForm(prev => ({ ...prev, [subject]: `RA_${val}` }));
+                                      }}
+                                      placeholder="Marks (<35)"
+                                      min={0}
+                                      max={34}
+                                    />
+                                    <span className="text-[10px] text-slate-500 ml-1">Mark Obtained</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="flex-1">
+                                      <Input
+                                        type="number"
+                                        className="bg-slate-900 border-slate-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
+                                        value={unomForm[`${subject}_internal`] || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          const ext = unomForm[`${subject}_external`] || '0';
+                                          const total = (parseInt(val || '0') + parseInt(ext)).toString();
+                                          setUnomForm(prev => ({
+                                            ...prev,
+                                            [`${subject}_internal`]: val,
+                                            [subject]: total
+                                          }));
+                                        }}
+                                        placeholder="Int"
+                                        min={0}
+                                        max={25}
+                                      />
+                                      <span className="text-[10px] text-slate-500 ml-1">Internal</span>
+                                    </div>
+                                    <div className="flex-1">
+                                      <Input
+                                        type="number"
+                                        className="bg-slate-900 border-slate-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-blue-500 transition-colors"
+                                        value={unomForm[`${subject}_external`] || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          const int = unomForm[`${subject}_internal`] || '0';
+                                          const total = (parseInt(int) + parseInt(val || '0')).toString();
+                                          setUnomForm(prev => ({
+                                            ...prev,
+                                            [`${subject}_external`]: val,
+                                            [subject]: total
+                                          }));
+                                        }}
+                                        placeholder="Ext"
+                                        min={0}
+                                        max={75}
+                                      />
+                                      <span className="text-[10px] text-slate-500 ml-1">External</span>
+                                    </div>
+                                    <div className="flex-1">
+                                      <Input
+                                        type="number"
+                                        className="bg-slate-900 border-slate-700 font-bold text-green-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        value={unomForm[subject] || ''}
+                                        readOnly
+                                        placeholder="Total"
+                                      />
+                                      <span className="text-[10px] text-slate-500 ml-1">Total</span>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
