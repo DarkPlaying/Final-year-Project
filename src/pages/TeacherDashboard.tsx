@@ -739,6 +739,7 @@ const TeacherDashboard = () => {
       });
       setStudentMap(sMap);
       setStudentIdMap(idMap);
+      console.log("Student ID Map:", Object.fromEntries(idMap));
 
       // Exams
       const examsSnap = await getDocs(query(collection(db, 'exams'), where('teacherEmail', '==', email)));
