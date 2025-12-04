@@ -198,6 +198,14 @@ const TeacherDashboard = () => {
   const [marksHistoryFilterWorkspace, setMarksHistoryFilterWorkspace] = useState('all');
   const [unomHistoryFilterWorkspace, setUnomHistoryFilterWorkspace] = useState('all');
   const [marksHistorySearch, setMarksHistorySearch] = useState('');
+
+  useEffect(() => {
+    // Authenticate with Secondary DB
+    const secAuth = getAuth(secondaryDb.app);
+    signInAnonymously(secAuth).catch(err => {
+      console.error("Failed to authenticate with Secondary DB:", err);
+    });
+  }, []);
   const [unomHistorySearch, setUnomHistorySearch] = useState('');
 
   // Pagination & Search States
