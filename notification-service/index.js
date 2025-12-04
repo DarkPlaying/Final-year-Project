@@ -4,6 +4,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getDatabase } from 'firebase-admin/database';
 import { getFirestore } from 'firebase-admin/firestore';
 import http from 'http';
+import https from 'https';
 
 // Load service account from Environment Variable
 const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -113,4 +114,17 @@ const server = http.createServer((req, res) => {
 
 server.listen(port, () => {
     console.log(`Server running at port ${port}`);
+
+    // Keep-Alive Mechanism
+    // Pings the server every 14 minutes to prevent Render from sleeping
+    const SERVER_URL = 'https://edu-online-notifications.onrender.com';
+
+    setInterval(() => {
+        console.log(`Sending keep-alive ping to ${SERVER_URL}`);
+        https.get(SERVER_URL, (res) => {
+            console.log(`Keep-alive ping status: ${res.statusCode}`);
+        }).on('error', (e) => {
+            console.error(`Keep-alive ping failed: ${e.message}`);
+        });
+    }, 14 * 60 * 1000); // 14 minutes
 });
