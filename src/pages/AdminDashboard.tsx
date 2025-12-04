@@ -182,7 +182,7 @@ const AdminDashboard = () => {
   const tokenClient = useRef<any>(null);
   const BACKUP_FOLDER_ID = '1ie0qArIerEv6Adct4s3meChXYImT6RgR';
   const GOOGLE_CLIENT_ID = '815335775209-mkgtp7o17o48e5ul7lmgn4uljko3e8ag.apps.googleusercontent.com'; // Using same as student dashboard
-  const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+  const SCOPES = 'https://www.googleapis.com/auth/drive';
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -334,17 +334,19 @@ const AdminDashboard = () => {
       });
 
       if (!res.ok) {
-        throw new Error('Upload failed');
+        const errorData = await res.json();
+        console.error('Drive API Error:', errorData);
+        throw new Error(errorData.error?.message || 'Upload failed');
       }
 
       toast.dismiss();
       toast.success("Backup successfully uploaded to Drive!");
       logOperation(`Backup: ${fileName}`, 'success');
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       toast.dismiss();
-      toast.error("Backup failed");
+      toast.error(`Backup failed: ${error.message}`);
     } finally {
       setIsBackingUp(false);
     }
