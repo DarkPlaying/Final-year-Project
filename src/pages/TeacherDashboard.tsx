@@ -951,7 +951,7 @@ const TeacherDashboard = () => {
         // Send Push Notification
         const notifTitle = examType === 'assignment' ? "New Assignment" : "New Test";
         const notifBody = `${notifTitle}: ${examTitle}`;
-        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, notifTitle, notifBody, examLink, examType);
+        await sendNotificationToStudents(selectedStudents, notifTitle, notifBody, examLink, examType);
 
         toast.success(`${examType === 'assignment' ? 'Assignment' : 'Test'} created`);
       }
@@ -1020,7 +1020,7 @@ const TeacherDashboard = () => {
 
         // Send Push Notification
         // Send Push Notification
-        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Syllabus", `New Syllabus Uploaded: ${syllabusName}`, syllabusLink, 'syllabus');
+        await sendNotificationToStudents(selectedStudents, "New Syllabus", `New Syllabus Uploaded: ${syllabusName}`, syllabusLink, 'syllabus');
 
         toast.success('Syllabus uploaded');
       }
@@ -1089,7 +1089,7 @@ const TeacherDashboard = () => {
 
         // Send Push Notification
         // Send Push Notification
-        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, "New Announcement", `New Announcement: ${announceTitle}`, announceLink, 'announcement');
+        await sendNotificationToStudents(selectedStudents, "New Announcement", `New Announcement: ${announceTitle}`, announceLink, 'announcement');
 
         toast.success('Announcement sent');
       }
