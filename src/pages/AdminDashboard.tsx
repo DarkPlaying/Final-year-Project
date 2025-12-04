@@ -2332,7 +2332,20 @@ const AdminDashboard = () => {
                     </Button>
                   ) : (
                     <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-center">
-                      <p className="text-green-400 text-sm font-medium mb-2">Connected to Google Drive</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-green-400 text-sm font-medium">Connected to Drive</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setDriveAccessToken(null);
+                            toast.info("Signed out of Google Drive");
+                          }}
+                          className="h-6 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        >
+                          Sign Out
+                        </Button>
+                      </div>
                       <Button
                         onClick={handleBackupToDrive}
                         disabled={isBackingUp}
@@ -2355,11 +2368,11 @@ const AdminDashboard = () => {
                   </p>
                 </CardContent>
               </Card>
-            </div>
-          </div>
+            </div >
+          </div >
         )
       }
-    </DashboardLayout>
+    </DashboardLayout >
   );
 };
 
