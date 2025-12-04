@@ -71,7 +71,8 @@ notificationsRef.on('child_added', (userSnapshot) => {
                             title: notification.title,
                             body: notification.body,
                             url: notification.link || '/',
-                            icon: 'https://educationfyp.vercel.app/report.png' // Updated to use report.png
+                            type: notification.type || 'info', // Pass type
+                            icon: 'https://educationfyp.vercel.app/report.png'
                         },
                         webpush: {
                             fcm_options: {

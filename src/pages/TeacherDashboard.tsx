@@ -855,7 +855,7 @@ const TeacherDashboard = () => {
 
   // --- Actions ---
 
-  const sendNotificationToStudents = async (studentEmails: string[], title: string, body: string, link: string = '/') => {
+  const sendNotificationToStudents = async (studentEmails: string[], title: string, body: string, link: string = '/', type: string = 'info') => {
     if (studentEmails.length === 0) return;
 
     // Find user IDs for these emails
@@ -880,6 +880,7 @@ const TeacherDashboard = () => {
             title,
             body,
             link,
+            type, // Add type here
             timestamp: rtdbServerTimestamp(),
             sender: userEmail,
             read: false
@@ -933,10 +934,11 @@ const TeacherDashboard = () => {
           timestamp: serverTimestamp()
         });
 
+
         // Send Push Notification
         const notifTitle = examType === 'assignment' ? "New Assignment" : "New Test";
         const notifBody = `${notifTitle}: ${examTitle}`;
-        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, notifTitle, notifBody, examLink);
+        await sendNotificationToStudents(selectedStudents.length > 0 ? selectedStudents : workspaceStudents, notifTitle, notifBody, examLink, examType);
 
         toast.success(`${examType === 'assignment' ? 'Assignment' : 'Test'} created`);
       }
@@ -1181,7 +1183,10 @@ const TeacherDashboard = () => {
       // Optimization: We could pass studentEmail to this function or look it up from assignments list
       const submission = assignments.find(a => a.id === id);
       if (submission && submission.studentEmail) {
-        await sendNotificationToStudents([submission.studentEmail], "Assignment Graded", `Your assignment has been graded. Score: ${marks}`);
+        const submission = assignments.find(a => a.id === id);
+        if (submission && submission.studentEmail) {
+          await sendNotificationToStudents([submission.studentEmail], "Assignment Graded", `Your assignment has been graded. Score: ${marks}`, '/', 'marks');
+        }
       }
 
       toast.success('Marks updated');
@@ -1930,7 +1935,7 @@ const TeacherDashboard = () => {
 
       // Send Notification
       const studentEmails = dataToSave.map(row => row.email);
-      await sendNotificationToStudents(studentEmails, "UNOM Report", `New UNOM Report: ${unomTitle}`, unomLink);
+      await sendNotificationToStudents(studentEmails, "UNOM Report", `New UNOM Report: ${unomTitle}`, unomLink, 'unom');
 
       toast.success("UNOM Report saved successfully");
       fetchUnomReports();

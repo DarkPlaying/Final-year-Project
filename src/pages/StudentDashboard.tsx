@@ -77,6 +77,21 @@ const StudentDashboard = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showMobileSearch, setShowMobileSearch] = useState(false);
 
+  // Handle URL Navigation from Notifications
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const section = params.get('section');
+    if (section) {
+      if (section === 'exam' || section === 'assignment') setActiveSection('exams');
+      else if (section === 'marks') setActiveSection('marks');
+      else if (section === 'unom') setActiveSection('submitUnom');
+      else setActiveSection(section);
+
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   // Data States
   const [exams, setExams] = useState<any[]>([]);
   const [syllabi, setSyllabi] = useState<any[]>([]);
@@ -448,14 +463,19 @@ const StudentDashboard = () => {
         // Foreground Notification Listener
         onMessage(messaging, (payload) => {
           console.log('Foreground Message received:', payload);
-          const { title, body, icon } = payload.data || {};
+          const { title, body, icon, type } = payload.data || {};
 
           // Show Toast
           toast(title || 'New Notification', {
             description: body,
             action: {
               label: 'View',
-              onClick: () => setActiveSection('notifications')
+              onClick: () => {
+                if (type === 'exam' || type === 'assignment') setActiveSection('exams');
+                else if (type === 'marks') setActiveSection('marks');
+                else if (type === 'unom') setActiveSection('submitUnom');
+                else setActiveSection('notifications');
+              }
             }
           });
 

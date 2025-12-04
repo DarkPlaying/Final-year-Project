@@ -27,13 +27,19 @@ messaging.onBackgroundMessage((payload) => {
     console.log('[firebase-messaging-sw.js] Received background message ', payload);
 
     // Parse data payload
-    const { title, body, icon, url } = payload.data;
+    const { title, body, icon, url, type } = payload.data;
+
+    let finalUrl = url || '/';
+    // If URL is internal (root) or missing, append section param for navigation
+    if (finalUrl === '/' && type) {
+        finalUrl = `/?section=${type}`;
+    }
 
     const notificationTitle = title;
     const notificationOptions = {
         body: body,
         icon: icon || '/favicon.ico', // Use provided icon or fallback
-        data: { url: url } // Store URL to handle click later
+        data: { url: finalUrl } // Store URL to handle click later
     };
 
     self.registration.showNotification(notificationTitle, notificationOptions);
