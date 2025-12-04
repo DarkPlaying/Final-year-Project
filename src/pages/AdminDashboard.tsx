@@ -316,27 +316,66 @@ const AdminDashboard = () => {
       const fileContent = JSON.stringify(backupData, null, 2);
       const file = new File([fileContent], fileName, { type: 'application/json' });
 
-      // 2. Upload to Drive
-      const metadata = {
-        name: fileName,
-        mimeType: 'application/json',
-        parents: [BACKUP_FOLDER_ID]
+      let parentFolderId = BACKUP_FOLDER_ID;
+
+      // 2. Try Uploading to Drive
+      const uploadFile = async (folderId: string) => {
+        const metadata = {
+          name: fileName,
+          mimeType: 'application/json',
+          parents: [folderId]
+        };
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', file);
+
+        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+          body: form
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error?.message || 'Upload failed');
+        }
+        return res;
       };
 
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      form.append('file', file);
+      try {
+        await uploadFile(parentFolderId);
+      } catch (error: any) {
+        console.warn("Failed to upload to shared folder, trying to create/use 'EduOnline Backups' in root...", error);
 
-      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + driveAccessToken },
-        body: form
-      });
+        // Search for existing folder
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='EduOnline Backups' and mimeType='application/vnd.google-apps.folder' and trashed=false`, {
+          headers: { 'Authorization': 'Bearer ' + driveAccessToken }
+        });
+        const searchData = await searchRes.json();
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        console.error('Drive API Error:', errorData);
-        throw new Error(errorData.error?.message || 'Upload failed');
+        if (searchData.files && searchData.files.length > 0) {
+          parentFolderId = searchData.files[0].id;
+        } else {
+          // Create new folder
+          const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + driveAccessToken,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              name: 'EduOnline Backups',
+              mimeType: 'application/vnd.google-apps.folder'
+            })
+          });
+          const createData = await createRes.json();
+          parentFolderId = createData.id;
+        }
+
+        // Retry upload to new/found folder
+        await uploadFile(parentFolderId);
+        toast.info("Uploaded to 'EduOnline Backups' in your Drive (Shared folder access denied)");
       }
 
       toast.dismiss();
