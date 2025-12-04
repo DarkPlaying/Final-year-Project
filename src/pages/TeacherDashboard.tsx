@@ -1043,6 +1043,11 @@ const TeacherDashboard = () => {
       return;
     }
 
+    if (selectedStudents.length === 0) {
+      toast.error('Please select at least one student');
+      return;
+    }
+
     try {
       const data = {
         title: announceTitle,

@@ -487,12 +487,25 @@ const StudentDashboard = () => {
             }
           });
 
-          // Also show browser notification if permission granted
-          if (Notification.permission === 'granted') {
-            new Notification(title || 'New Notification', {
+          // Show browser notification only if tab is hidden or user prefers it
+          // Adding onclick handler to ensure navigation works
+          if (Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+            const notif = new Notification(title || 'New Notification', {
               body: body,
               icon: icon || '/report.png'
             });
+
+            notif.onclick = (event) => {
+              event.preventDefault();
+              window.focus();
+              if (type === 'exam' || type === 'assignment') setActiveSection('exams');
+              else if (type === 'marks') setActiveSection('marks');
+              else if (type === 'unom') setActiveSection('submitUnom');
+              else if (type === 'syllabus') setActiveSection('syllabus');
+              else if (type === 'announcement') setActiveSection('announcements');
+              else setActiveSection('notifications');
+              notif.close();
+            };
           }
         });
 
@@ -1675,10 +1688,12 @@ const StudentDashboard = () => {
                         setNotifications(prev => prev.filter(item => item.id !== n.id));
 
                         // Navigate to section
-                        if (n.type === 'exam') setActiveSection('exams');
+                        // Navigate to section
+                        if (n.type === 'exam' || n.type === 'assignment') setActiveSection('exams');
                         else if (n.type === 'syllabus') setActiveSection('syllabus');
                         else if (n.type === 'announcement') setActiveSection('announcements');
                         else if (n.type === 'marks') setActiveSection('marks');
+                        else if (n.type === 'unom') setActiveSection('submitUnom');
                         window.scrollTo(0, 0);
                       }}
                     >
