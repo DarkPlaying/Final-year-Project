@@ -912,6 +912,11 @@ const TeacherDashboard = () => {
       return;
     }
 
+    if (selectedStudents.length === 0) {
+      toast.error('Please select at least one student');
+      return;
+    }
+
     try {
       const examData = {
         title: examTitle,
@@ -976,6 +981,11 @@ const TeacherDashboard = () => {
   const handleCreateSyllabus = async () => {
     if (!syllabusName || !selectedWorkspace) {
       toast.error('Name and Workspace are required');
+      return;
+    }
+
+    if (selectedStudents.length === 0) {
+      toast.error('Please select at least one student');
       return;
     }
 
