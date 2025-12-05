@@ -183,6 +183,7 @@ const TeacherDashboard = () => {
   // UNOM State
   const [unomTitle, setUnomTitle] = useState('');
   const [unomSubjects, setUnomSubjects] = useState<string[]>(['', '', '', '']);
+  const [unomLabIndices, setUnomLabIndices] = useState<Set<number>>(new Set());
   const [unomLink, setUnomLink] = useState('');
   const [unomWorkspace, setUnomWorkspace] = useState('');
   const [unomData, setUnomData] = useState<any[]>([]);
@@ -1798,6 +1799,15 @@ const TeacherDashboard = () => {
     const newSubjects = [...unomSubjects];
     newSubjects.splice(index, 1);
     setUnomSubjects(newSubjects);
+
+    setUnomLabIndices(prev => {
+      const next = new Set<number>();
+      prev.forEach(i => {
+        if (i < index) next.add(i);
+        else if (i > index) next.add(i - 1);
+      });
+      return next;
+    });
   };
 
   const handleUnomSubjectChange = (index: number, value: string) => {
@@ -1933,12 +1943,14 @@ const TeacherDashboard = () => {
       });
 
       const validSubjects = unomSubjects.filter(s => s.trim() !== '');
+      const labSubjects = unomSubjects.filter((s, i) => s.trim() !== '' && unomLabIndices.has(i));
 
       await addDoc(collection(secondaryDb, 'unom_reports'), {
         title: unomTitle,
         teacherEmail: userEmail,
         workspaceId: unomWorkspace,
         subjects: validSubjects,
+        labSubjects: labSubjects,
         link: unomLink,
         createdAt: serverTimestamp(),
         data: dataToSave,
@@ -1953,6 +1965,7 @@ const TeacherDashboard = () => {
       fetchUnomReports();
       setUnomTitle('');
       setUnomSubjects(['', '', '', '']);
+      setUnomLabIndices(new Set());
       setUnomData([]);
       setUnomWorkspace('');
     } catch (error) {
@@ -2023,14 +2036,14 @@ const TeacherDashboard = () => {
       toast.error("Failed to delete UNOM report");
     }
   };
-
   const handleDownloadUnomCsv = (report: any) => {
     if (!report || !report.data) return;
 
     const subjects = report.subjects || [];
+    const labSubjects = report.labSubjects || [];
 
     // Headers matching the requested format
-    // S.NO, VANO, REGNO, NAME, [Sub1 EX, Sub1 IN, Sub1 TOT]..., TOTAL, PASS %, ARREAR COUNT, PASS/FAIL, NO OF SUB PASS, NO OF SUB FAIL, NO OF ABSENT
+    // S.NO, VANO, REGNO, NAME, [Sub1 EX, Sub1 IN, Sub1 TOT]..., TOTAL, PASS %, ARREAR COUNT, PASS/FAIL, NO OF SUB PASS, NO OF LAB PASS, NO OF SUB FAIL, NO OF SUB ABS, TOTAL NO OF THEORY FAIL, NO OF LAB FAIL
     const subjectHeaders = subjects.flatMap((sub: string) => [
       `${sub} EX`,
       `${sub} IN`,
@@ -2048,21 +2061,29 @@ const TeacherDashboard = () => {
       'ARREAR COUNT',
       'PASS/FAIL',
       'NO OF SUB PASS',
+      'NO OF LAB PASS',
       'NO OF SUB FAIL',
-      'NO OF ABSENT'
+      'NO OF SUB ABS',
+      'TOTAL NO OF THEORY FAIL',
+      'NO OF LAB FAIL'
     ];
 
     const csvRows = [
       headers.join(','),
       ...report.data.map((row: any, index: number) => {
         let totalMarks = 0;
-        let arrearCount = 0;
-        let passCount = 0;
-        let failCount = 0;
-        let absentCount = 0;
         let subjectCount = 0;
 
+        let theoryPass = 0;
+        let theoryFail = 0; // Present but failed
+        let theoryAbsent = 0;
+
+        let labPass = 0;
+        let labFail = 0; // Present but failed
+        let labAbsent = 0;
+
         const subjectValues = subjects.flatMap((sub: string) => {
+          const isLab = labSubjects.includes(sub);
           const internalStr = row[`${sub}_internal`] || '0';
           const externalStr = row[`${sub}_external`] || '0';
           const totalStr = row[sub] || '0';
@@ -2093,26 +2114,21 @@ const TeacherDashboard = () => {
           // Stats Calculation
           subjectCount++;
           if (isAB) {
-            absentCount++;
-            arrearCount++;
+            if (isLab) labAbsent++; else theoryAbsent++;
           } else if (isRA) {
-            failCount++;
-            arrearCount++;
+            if (isLab) labFail++; else theoryFail++;
             totalMarks += total;
           } else {
             // Normal mark
             if (total < 40) {
-              failCount++;
-              arrearCount++;
+              if (isLab) labFail++; else theoryFail++;
             } else {
-              passCount++;
+              if (isLab) labPass++; else theoryPass++;
             }
             totalMarks += total;
           }
 
           // Return formatted columns for this subject
-          // If AB, show AB in TOT. If RA, show RA or mark? 
-          // Excel shows numbers usually. If RA_25, show 25. If just RA, show RA.
           let displayTotal = totalStr;
           if (isRA && totalStr.includes('_')) {
             displayTotal = totalStr.split('_')[1]; // Show just the mark
@@ -2125,8 +2141,14 @@ const TeacherDashboard = () => {
           ];
         });
 
+        const totalPass = theoryPass + labPass;
+        const totalFail = theoryFail + labFail + theoryAbsent + labAbsent; // Total Arrears
+        const totalAbsent = theoryAbsent + labAbsent;
+        const totalTheoryFail = theoryFail + theoryAbsent;
+        const totalLabFail = labFail + labAbsent;
+
         const passPercentage = subjectCount > 0 ? (totalMarks / (subjectCount * 100)) * 100 : 0;
-        const resultStatus = arrearCount > 0 ? 'FAIL' : 'PASS';
+        const resultStatus = totalFail > 0 ? 'FAIL' : 'PASS';
         const name = studentMap.get(row.email) || '';
 
         const values = [
@@ -2137,11 +2159,14 @@ const TeacherDashboard = () => {
           ...subjectValues,
           totalMarks.toString(),
           `${passPercentage.toFixed(2)}%`,
-          arrearCount.toString(),
+          totalFail.toString(), // ARREAR COUNT
           resultStatus,
-          passCount.toString(),
-          failCount.toString(),
-          absentCount.toString()
+          totalPass.toString(), // NO OF SUB PASS
+          labPass.toString(), // NO OF LAB PASS
+          totalFail.toString(), // NO OF SUB FAIL (Assuming this means total failures)
+          totalAbsent.toString(), // NO OF SUB ABS
+          totalTheoryFail.toString(), // TOTAL NO OF THEORY FAIL
+          totalLabFail.toString() // NO OF LAB FAIL
         ];
         return values.map(v => `"${v}"`).join(',');
       })
@@ -4196,13 +4221,30 @@ const TeacherDashboard = () => {
                   <Label>Subject Codes / Names</Label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {unomSubjects.map((subject, index) => (
-                      <div key={index} className="flex gap-2">
+                      <div key={index} className="flex gap-2 items-center">
                         <Input
-                          className="bg-slate-900 border-slate-700"
+                          className="bg-slate-900 border-slate-700 flex-1"
                           placeholder={`Subject ${index + 1}`}
                           value={subject}
                           onChange={(e) => handleUnomSubjectChange(index, e.target.value)}
                         />
+                        <div className="flex items-center gap-1 bg-slate-800 px-2 py-2 rounded border border-slate-700">
+                          <input
+                            type="checkbox"
+                            id={`lab-${index}`}
+                            checked={unomLabIndices.has(index)}
+                            onChange={(e) => {
+                              setUnomLabIndices(prev => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(index);
+                                else next.delete(index);
+                                return next;
+                              });
+                            }}
+                            className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                          />
+                          <label htmlFor={`lab-${index}`} className="text-xs text-slate-300 cursor-pointer select-none font-medium">Lab</label>
+                        </div>
                         {index >= 4 && (
                           <Button variant="destructive" size="icon" onClick={() => handleRemoveSubject(index)}>
                             <Trash2 className="h-4 w-4" />
