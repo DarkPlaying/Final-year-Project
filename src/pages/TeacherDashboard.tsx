@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2051,27 +2049,27 @@ const TeacherDashboard = () => {
     const labSubjects = report.labSubjects || [];
 
     // Define styles
-    const headerFill: ExcelJS.Fill = {
+    const headerFill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FF9BC2E6' } // Light Blue
     };
 
-    const headerFont: ExcelJS.Font = {
+    const headerFont = {
       name: 'Calibri',
       size: 11,
       bold: true,
       color: { argb: 'FF000000' } // Black
     };
 
-    const borderStyle: ExcelJS.Borders = {
+    const borderStyle = {
       top: { style: 'thin' },
       left: { style: 'thin' },
       bottom: { style: 'thin' },
       right: { style: 'thin' }
     };
 
-    const centerAlign: ExcelJS.Alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    const centerAlign = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
     // --- Header Row 1 ---
     const row1Values = [
@@ -2121,10 +2119,10 @@ const TeacherDashboard = () => {
     // Apply Styles to Headers
     [row1, row2].forEach(row => {
       row.eachCell((cell) => {
-        cell.fill = headerFill;
-        cell.font = headerFont;
-        cell.alignment = centerAlign;
-        cell.border = borderStyle;
+        cell.fill = headerFill as any;
+        cell.font = headerFont as any;
+        cell.alignment = centerAlign as any;
+        cell.border = borderStyle as any;
       });
     });
 
@@ -2227,9 +2225,9 @@ const TeacherDashboard = () => {
 
       // --- Row Styling ---
       excelRow.eachCell((cell, colNumber) => {
-        cell.alignment = centerAlign;
-        cell.border = borderStyle;
-        cell.font = { name: 'Calibri', size: 11 };
+        cell.alignment = centerAlign as any;
+        cell.border = borderStyle as any;
+        cell.font = { name: 'Calibri', size: 11 } as any;
 
         // Bold Total Column (Static Index + Subject Cols + 1)
         // Static (4) + Subjects * 3 + 1 (Total is next)
