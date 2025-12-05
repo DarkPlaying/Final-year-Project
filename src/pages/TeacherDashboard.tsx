@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import {
   LayoutDashboard,
@@ -4228,22 +4229,21 @@ const TeacherDashboard = () => {
                           value={subject}
                           onChange={(e) => handleUnomSubjectChange(index, e.target.value)}
                         />
-                        <div className="flex items-center gap-1 bg-slate-800 px-2 py-2 rounded border border-slate-700">
-                          <input
-                            type="checkbox"
+                        <div className="flex items-center gap-2 bg-slate-800 px-3 py-2 rounded-md border border-slate-700 hover:border-slate-600 transition-colors">
+                          <Checkbox
                             id={`lab-${index}`}
                             checked={unomLabIndices.has(index)}
-                            onChange={(e) => {
+                            onCheckedChange={(checked) => {
                               setUnomLabIndices(prev => {
                                 const next = new Set(prev);
-                                if (e.target.checked) next.add(index);
+                                if (checked) next.add(index);
                                 else next.delete(index);
                                 return next;
                               });
                             }}
-                            className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                            className="border-slate-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                           />
-                          <label htmlFor={`lab-${index}`} className="text-xs text-slate-300 cursor-pointer select-none font-medium">Lab</label>
+                          <label htmlFor={`lab-${index}`} className="text-sm text-slate-300 cursor-pointer select-none font-medium">Lab</label>
                         </div>
                         {index >= 4 && (
                           <Button variant="destructive" size="icon" onClick={() => handleRemoveSubject(index)}>
