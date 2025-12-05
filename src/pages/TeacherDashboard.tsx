@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2037,7 +2041,225 @@ const TeacherDashboard = () => {
       toast.error("Failed to delete UNOM report");
     }
   };
-  const handleDownloadUnomCsv = (report: any) => {
+  const handleDownloadUnomCsv = async (report: any) => {
+    if (!report || !report.data) return;
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Result Analysis');
+
+    const subjects = report.subjects || [];
+    const labSubjects = report.labSubjects || [];
+
+    // Define styles
+    const headerFill: ExcelJS.Fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF9BC2E6' } // Light Blue
+    };
+
+    const headerFont: ExcelJS.Font = {
+      name: 'Calibri',
+      size: 11,
+      bold: true,
+      color: { argb: 'FF000000' } // Black
+    };
+
+    const borderStyle: ExcelJS.Borders = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' }
+    };
+
+    const centerAlign: ExcelJS.Alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+    // --- Header Row 1 ---
+    const row1Values = [
+      'S.NO', 'VANO', 'REGNO', 'NAME',
+      ...subjects.flatMap((sub: string) => [sub, '', '']),
+      'TOTAL', 'PASS %', 'ARREAR COUNT', 'PASS/FAIL',
+      'NO OF SUB PASS', 'NO OF LAB PASS', 'NO OF SUB FAIL', 'NO OF SUB ABS',
+      'TOTAL NO OF THEORY FAIL', 'NO OF LAB FAIL'
+    ];
+    const row1 = worksheet.addRow(row1Values);
+    row1.height = 30;
+
+    // --- Header Row 2 ---
+    const row2Values = [
+      '', '', '', '', // Placeholders for vertical merge
+      ...subjects.flatMap(() => ['EX', 'IN', 'TOT']),
+      '', '', '', '', '', '', '', '', '', '' // Placeholders for vertical merge
+    ];
+    const row2 = worksheet.addRow(row2Values);
+    row2.height = 30;
+
+    // --- Merging Headers ---
+    // Merge Static Columns (S.NO, VANO, REGNO, NAME)
+    worksheet.mergeCells('A1:A2');
+    worksheet.mergeCells('B1:B2');
+    worksheet.mergeCells('C1:C2');
+    worksheet.mergeCells('D1:D2');
+
+    // Merge Subject Columns (Subject Name spans EX, IN, TOT)
+    let colIndex = 5; // Start at column E (5)
+    subjects.forEach(() => {
+      worksheet.mergeCells(1, colIndex, 1, colIndex + 2); // Merge 3 cells in Row 1
+      colIndex += 3;
+    });
+
+    // Merge Stat Columns
+    const statStartCol = 5 + (subjects.length * 3);
+    const statCols = [
+      'TOTAL', 'PASS %', 'ARREAR COUNT', 'PASS/FAIL',
+      'NO OF SUB PASS', 'NO OF LAB PASS', 'NO OF SUB FAIL', 'NO OF SUB ABS',
+      'TOTAL NO OF THEORY FAIL', 'NO OF LAB FAIL'
+    ];
+    statCols.forEach((_, i) => {
+      worksheet.mergeCells(1, statStartCol + i, 2, statStartCol + i);
+    });
+
+    // Apply Styles to Headers
+    [row1, row2].forEach(row => {
+      row.eachCell((cell) => {
+        cell.fill = headerFill;
+        cell.font = headerFont;
+        cell.alignment = centerAlign;
+        cell.border = borderStyle;
+      });
+    });
+
+    // --- Data Rows ---
+    report.data.forEach((row: any, index: number) => {
+      let totalMarks = 0;
+      let subjectCount = 0;
+
+      let theoryPass = 0;
+      let theoryFail = 0;
+      let theoryAbsent = 0;
+
+      let labPass = 0;
+      let labFail = 0;
+      let labAbsent = 0;
+
+      const subjectCells: any[] = [];
+
+      subjects.forEach((sub: string) => {
+        const isLab = labSubjects.includes(sub);
+        const internalStr = row[`${sub}_internal`] || '0';
+        const externalStr = row[`${sub}_external`] || '0';
+        const totalStr = row[sub] || '0';
+
+        const internal = parseInt(internalStr);
+        const external = parseInt(externalStr);
+
+        let total = 0;
+        let isRA = false;
+        let isAB = false;
+
+        if (totalStr === 'AB') {
+          isAB = true;
+        } else if (typeof totalStr === 'string' && totalStr.startsWith('RA')) {
+          isRA = true;
+          if (totalStr.includes('_')) {
+            total = parseInt(totalStr.split('_')[1]);
+          }
+        } else {
+          total = parseInt(totalStr);
+        }
+
+        if (isNaN(total)) total = 0;
+
+        // Stats
+        subjectCount++;
+        if (isAB) {
+          if (isLab) labAbsent++; else theoryAbsent++;
+        } else if (isRA) {
+          if (isLab) labFail++; else theoryFail++;
+          totalMarks += total;
+        } else {
+          if (total < 40) {
+            if (isLab) labFail++; else theoryFail++;
+          } else {
+            if (isLab) labPass++; else theoryPass++;
+          }
+          totalMarks += total;
+        }
+
+        let displayTotal = totalStr;
+        if (isRA && totalStr.includes('_')) {
+          displayTotal = totalStr.split('_')[1];
+        }
+
+        subjectCells.push(externalStr === '' ? '-' : externalStr);
+        subjectCells.push(internalStr === '' ? '-' : internalStr);
+        subjectCells.push(displayTotal);
+      });
+
+      const totalPass = theoryPass + labPass;
+      const totalFail = theoryFail + labFail + theoryAbsent + labAbsent;
+      const totalAbsent = theoryAbsent + labAbsent;
+      const totalTheoryFail = theoryFail + theoryAbsent;
+      const totalLabFail = labFail + labAbsent;
+
+      const passPercentage = subjectCount > 0 ? (totalMarks / (subjectCount * 100)) * 100 : 0;
+      const resultStatus = totalFail > 0 ? 'FAIL' : 'PASS';
+      const name = studentMap.get(row.email) || '';
+
+      const rowValues = [
+        index + 1,
+        '', // VANO placeholder
+        row.email,
+        name,
+        ...subjectCells,
+        totalMarks,
+        `${passPercentage.toFixed(0)}`,
+        totalFail,
+        resultStatus,
+        totalPass,
+        labPass,
+        totalFail,
+        totalAbsent,
+        totalTheoryFail,
+        totalLabFail
+      ];
+
+      const excelRow = worksheet.addRow(rowValues);
+
+      // --- Row Styling ---
+      excelRow.eachCell((cell, colNumber) => {
+        cell.alignment = centerAlign;
+        cell.border = borderStyle;
+        cell.font = { name: 'Calibri', size: 11 };
+
+        // Bold Total Column (Static Index + Subject Cols + 1)
+        // Static (4) + Subjects * 3 + 1 (Total is next)
+        const totalColIndex = 4 + (subjects.length * 3) + 1;
+        if (colNumber === totalColIndex) {
+          cell.font = { ...cell.font, bold: true };
+        }
+
+        // Red Color for RA/AB
+        const cellValue = cell.value?.toString() || '';
+        if (cellValue === 'AB' || cellValue.startsWith('RA') || (colNumber > 4 && colNumber < totalColIndex && (cellValue === 'RA' || cellValue === 'AB'))) {
+          cell.font = { ...cell.font, color: { argb: 'FFFF0000' } }; // Red
+        }
+      });
+    });
+
+    // Auto-width columns (simple approximation)
+    worksheet.columns.forEach(column => {
+      column.width = 10;
+    });
+    worksheet.getColumn(3).width = 15; // REGNO
+    worksheet.getColumn(4).width = 25; // NAME
+
+    // Save
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `${report.title || 'unom_report'}.xlsx`);
+  };
+
+  const handleDownloadUnomCsvOld = (report: any) => {
     if (!report || !report.data) return;
 
     const subjects = report.subjects || [];
