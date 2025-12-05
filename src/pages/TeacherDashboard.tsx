@@ -2043,20 +2043,21 @@ const TeacherDashboard = () => {
     const subjects = report.subjects || [];
     const labSubjects = report.labSubjects || [];
 
-    // Headers matching the requested format
-    // S.NO, VANO, REGNO, NAME, [Sub1 EX, Sub1 IN, Sub1 TOT]..., TOTAL, PASS %, ARREAR COUNT, PASS/FAIL, NO OF SUB PASS, NO OF LAB PASS, NO OF SUB FAIL, NO OF SUB ABS, TOTAL NO OF THEORY FAIL, NO OF LAB FAIL
-    const subjectHeaders = subjects.flatMap((sub: string) => [
-      `${sub} EX`,
-      `${sub} IN`,
-      `${sub} TOT`
-    ]);
+    // Row 1: Subject Names spaced out
+    // Structure: 4 empty (for S.NO, VANO, REGNO, NAME), then Subject, empty, empty, Subject, empty, empty..., then empty for summary
+    const row1 = [
+      '', '', '', '', // Static columns
+      ...subjects.flatMap((sub: string) => [sub, '', '']),
+      '', '', '', '', '', '', '', '', '', '' // Summary columns placeholders
+    ];
 
-    const headers = [
+    // Row 2: Headers
+    const row2 = [
       'S.NO',
       'VANO',
       'REGNO',
       'NAME',
-      ...subjectHeaders,
+      ...subjects.flatMap(() => ['EX', 'IN', 'TOT']),
       'TOTAL',
       'PASS %',
       'ARREAR COUNT',
@@ -2070,7 +2071,8 @@ const TeacherDashboard = () => {
     ];
 
     const csvRows = [
-      headers.join(','),
+      row1.map(v => `"${v}"`).join(','),
+      row2.join(','),
       ...report.data.map((row: any, index: number) => {
         let totalMarks = 0;
         let subjectCount = 0;
