@@ -908,6 +908,8 @@ const StudentDashboard = () => {
     const subjects = report.subjects?.filter((s: string) => s.trim() !== '') || [];
 
     // Validate Custom Marks
+    const labSubjects = report.labSubjects || [];
+
     for (const sub of subjects) {
       const val = unomForm[sub];
 
@@ -916,14 +918,26 @@ const StudentDashboard = () => {
       // Check Internal and External for both Normal and RA
       const internal = parseFloat(unomForm[`${sub}_internal`] || '0');
       const external = parseFloat(unomForm[`${sub}_external`] || '0');
+      const isLab = labSubjects.includes(sub);
 
-      if (isNaN(internal) || internal < 0 || internal > 25) {
-        toast.error(`Internal marks for ${sub} must be between 0 and 25`);
-        return;
-      }
-      if (isNaN(external) || external < 0 || external > 75) {
-        toast.error(`External marks for ${sub} must be between 0 and 75`);
-        return;
+      if (isLab) {
+        if (isNaN(internal) || internal < 0 || internal > 40) {
+          toast.error(`Internal marks for ${sub} (Lab) must be between 0 and 40`);
+          return;
+        }
+        if (isNaN(external) || external < 0 || external > 60) {
+          toast.error(`External marks for ${sub} (Lab) must be between 0 and 60`);
+          return;
+        }
+      } else {
+        if (isNaN(internal) || internal < 0 || internal > 25) {
+          toast.error(`Internal marks for ${sub} must be between 0 and 25`);
+          return;
+        }
+        if (isNaN(external) || external < 0 || external > 75) {
+          toast.error(`External marks for ${sub} must be between 0 and 75`);
+          return;
+        }
       }
 
       const total = internal + external;
