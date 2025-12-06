@@ -51,7 +51,8 @@ import {
   Download,
   ArrowUp,
   ArrowDown,
-  RotateCcw
+  RotateCcw,
+  Power
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { secondaryDb } from '@/lib/firebaseSecondary';
@@ -75,7 +76,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { database } from '@/lib/firebase';
-import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update } from 'firebase/database';
+import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update, remove } from 'firebase/database';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { AITestGenerator } from '@/components/AITestGenerator';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -239,6 +240,7 @@ const TeacherDashboard = () => {
   const [assignmentPage, setAssignmentPage] = useState(1);
   const [marksPage, setMarksPage] = useState(1);
   const [marksSearch, setMarksSearch] = useState('');
+  const [onlineSort, setOnlineSort] = useState<'default' | 'newest' | 'oldest'>('default');
   const [attendancePage, setAttendancePage] = useState(1);
   const [attendanceSearch, setAttendanceSearch] = useState('');
   const [attendanceMarkingPage, setAttendanceMarkingPage] = useState(1);
@@ -469,7 +471,12 @@ const TeacherDashboard = () => {
       let isMatch = false;
 
       if (storedPassword.startsWith('$2')) {
-        isMatch = await verifyPassword(passwordForm.current, storedPassword);
+        try {
+          isMatch = await verifyPassword(passwordForm.current, storedPassword);
+        } catch (e) {
+          console.error("Password verification error:", e);
+          isMatch = false;
+        }
       } else {
         if (storedPassword === passwordForm.current) {
           isMatch = true;
@@ -868,13 +875,16 @@ const TeacherDashboard = () => {
             right: { style: 'thin' }
           };
 
+          // Center align all cells
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+
           // Style Header Row
           if (rowNumber === 1) {
-            cell.font = { bold: true, color: { argb: 'FF0070C0' } }; // Blue color
+            cell.font = { bold: true, color: { argb: 'FF4472C4' } }; // Blue color
             cell.fill = {
               type: 'pattern',
               pattern: 'solid',
-              fgColor: { argb: 'FFE0E0E0' } // Light gray background for header
+              fgColor: { argb: 'FFD9D9D9' } // Silver background
             };
           }
         });
@@ -890,6 +900,125 @@ const TeacherDashboard = () => {
       console.error(error);
       toast.dismiss();
       toast.error("Failed to download details");
+    }
+  };
+
+  const handleDownloadMarksheet = async () => {
+    if (!viewMarksWorkspace) {
+      toast.error("Please select a workspace first");
+      return;
+    }
+
+    toast.loading("Generating marksheet...");
+    try {
+      const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+      if (!ws || !ws.students || ws.students.length === 0) {
+        toast.error("No students in this workspace");
+        return;
+      }
+
+      // 1. Fetch all submissions for these students
+      // Optimization: Fetch all submissions for the teacher (already in assignments state?)
+      // If assignments state is complete, we can use it.
+      // assignments state is subscribed via subscribeAssignments.
+      // Let's filter assignments by workspace students.
+
+      const workspaceAssignments = assignments.filter(a => ws.students.includes(a.studentEmail));
+
+      // Group by Student -> Assignment
+      const studentMarksMap = new Map<string, Map<string, any>>(); // email -> { assignmentTitle -> mark }
+      const assignmentTitlesSet = new Set<string>();
+
+      workspaceAssignments.forEach(a => {
+        if (!studentMarksMap.has(a.studentEmail)) {
+          studentMarksMap.set(a.studentEmail, new Map());
+        }
+        const title = a.assignmentTitle || a.title || 'Untitled';
+        assignmentTitlesSet.add(title);
+
+        // Use marks if graded, otherwise status or '-'
+        const markValue = a.status === 'graded' ? (a.marks !== undefined ? a.marks : '0') : (a.status || 'pending');
+        studentMarksMap.get(a.studentEmail)?.set(title, markValue);
+      });
+
+      const assignmentTitles = Array.from(assignmentTitlesSet).sort();
+
+      // 2. Prepare Data for Excel
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Marksheet');
+
+      // Columns: Student Details + Assignment Columns
+      const columns = [
+        { header: 'S.No', key: 'sno', width: 10 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Name', key: 'name', width: 30 },
+        ...assignmentTitles.map(title => ({ header: title, key: title, width: 20 }))
+      ];
+      worksheet.columns = columns;
+
+      // Rows
+      // Sort students by name or reg_no
+      const sortedStudents = [...ws.students].sort((a, b) => {
+        const nameA = studentMap.get(a) || a;
+        const nameB = studentMap.get(b) || b;
+        return nameA.localeCompare(nameB);
+      });
+
+      sortedStudents.forEach((email, index) => {
+        const details = studentDetailsMap.get(email) || {};
+        const name = details.name || studentMap.get(email) || '';
+
+        const row: any = {
+          sno: index + 1,
+          email: email,
+          name: name
+        };
+
+        const marks = studentMarksMap.get(email);
+        assignmentTitles.forEach(title => {
+          row[title] = marks?.get(title) || '-';
+        });
+
+        worksheet.addRow(row);
+      });
+
+      // Style
+      const headerRow = worksheet.getRow(1);
+      // Apply style only to the columns that exist
+      for (let i = 1; i <= columns.length; i++) {
+        const cell = headerRow.getCell(i);
+        cell.font = { bold: true, color: { argb: 'FF4472C4' }, size: 12 }; // Blue Text
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFD9D9D9' } // Silver Background
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+
+      worksheet.eachRow((row, rowNumber) => {
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+          // Center align all cells
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `Marksheet_${ws.name.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
+      toast.dismiss();
+      toast.success("Marksheet downloaded");
+
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Failed to download marksheet");
     }
   };
 
@@ -966,6 +1095,22 @@ const TeacherDashboard = () => {
       console.error(error);
       toast.dismiss();
       toast.error("Failed to raise request");
+    }
+  };
+
+  const handleResetPresence = async (email: string) => {
+    if (!confirm(`Reset presence status for ${email}? This will force them offline.`)) return;
+    const uid = studentIdMap.get(email);
+    if (!uid) {
+      toast.error("Student ID not found");
+      return;
+    }
+    try {
+      await remove(ref(database, `/status/${uid}/connections`));
+      toast.success("Presence reset");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to reset presence");
     }
   };
 
@@ -3289,7 +3434,7 @@ const TeacherDashboard = () => {
           <Button variant="outline" size="sm" onClick={() => setShowPasswordModal(true)} className="border-slate-700 hover:bg-slate-800">
             <Lock className="h-4 w-4 lg:mr-2" /> <span className="hidden lg:inline">Change Password</span>
           </Button>
-          <Button variant="default" size="sm" onClick={handleGlobalRefresh} className="bg-green-600 hover:bg-green-700 text-white border-0">
+          <Button variant="default" size="sm" onClick={handleGlobalRefresh} className="hidden md:flex bg-green-600 hover:bg-green-700 text-white border-0">
             <RefreshCw className="h-4 w-4 lg:mr-2" /> <span className="hidden lg:inline">Refresh</span>
           </Button>
         </div>
@@ -4579,35 +4724,68 @@ const TeacherDashboard = () => {
 
                 {viewMarksWorkspace && (
                   <div className="space-y-2 mt-4">
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="relative flex-1">
+                    <div className="flex flex-col md:flex-row items-start md:items-center gap-2 mb-4">
+                      <div className="relative flex-1 w-full">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                         <Input
                           placeholder="Search students..."
-                          className="pl-8 bg-slate-900 border-slate-700"
+                          className="pl-8 bg-slate-900 border-slate-700 w-full"
                           value={marksSearch}
                           onChange={(e) => setMarksSearch(e.target.value)}
                         />
                       </div>
-                      <Button variant="destructive" onClick={handleDeleteAllWorkspaceMarks} className="whitespace-nowrap">
-                        Delete All
-                      </Button>
+                      <div className="flex w-full md:w-auto gap-2">
+                        <Select value={onlineSort} onValueChange={(v: any) => setOnlineSort(v)}>
+                          <SelectTrigger className="w-full md:w-[160px] bg-slate-900 border-slate-700 text-slate-300">
+                            <SelectValue placeholder="Sort by Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Default (A-Z)</SelectItem>
+                            <SelectItem value="newest">Newest Online</SelectItem>
+                            <SelectItem value="oldest">Oldest Online</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="destructive" onClick={handleDeleteAllWorkspaceMarks} className="whitespace-nowrap flex-1 md:flex-none">
+                          Delete All
+                        </Button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2 mb-4">
-                      <Button onClick={handleDownloadStudentDetails} className="bg-green-600 hover:bg-green-700 text-white">
-                        <Download className="h-4 w-4 mr-2" /> Download Student Details
+                    <div className="flex flex-wrap items-center gap-2 mb-4">
+                      <Button onClick={handleDownloadStudentDetails} className="bg-green-600 hover:bg-green-700 text-white text-xs md:text-sm h-8 md:h-10">
+                        <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Details
                       </Button>
-                      <Button variant="outline" onClick={() => setShowDetailsConfigDialog(true)} className="border-slate-600 text-slate-300 hover:bg-slate-700">
-                        <Edit className="h-4 w-4 mr-2" /> Configure Fields
+                      <Button variant="outline" onClick={() => setShowDetailsConfigDialog(true)} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
+                        <Edit className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Fields
                       </Button>
-                      <Button variant="outline" onClick={handleRaiseAgainAll} className="border-slate-600 text-slate-300 hover:bg-slate-700" title="Force all students to re-enter details">
-                        <RotateCcw className="h-4 w-4 mr-2" /> Raise Again for All
+                      <Button variant="outline" onClick={handleRaiseAgainAll} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Force all students to re-enter details">
+                        <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise All
+                      </Button>
+                      <Button variant="outline" onClick={handleDownloadMarksheet} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
+                        <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Marksheet
                       </Button>
                     </div>
 
                     {workspaces.find(w => w.id === viewMarksWorkspace)?.students
                       ?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()))
+                      .sort((a: string, b: string) => {
+                        if (onlineSort === 'default') return 0;
+
+                        const getLastActive = (email: string) => {
+                          const entry = Object.values(studentPresence).find((p: any) => p.email === email);
+                          if (!entry) return 0;
+                          if (entry.connections) {
+                            const times = Object.values(entry.connections).map((c: any) => c.lastActive || c.connectedAt || 0);
+                            return Math.max(...times, 0) || Date.now(); // If online, prioritize
+                          }
+                          return entry.last_changed || 0;
+                        };
+
+                        const timeA = getLastActive(a);
+                        const timeB = getLastActive(b);
+
+                        return onlineSort === 'newest' ? timeB - timeA : timeA - timeB;
+                      })
                       .slice((marksPage - 1) * 20, marksPage * 20)
                       .map((email: string, idx: number) => (
                         <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
@@ -4618,7 +4796,16 @@ const TeacherDashboard = () => {
                               </div>
                               {(() => {
                                 const presenceEntry = Object.values(studentPresence).find((p: any) => p.email === email);
-                                const isOnline = presenceEntry?.connections ? Object.keys(presenceEntry.connections).length > 0 : false;
+                                const isOnline = presenceEntry?.connections
+                                  ? Object.values(presenceEntry.connections).some((c: any) => {
+                                    const now = Date.now();
+                                    // Heartbeat check (2 mins)
+                                    if (c.lastActive) return now - c.lastActive < 120000;
+                                    // Legacy fallback (1 hour)
+                                    if (c.connectedAt) return now - c.connectedAt < 3600000;
+                                    return false;
+                                  })
+                                  : false;
                                 return (
                                   <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-slate-900 ${isOnline ? 'bg-green-500' : 'bg-slate-500'}`} title={isOnline ? 'Online' : 'Offline'} />
                                 );
@@ -4629,7 +4816,14 @@ const TeacherDashboard = () => {
                                 <p className="font-medium text-white truncate">#{idx + 1} {studentMap.get(email) || email}</p>
                                 {(() => {
                                   const presenceEntry = Object.values(studentPresence).find((p: any) => p.email === email);
-                                  const isOnline = presenceEntry?.connections ? Object.keys(presenceEntry.connections).length > 0 : false;
+                                  const isOnline = presenceEntry?.connections
+                                    ? Object.values(presenceEntry.connections).some((c: any) => {
+                                      const now = Date.now();
+                                      if (c.lastActive) return now - c.lastActive < 120000;
+                                      if (c.connectedAt) return now - c.connectedAt < 3600000;
+                                      return false;
+                                    })
+                                    : false;
 
                                   if (!isOnline && typeof presenceEntry?.last_changed === 'number') {
                                     return (
@@ -4647,6 +4841,9 @@ const TeacherDashboard = () => {
                           <div className="flex gap-2 w-full md:w-auto">
                             <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => handleRaiseAgainSingle(email)} title="Force re-entry of details">
                               <RotateCcw className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => handleResetPresence(email)} title="Reset Presence (Force Offline)">
+                              <Power className="h-4 w-4" />
                             </Button>
                             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white flex-1 md:flex-none" onClick={() => handleFetchStudentMarks(email)}>
                               View Marks

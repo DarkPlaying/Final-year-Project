@@ -73,7 +73,7 @@ export const DashboardLayout = ({ children, sidebarItems, title, headerContent }
             {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <img src="/favicon%20dark.ico" alt="Logo" className="h-6 w-6" />
             <span className="font-semibold text-sm whitespace-nowrap">Edu Online</span>
           </div>

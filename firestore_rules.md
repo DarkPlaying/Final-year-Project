@@ -105,7 +105,7 @@ service cloud.firestore {
     // - Write: Admins only
     match /settings/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isTeacher();
     }
     match /system/{docId} {
       allow read: if isAuthenticated();
