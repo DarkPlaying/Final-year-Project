@@ -112,6 +112,7 @@ const TeacherDashboard = () => {
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [studentMap, setStudentMap] = useState<Map<string, string>>(new Map());
   const [studentIdMap, setStudentIdMap] = useState<Map<string, string>>(new Map());
+  const [studentDetailsMap, setStudentDetailsMap] = useState<Map<string, any>>(new Map()); // email -> {name, reg_no, va_no}
 
   // Form States
   const [selectedWorkspace, setSelectedWorkspace] = useState('');
@@ -975,16 +976,24 @@ const TeacherDashboard = () => {
       const studentsSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'student')));
       const sMap = new Map<string, string>();
       const idMap = new Map<string, string>();
+      const detailsMap = new Map<string, any>(); // Store full details
+
       studentsSnap.forEach(doc => {
         const d = doc.data();
         if (d.email) {
           sMap.set(d.email, d.name || '');
           // Prefer the 'uid' field if it exists (Auth UID), otherwise use document ID
           idMap.set(d.email, d.uid || doc.id);
+          detailsMap.set(d.email, {
+            name: d.name || '',
+            reg_no: d.reg_no || '',
+            va_no: d.va_no || ''
+          });
         }
       });
       setStudentMap(sMap);
       setStudentIdMap(idMap);
+      setStudentDetailsMap(detailsMap);
       console.log("Student ID Map:", Object.fromEntries(idMap));
 
       // Exams
@@ -1491,11 +1500,15 @@ const TeacherDashboard = () => {
       if (targetDoc) {
         // Record exists
         const data = targetDoc.data();
-        const presentStudents = new Set(data.presentStudents || []);
+        const presentSet = new Set<string>();
+        (data.presentStudents || []).forEach((s: any) => {
+          const email = typeof s === 'string' ? s : s.email;
+          if (email) presentSet.add(email);
+        });
 
         const list = allStudents.map((email: string) => ({
           email,
-          status: presentStudents.has(email) ? 'present' : 'absent'
+          status: presentSet.has(email) ? 'present' : 'absent'
         }));
 
         if (isViewMode) {
@@ -1538,8 +1551,12 @@ const TeacherDashboard = () => {
 
       snap.docs.forEach(doc => {
         const present = doc.data().presentStudents || [];
-        present.forEach((email: string) => {
-          studentCounts.set(email, (studentCounts.get(email) || 0) + 1);
+        present.forEach((student: any) => {
+          // Handle both string (legacy) and object (new) formats
+          const email = typeof student === 'string' ? student : student.email;
+          if (email) {
+            studentCounts.set(email, (studentCounts.get(email) || 0) + 1);
+          }
         });
       });
 
@@ -1583,7 +1600,12 @@ const TeacherDashboard = () => {
         const d = doc.data();
         // Filter in memory
         if (d.date >= startDate && d.date <= endDate) {
-          data.set(d.date, new Set(d.presentStudents || []));
+          const presentSet = new Set<string>();
+          (d.presentStudents || []).forEach((s: any) => {
+            const email = typeof s === 'string' ? s : s.email;
+            if (email) presentSet.add(email);
+          });
+          data.set(d.date, presentSet);
         }
       });
 
@@ -1677,9 +1699,17 @@ const TeacherDashboard = () => {
     }
 
     try {
-      const presentEmails = attendanceList
+      const presentStudentsData = attendanceList
         .filter(s => s.status === 'present')
-        .map(s => s.email);
+        .map(s => {
+          const details = studentDetailsMap.get(s.email) || {};
+          return {
+            email: s.email,
+            name: s.name || details.name || '',
+            reg_no: s.reg_no || details.reg_no || '',
+            va_no: s.va_no || details.va_no || ''
+          };
+        });
 
       // Optimization: Fetch by workspaceId only
       const q = query(
@@ -1692,7 +1722,7 @@ const TeacherDashboard = () => {
       if (targetDoc) {
         // Update existing
         await updateDoc(targetDoc.ref, {
-          presentStudents: presentEmails,
+          presentStudents: presentStudentsData,
           updatedAt: serverTimestamp()
         });
       } else {
@@ -1700,7 +1730,7 @@ const TeacherDashboard = () => {
         await addDoc(collection(secondaryDb, 'attendance'), {
           workspaceId: attendanceWorkspace,
           date: attendanceDate,
-          presentStudents: presentEmails,
+          presentStudents: presentStudentsData,
           teacherEmail: userEmail,
           createdAt: serverTimestamp()
         });
@@ -2529,10 +2559,11 @@ const TeacherDashboard = () => {
 
       // Set Column Widths
       // Static columns (A-D) - Increased widths for large font
-      worksheet.getColumn(1).width = 30; // S.No
-      worksheet.getColumn(2).width = 30; // VANO
-      worksheet.getColumn(3).width = 50; // Email/RegNo
-      worksheet.getColumn(4).width = 50; // Name
+      worksheet.getColumn(1).width = 35; // S.No
+      worksheet.getColumn(2).width = 35; // VANO
+      worksheet.getColumn(3).width = 65; // RegNo
+      worksheet.getColumn(4).width = 100; // Name
+
 
       // Subject Columns
       let widthColIndex = 5;
@@ -2644,12 +2675,15 @@ const TeacherDashboard = () => {
 
         const passPercentage = subjectCount > 0 ? (totalMarks / (subjectCount * 100)) * 100 : 0;
         const resultStatus = totalFail > 0 ? 'FAIL' : 'PASS';
-        const name = studentMap.get(row.email) || '';
+        const details = studentDetailsMap.get(row.email) || {};
+        const name = details.name || studentMap.get(row.email) || '';
+        const regNo = details.reg_no || ''; // Blank if missing
+        const vaNo = details.va_no || '';   // Blank if missing
 
         const rowValues = [
           index + 1,
-          '', // VANO
-          row.email,
+          vaNo,
+          regNo,
           name,
           ...subjectCells,
           totalMarks,
@@ -2934,7 +2968,7 @@ const TeacherDashboard = () => {
       currentFooterRow += 4; // Add gap before signature
 
       const sigRow = worksheet.getRow(currentFooterRow);
-      sigRow.height = 80;
+      sigRow.height = 400;
 
       // CLASS INCHARGE (Left)
       try { worksheet.mergeCells(currentFooterRow, 2, currentFooterRow, 5); } catch (e) { }

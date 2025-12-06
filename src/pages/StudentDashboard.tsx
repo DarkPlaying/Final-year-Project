@@ -1104,6 +1104,16 @@ const StudentDashboard = () => {
     setShowDownloadDialog(true);
   };
 
+  const fetchLatestProfile = async (uid: string) => {
+    try {
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      return userSnap.exists() ? userSnap.data() : null;
+    } catch (e) {
+      console.error("Error fetching profile", e);
+      return null;
+    }
+  };
+
   const handleGenerateReport = async () => {
     if (!downloadFrom) {
       toast.error("Please select a month");
@@ -1117,6 +1127,16 @@ const StudentDashboard = () => {
     const toastId = toast.loading("Fetching data and generating report...");
 
     try {
+      // Ensure we have the latest user profile
+      let currentProfile = userProfile;
+      if (!currentProfile || !currentProfile.reg_no || !currentProfile.va_no) {
+        const uid = userId || localStorage.getItem('userId');
+        if (uid) {
+          const fetched = await fetchLatestProfile(uid);
+          if (fetched) currentProfile = fetched;
+        }
+      }
+
       // Fetch attendance for the range
       const startDateStr = `${downloadFrom}-01`;
 
@@ -1139,11 +1159,21 @@ const StudentDashboard = () => {
       const reportAttendance = records
         .filter((r: any) => myWorkspaces.includes(r.workspaceId))
         .map((r: any) => {
-          const isPresent = r.presentStudents && (
-            r.presentStudents.includes(userEmail) ||
-            r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
-          );
-          return { ...r, status: isPresent ? 'present' : 'absent' };
+          let isPresent = false;
+          let studentDetails = null;
+
+          if (r.presentStudents) {
+            if (r.presentStudents.includes(userEmail)) {
+              isPresent = true;
+            } else {
+              const found = r.presentStudents.find((s: any) => typeof s === 'object' && s.email === userEmail);
+              if (found) {
+                isPresent = true;
+                studentDetails = found;
+              }
+            }
+          }
+          return { ...r, status: isPresent ? 'present' : 'absent', studentDetails };
         });
 
       reportAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
@@ -1203,12 +1233,19 @@ const StudentDashboard = () => {
       const leftColX = 15;
       const rightColX = 110;
 
-      // Changed Name to Email, Semester to Batch
-      const studentName = userProfile?.name || userProfile?.full_name || userEmail;
-      const studentDept = userProfile?.department || workspaceCategory || 'N/A';
-      const studentRegNo = userProfile?.reg_no || userProfile?.register_no || 'N/A';
-      const studentBatch = userProfile?.batch_year || workspaceName || 'N/A';
-      const studentDob = userProfile?.date_of_birth || 'N/A';
+      // Try to find a record with student details
+      const recordWithDetails = reportAttendance.find((r: any) => r.studentDetails);
+      const details = recordWithDetails?.studentDetails || {};
+
+      // Use current profile as fallback
+      const p = currentProfile || {};
+
+      const studentName = details.name || p.name || p.full_name || userEmail;
+      const studentDept = p.department || workspaceCategory || 'N/A';
+      const studentRegNo = details.reg_no || p.reg_no || p.register_no || 'N/A';
+      const studentVaNo = details.va_no || p.va_no || 'N/A';
+      const studentBatch = p.batch_year || workspaceName || 'N/A';
+      const studentDob = p.date_of_birth || 'N/A';
 
       doc.text(`Name: ${studentName}`, leftColX, yPos);
       doc.text(`Register No: ${studentRegNo}`, rightColX, yPos);
@@ -1218,11 +1255,13 @@ const StudentDashboard = () => {
       doc.text(`Batch: ${studentBatch}`, rightColX, yPos);
 
       yPos += 6;
-      doc.text(`DOB: ${studentDob}`, leftColX, yPos);
+      doc.text(`VA No: ${studentVaNo}`, leftColX, yPos);
+      doc.text(`DOB: ${studentDob}`, rightColX, yPos);
 
+      yPos += 6;
       // Added Period
       const fromMonthName = new Date(downloadFrom + "-01").toLocaleDateString('default', { month: 'long', year: 'numeric' });
-      doc.text(`Period: ${fromMonthName}`, rightColX, yPos);
+      doc.text(`Period: ${fromMonthName}`, leftColX, yPos);
 
       yPos += 10;
       doc.setDrawColor(220, 220, 220);
