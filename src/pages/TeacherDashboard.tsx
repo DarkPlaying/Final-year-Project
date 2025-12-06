@@ -534,14 +534,14 @@ const TeacherDashboard = () => {
   };
 
   useEffect(() => {
-    if (!userEmail) return;
-    const unsubPortal = onSnapshot(doc(db, 'settings', `assignment_portal_${userEmail}`), (d) => {
-      if (d.exists()) {
-        setPortalStatus(d.data().status);
+    if (!userId) return;
+    const unsubPortal = onSnapshot(doc(db, 'users', userId), (d) => {
+      if (d.exists() && d.data().portalStatus) {
+        setPortalStatus(d.data().portalStatus);
       }
     });
     return () => unsubPortal();
-  }, [userEmail]);
+  }, [userId]);
 
   useEffect(() => {
     if (filterFrom && filterTo && filterFrom > filterTo) {
@@ -681,8 +681,9 @@ const TeacherDashboard = () => {
   const handleTogglePortal = async () => {
     const newStatus = portalStatus === 'open' ? 'closed' : 'open';
     try {
-      await setDoc(doc(db, 'settings', `assignment_portal_${userEmail}`), {
-        status: newStatus,
+      if (!userId) throw new Error("User ID not found");
+      await setDoc(doc(db, 'users', userId), {
+        portalStatus: newStatus,
         updatedAt: serverTimestamp()
       }, { merge: true });
       setPortalStatus(newStatus);
@@ -5245,7 +5246,7 @@ const TeacherDashboard = () => {
                             <div>
                               <h4 className="font-semibold text-white text-lg">{batch.sectionTitle}</h4>
                               <p className="text-sm text-slate-400">
-                                {batch.subject} â€¢ {batch.createdAt?.toDate?.().toLocaleDateString()} â€¢ {batch.count} students
+                                {batch.subject} | {batch.createdAt?.toDate?.().toLocaleDateString()} | {batch.count} students
                                 {batch.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
                               </p>
                             </div>
