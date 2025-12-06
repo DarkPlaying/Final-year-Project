@@ -55,7 +55,7 @@ import {
   Power
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { secondaryDb } from '@/lib/firebaseSecondary';
+
 import { hashPassword, verifyPassword } from '@/lib/security';
 import {
   collection,
@@ -77,7 +77,6 @@ import {
 } from 'firebase/firestore';
 import { database } from '@/lib/firebase';
 import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update, remove } from 'firebase/database';
-import { getAuth, signInAnonymously } from 'firebase/auth';
 import { AITestGenerator } from '@/components/AITestGenerator';
 import { DatePicker } from '@/components/ui/date-picker';
 
@@ -219,13 +218,7 @@ const TeacherDashboard = () => {
   const [unomHistoryFilterWorkspace, setUnomHistoryFilterWorkspace] = useState('all');
   const [marksHistorySearch, setMarksHistorySearch] = useState('');
 
-  useEffect(() => {
-    // Authenticate with Secondary DB
-    const secAuth = getAuth(secondaryDb.app);
-    signInAnonymously(secAuth).catch(err => {
-      console.error("Failed to authenticate with Secondary DB:", err);
-    });
-  }, []);
+
   const [unomHistorySearch, setUnomHistorySearch] = useState('');
 
   // Pagination & Search States
@@ -305,12 +298,7 @@ const TeacherDashboard = () => {
     loadDashboardData(email);
     loadWorkspaces(email, uid || '');
 
-    // Authenticate with Secondary DB for Attendance/Marks access
-    const secAuth = getAuth(secondaryDb.app);
-    signInAnonymously(secAuth).catch(err => {
-      console.error("Failed to authenticate with Secondary DB:", err);
-      toast.error("Database connection failed. Some features may not work.");
-    });
+
 
     // Real-time listeners
     const unsubExams = subscribeExams(email);
@@ -1631,7 +1619,7 @@ const TeacherDashboard = () => {
       // Check if attendance record exists
       // Optimization: Fetch by workspaceId only to avoid composite index requirement, then filter by date
       const q = query(
-        collection(secondaryDb, 'attendance'),
+        collection(db, 'attendance'),
         where('workspaceId', '==', workspaceId)
       );
       const snap = await getDocs(q);
@@ -1688,7 +1676,7 @@ const TeacherDashboard = () => {
   const fetchOverallAttendance = async (workspaceId: string) => {
     if (!workspaceId) return;
     try {
-      const q = query(collection(secondaryDb, 'attendance'), where('workspaceId', '==', workspaceId));
+      const q = query(collection(db, 'attendance'), where('workspaceId', '==', workspaceId));
       const snap = await getDocs(q);
 
       const totalDays = snap.size;
@@ -1734,7 +1722,7 @@ const TeacherDashboard = () => {
     try {
       // Fetch all for workspace to avoid composite index requirement
       const q = query(
-        collection(secondaryDb, 'attendance'),
+        collection(db, 'attendance'),
         where('workspaceId', '==', workspaceId)
       );
 
@@ -1802,7 +1790,7 @@ const TeacherDashboard = () => {
     try {
       // Optimization: Fetch by workspaceId only
       const q = query(
-        collection(secondaryDb, 'attendance'),
+        collection(db, 'attendance'),
         where('workspaceId', '==', wsId)
       );
       const snap = await getDocs(q);
@@ -1817,7 +1805,7 @@ const TeacherDashboard = () => {
       const backupData = [targetDoc.data()];
       setDeletedBackup({ type: 'single', data: backupData });
 
-      const batch = writeBatch(secondaryDb);
+      const batch = writeBatch(db);
       batch.delete(targetDoc.ref);
       await batch.commit();
 
@@ -1858,7 +1846,7 @@ const TeacherDashboard = () => {
 
       // Optimization: Fetch by workspaceId only
       const q = query(
-        collection(secondaryDb, 'attendance'),
+        collection(db, 'attendance'),
         where('workspaceId', '==', attendanceWorkspace)
       );
       const snap = await getDocs(q);
@@ -1872,7 +1860,7 @@ const TeacherDashboard = () => {
         });
       } else {
         // Create new
-        await addDoc(collection(secondaryDb, 'attendance'), {
+        await addDoc(collection(db, 'attendance'), {
           workspaceId: attendanceWorkspace,
           date: attendanceDate,
           presentStudents: presentStudentsData,
@@ -1898,7 +1886,7 @@ const TeacherDashboard = () => {
 
     try {
       const q = query(
-        collection(secondaryDb, 'attendance'),
+        collection(db, 'attendance'),
         where('workspaceId', '==', attendanceWorkspace)
       );
       const snap = await getDocs(q);
@@ -1912,7 +1900,7 @@ const TeacherDashboard = () => {
       const backupData = snap.docs.map(d => d.data());
       setDeletedBackup({ type: 'all', data: backupData });
 
-      const batch = writeBatch(secondaryDb);
+      const batch = writeBatch(db);
       snap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
 
@@ -1933,9 +1921,9 @@ const TeacherDashboard = () => {
     if (!deletedBackup) return;
 
     try {
-      const batch = writeBatch(secondaryDb);
+      const batch = writeBatch(db);
       deletedBackup.data.forEach(item => {
-        const ref = doc(collection(secondaryDb, 'attendance'));
+        const ref = doc(collection(db, 'attendance'));
         batch.set(ref, item);
       });
       await batch.commit();
@@ -1999,12 +1987,12 @@ const TeacherDashboard = () => {
     }
 
     try {
-      const batch = writeBatch(secondaryDb);
-      const batchId = doc(collection(secondaryDb, 'mark_batches')).id;
+      const batch = writeBatch(db);
+      const batchId = doc(collection(db, 'mark_batches')).id;
       const matchedCount = assignMarksData.length; // Assuming all data is matched for now
 
       // Create Batch Record
-      const batchDocRef = doc(secondaryDb, 'mark_batches', batchId);
+      const batchDocRef = doc(db, 'mark_batches', batchId);
       batch.set(batchDocRef, {
         subject: assignMarksSubject,
         sectionTitle: assignMarksSectionTitle,
@@ -2016,7 +2004,7 @@ const TeacherDashboard = () => {
       });
 
       assignMarksData.forEach(item => {
-        const docRef = doc(collection(secondaryDb, 'marks'));
+        const docRef = doc(collection(db, 'marks'));
         batch.set(docRef, {
           studentEmail: item.email,
           subject: assignMarksSubject,
@@ -2051,7 +2039,7 @@ const TeacherDashboard = () => {
   const fetchMarkBatches = useCallback(async () => {
     try {
       // Removed orderBy to avoid index requirement issues
-      const q = query(collection(secondaryDb, 'mark_batches'), where('teacherEmail', '==', userEmail));
+      const q = query(collection(db, 'mark_batches'), where('teacherEmail', '==', userEmail));
       const snap = await getDocs(q);
       console.log(`Fetched ${snap.size} batches for ${userEmail}`);
 
@@ -2077,14 +2065,14 @@ const TeacherDashboard = () => {
 
   const handleDeleteBatch = async (batchId: string) => {
     try {
-      const batch = writeBatch(secondaryDb);
+      const batch = writeBatch(db);
 
       // Mark batch as deleted
-      const batchRef = doc(secondaryDb, 'mark_batches', batchId);
+      const batchRef = doc(db, 'mark_batches', batchId);
       batch.update(batchRef, { status: 'deleted' });
 
       // Mark all marks in batch as deleted
-      const marksQ = query(collection(secondaryDb, 'marks'), where('batchId', '==', batchId));
+      const marksQ = query(collection(db, 'marks'), where('batchId', '==', batchId));
       const marksSnap = await getDocs(marksQ);
       marksSnap.docs.forEach(d => {
         batch.update(d.ref, { deleted: true });
@@ -2101,14 +2089,14 @@ const TeacherDashboard = () => {
 
   const handleUndoBatch = async (batchId: string) => {
     try {
-      const batch = writeBatch(secondaryDb);
+      const batch = writeBatch(db);
 
       // Restore batch
-      const batchRef = doc(secondaryDb, 'mark_batches', batchId);
+      const batchRef = doc(db, 'mark_batches', batchId);
       batch.update(batchRef, { status: 'active' });
 
       // Restore marks
-      const marksQ = query(collection(secondaryDb, 'marks'), where('batchId', '==', batchId));
+      const marksQ = query(collection(db, 'marks'), where('batchId', '==', batchId));
       const marksSnap = await getDocs(marksQ);
       marksSnap.docs.forEach(d => {
         batch.update(d.ref, { deleted: false });
@@ -2127,15 +2115,15 @@ const TeacherDashboard = () => {
     if (!window.confirm("Are you sure you want to permanently delete ALL upload history? This action cannot be undone.")) return;
 
     try {
-      const batch = writeBatch(secondaryDb);
+      const batch = writeBatch(db);
 
       // Get all batches
-      const batchesQ = query(collection(secondaryDb, 'mark_batches'), where('teacherEmail', '==', userEmail));
+      const batchesQ = query(collection(db, 'mark_batches'), where('teacherEmail', '==', userEmail));
       const batchesSnap = await getDocs(batchesQ);
       batchesSnap.docs.forEach(d => batch.delete(d.ref));
 
       // Get all marks
-      const marksQ = query(collection(secondaryDb, 'marks'), where('teacherEmail', '==', userEmail), where('type', '==', 'csv_upload'));
+      const marksQ = query(collection(db, 'marks'), where('teacherEmail', '==', userEmail), where('type', '==', 'csv_upload'));
       const marksSnap = await getDocs(marksQ);
       marksSnap.docs.forEach(d => batch.delete(d.ref));
 
@@ -2159,7 +2147,7 @@ const TeacherDashboard = () => {
 
     try {
       setViewingBatchPage(1);
-      const q = query(collection(secondaryDb, 'marks'), where('batchId', '==', batchId));
+      const q = query(collection(db, 'marks'), where('batchId', '==', batchId));
       const snap = await getDocs(q);
       setViewingBatchMarks(snap.docs.map(d => d.data()));
       setViewingBatchId(batchId);
@@ -2352,7 +2340,7 @@ const TeacherDashboard = () => {
       const validSubjects = unomSubjects.filter(s => s.trim() !== '');
       const labSubjects = unomSubjects.filter((s, i) => s.trim() !== '' && unomLabIndices.has(i));
 
-      await addDoc(collection(secondaryDb, 'unom_reports'), {
+      await addDoc(collection(db, 'unom_reports'), {
         title: unomTitle,
         teacherEmail: userEmail,
         workspaceId: unomWorkspace,
@@ -2398,7 +2386,7 @@ const TeacherDashboard = () => {
       }
 
       for (const chunk of chunks) {
-        const q = query(collection(secondaryDb, 'unom_reports'), where('workspaceId', 'in', chunk));
+        const q = query(collection(db, 'unom_reports'), where('workspaceId', 'in', chunk));
         const snap = await getDocs(q);
         snap.docs.forEach(d => allReports.push({ id: d.id, ...d.data() }));
       }
@@ -2435,7 +2423,7 @@ const TeacherDashboard = () => {
 
   const handleDeleteUnom = async (id: string) => {
     try {
-      await updateDoc(doc(secondaryDb, 'unom_reports', id), { status: 'deleted' });
+      await updateDoc(doc(db, 'unom_reports', id), { status: 'deleted' });
       toast.success('UNOM report deleted successfully');
       fetchUnomReports();
     } catch (error) {
@@ -3262,7 +3250,7 @@ const TeacherDashboard = () => {
 
   const handleUndoUnom = async (id: string) => {
     try {
-      await updateDoc(doc(secondaryDb, 'unom_reports', id), { status: 'active' });
+      await updateDoc(doc(db, 'unom_reports', id), { status: 'active' });
       toast.success('Report restored');
       fetchUnomReports();
     } catch (error) {
@@ -3289,7 +3277,7 @@ const TeacherDashboard = () => {
         hasUpdated: false
       };
 
-      await updateDoc(doc(secondaryDb, 'unom_reports', report.id), {
+      await updateDoc(doc(db, 'unom_reports', report.id), {
         data: newData
       });
       toast.success("Status cleared");
@@ -3313,7 +3301,7 @@ const TeacherDashboard = () => {
         hasUpdated: false
       }));
 
-      await updateDoc(doc(secondaryDb, 'unom_reports', report.id), {
+      await updateDoc(doc(db, 'unom_reports', report.id), {
         data: newData
       });
       toast.success("All updates marked as read");
@@ -3326,8 +3314,8 @@ const TeacherDashboard = () => {
   const handleDeleteAllUnom = async () => {
     if (!window.confirm("Are you sure you want to permanently delete ALL UNOM history?")) return;
     try {
-      const batch = writeBatch(secondaryDb);
-      const q = query(collection(secondaryDb, 'unom_reports'), where('teacherEmail', '==', userEmail));
+      const batch = writeBatch(db);
+      const q = query(collection(db, 'unom_reports'), where('teacherEmail', '==', userEmail));
       const snap = await getDocs(q);
       snap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();

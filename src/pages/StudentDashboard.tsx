@@ -41,7 +41,7 @@ import {
 import { jsPDF } from "jspdf";
 import autoTable from 'jspdf-autotable';
 import { db } from '@/lib/firebase';
-import { secondaryDb } from '@/lib/firebaseSecondary';
+
 import { hashPassword, verifyPassword } from '@/lib/security';
 import {
   collection,
@@ -178,11 +178,7 @@ const StudentDashboard = () => {
     setUserEmail(email);
     setUserId(uid || '');
 
-    // Authenticate with Secondary DB
-    const secAuth = getAuth(secondaryDb.app);
-    signInAnonymously(secAuth).catch(err => {
-      console.error("Failed to authenticate with Secondary DB:", err);
-    });
+
 
     loadTeachers(email);
 
@@ -598,7 +594,7 @@ const StudentDashboard = () => {
   useEffect(() => {
     if (!userEmail) return;
 
-    const q = query(collection(secondaryDb, 'marks'), where('studentEmail', '==', userEmail));
+    const q = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
     const unsub = onSnapshot(q, (snap) => {
       const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       // Sort by timestamp if available, otherwise by title
@@ -628,7 +624,7 @@ const StudentDashboard = () => {
 
     chunks.forEach(chunk => {
       const q = query(
-        collection(secondaryDb, 'unom_reports'),
+        collection(db, 'unom_reports'),
         where('workspaceId', 'in', chunk),
         where('status', '==', 'active')
       );
@@ -667,7 +663,7 @@ const StudentDashboard = () => {
     const endDateStr = `${attendanceMonth}-${lastDay}`;
 
     const q = query(
-      collection(secondaryDb, 'attendance'),
+      collection(db, 'attendance'),
       where('date', '>=', startDateStr),
       where('date', '<=', endDateStr)
     );
@@ -1066,7 +1062,7 @@ const StudentDashboard = () => {
     });
 
     try {
-      await updateDoc(doc(secondaryDb, 'unom_reports', selectedUnomId), {
+      await updateDoc(doc(db, 'unom_reports', selectedUnomId), {
         data: newData,
         updatedAt: serverTimestamp()
       });
@@ -1147,7 +1143,7 @@ const StudentDashboard = () => {
       const endDateStr = `${downloadTo}-${lastDay}`;
 
       const q = query(
-        collection(secondaryDb, 'attendance'),
+        collection(db, 'attendance'),
         where('date', '>=', startDateStr),
         where('date', '<=', endDateStr)
       );

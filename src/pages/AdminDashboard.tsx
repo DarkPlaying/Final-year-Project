@@ -59,7 +59,7 @@ import {
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 import { db } from '@/lib/firebase';
-import { secondaryDb, secondaryAuth } from '@/lib/firebaseSecondary';
+
 import { signInAnonymously } from 'firebase/auth';
 import { createUserInBothSystems } from '@/lib/createUser';
 import { hashPassword } from '@/lib/security';
@@ -303,16 +303,12 @@ const AdminDashboard = () => {
     toast.loading("Starting backup...");
 
     try {
-      // 1. Authenticate with Secondary DB (Anonymously) to ensure access
-      // Note: Firestore rules on secondary DB must allow read for anonymous users or authenticated users
-      await signInAnonymously(secondaryAuth);
-
-      // 2. Fetch Data from Secondary DB
+      // 2. Fetch Data from Main DB
       const collectionsToBackup = ['attendance', 'marks', 'unom_reports', 'users', 'workspaces'];
       const backupData: any = {};
 
       for (const colName of collectionsToBackup) {
-        const snap = await getDocs(collection(secondaryDb, colName));
+        const snap = await getDocs(collection(db, colName));
         backupData[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       }
 
@@ -692,7 +688,7 @@ const AdminDashboard = () => {
         toast.success('User restored successfully! Note: Password remains unchanged.');
         logOperation(`Restored user: ${newUser.email}`, 'success');
       } else {
-        toast.success('User added successfully to both systems');
+        toast.success('User added successfully');
         logOperation(`Added user: ${newUser.email}`, 'success');
       }
       setShowAddDialog(false);
@@ -708,12 +704,7 @@ const AdminDashboard = () => {
     if (!confirm(`Are you sure you want to delete ${userEmail}?`)) return;
 
     try {
-      // Archive to deleted_users for potential restoration
-      await setDoc(doc(db, 'deleted_users', userEmail.toLowerCase()), {
-        uid: userId,
-        email: userEmail,
-        deletedAt: serverTimestamp()
-      });
+
 
       // Remove from workspaces first
       const workspacesSnap = await getDocs(collection(db, 'workspaces'));
@@ -732,45 +723,13 @@ const AdminDashboard = () => {
 
       await batch.commit();
 
-      // Archive user before deletion to allow restoration
-      await setDoc(doc(db, 'deleted_users', userEmail.toLowerCase()), {
-        uid: userId,
-        deletedAt: serverTimestamp()
-      });
+
 
       await deleteDoc(doc(db, 'users', userId));
 
       // Sync delete to Secondary DB
-      // Sync delete to Secondary DB
-      let secondarySuccess = false;
-      let secondaryError = "";
-
-      try {
-        const secAuth = getAuth(secondaryDb.app);
-        console.log("[deleteUser] Secondary Auth Current User:", secAuth.currentUser?.uid);
-
-        if (!secAuth.currentUser) {
-          console.log("[deleteUser] Not authenticated in Secondary DB, attempting anonymous sign-in...");
-          await signInAnonymously(secAuth);
-        }
-
-        // 1. Delete from Firestore in Secondary
-        await deleteDoc(doc(secondaryDb, 'users', userId));
-        console.log(`[deleteUser] Deleted user ${userId} from Secondary DB`);
-        secondarySuccess = true;
-
-      } catch (secError: any) {
-        console.error("Failed to delete from secondary DB:", secError);
-        secondaryError = secError.message;
-      }
-
-      if (secondarySuccess) {
-        toast.success('User deleted successfully from both systems');
-        logOperation(`Deleted user: ${userEmail}`, 'warning');
-      } else {
-        toast.warning(`Deleted from Main only. Secondary error: ${secondaryError}`);
-        logOperation(`Deleted user (Main only): ${userEmail}`, 'error');
-      }
+      toast.success('User deleted successfully');
+      logOperation(`Deleted user: ${userEmail}`, 'warning');
 
       loadUsers();
       loadStats();
@@ -788,17 +747,7 @@ const AdminDashboard = () => {
         [role]: email
       });
 
-      // 2. Sync to Secondary DB (for Security Rules)
-      try {
-        const secWsRef = doc(secondaryDb, 'workspaces', workspaceId);
-        // Use setDoc with merge to ensure document exists
-        await setDoc(secWsRef, {
-          [role]: email
-        }, { merge: true });
-      } catch (secError) {
-        console.error('Failed to sync to secondary DB:', secError);
-        // Don't block the UI, but warn
-      }
+
 
       toast.success(`${role === 'classTeacher' ? 'Class Teacher' : 'Mentor'} appointed`);
       loadWorkspaces();
@@ -975,12 +924,7 @@ const AdminDashboard = () => {
         // Only delete if still marked as CSV upload and no workspaces
         const userRef = doc(db, 'users', user.id);
         await deleteDoc(userRef);
-        // Sync delete to Secondary DB
-        try {
-          await deleteDoc(doc(secondaryDb, 'users', user.id));
-        } catch (e) {
-          console.error("Failed to undo in secondary DB", e);
-        }
+
         deleted++;
       }
 
@@ -1166,67 +1110,16 @@ const AdminDashboard = () => {
         if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
 
         if (userDocsToDelete.length > 0) {
-          // Archive users before deletion to allow restoration
-          const archiveBatch = writeBatch(db);
-          let archiveCount = 0;
-
-          for (const docSnap of userDocsToDelete) {
-            const userData = docSnap.data();
-            if (userData.email) {
-              archiveBatch.set(doc(db, 'deleted_users', userData.email.toLowerCase()), {
-                uid: docSnap.id,
-                deletedAt: serverTimestamp()
-              });
-              archiveCount++;
-              // Commit batch if limit reached (re-using batch variable is tricky, so we just commit and create new if needed, 
-              // but here we just commit once at end for simplicity if < 500, or loop properly. 
-              // Since writeBatch is one-time use, we should create new one.
-              // But simpler: just use deleteInBatches logic but for set.
-            }
-          }
-          // Actually, let's just commit one batch for now assuming < 500 users per workspace usually.
-          // If > 500, we should split.
-          if (archiveCount > 0) await archiveBatch.commit();
-
           await deleteInBatches(userDocsToDelete);
 
-          // Sync delete to Secondary DB for these users
-          // Sync delete to Secondary DB for these users
-          try {
-            const secAuth = getAuth(secondaryDb.app);
-            if (!secAuth.currentUser) {
-              console.log("[deleteWorkspace] Not authenticated in Secondary DB, attempting anonymous sign-in...");
-              await signInAnonymously(secAuth);
-            }
 
-            // Create a new batch for secondary DB
-            let batchSec = writeBatch(secondaryDb);
-            let count = 0;
-
-            for (const userDoc of userDocsToDelete) {
-              batchSec.delete(doc(secondaryDb, 'users', userDoc.id));
-              count++;
-              // Firestore batch limit is 500, but we use 400 to be safe
-              if (count >= 400) {
-                await batchSec.commit();
-                batchSec = writeBatch(secondaryDb); // Start new batch
-                count = 0;
-              }
-            }
-            if (count > 0) await batchSec.commit();
-            console.log(`[deleteWorkspace] Synced deletion of ${userDocsToDelete.length} users to Secondary DB`);
-
-          } catch (secErr: any) {
-            console.error("Failed to sync delete users in secondary DB:", secErr);
-            toast.warning(`Workspace deleted, but failed to remove users from Secondary DB: ${secErr.message}`);
-          }
         }
       } catch (e) {
         console.warn('Error deleting some related data:', e);
         toast.warning('Some related data could not be deleted');
       }
 
-      // 5. Delete Secondary DB Data (Attendance, Marks, Reports)
+      // 5. Delete Related Data (Attendance, Marks, Reports)
       try {
         // 5a. Direct deletion by workspaceId
         // Note: 'marks' usually don't have workspaceId, so we delete them via mark_batches
@@ -1234,7 +1127,7 @@ const AdminDashboard = () => {
         const batchIdsToDelete: string[] = [];
 
         for (const colName of directCollections) {
-          const q = query(collection(secondaryDb, colName), where('workspaceId', '==', id));
+          const q = query(collection(db, colName), where('workspaceId', '==', id));
           const snap = await getDocs(q);
 
           if (!snap.empty) {
@@ -1242,8 +1135,8 @@ const AdminDashboard = () => {
             if (colName === 'mark_batches') {
               snap.forEach(d => batchIdsToDelete.push(d.id));
             }
-            await deleteInBatches(snap.docs, secondaryDb);
-            console.log(`Deleted ${snap.size} docs from ${colName} in secondary DB`);
+            await deleteInBatches(snap.docs, db);
+            console.log(`Deleted ${snap.size} docs from ${colName}`);
           }
         }
 
@@ -1256,17 +1149,16 @@ const AdminDashboard = () => {
           }
 
           for (const chunk of chunks) {
-            const marksQ = query(collection(secondaryDb, 'marks'), where('batchId', 'in', chunk));
+            const marksQ = query(collection(db, 'marks'), where('batchId', 'in', chunk));
             const marksSnap = await getDocs(marksQ);
             if (!marksSnap.empty) {
-              await deleteInBatches(marksSnap.docs, secondaryDb);
+              await deleteInBatches(marksSnap.docs, db);
               console.log(`Deleted ${marksSnap.size} marks linked to deleted batches`);
             }
           }
         }
       } catch (e) {
-        console.warn('Error deleting secondary DB data (check permissions):', e);
-        // Do not fail the whole operation if secondary DB is inaccessible
+        console.warn('Error deleting related data:', e);
       }
 
       // 6. Delete Workspace
@@ -1473,7 +1365,7 @@ const AdminDashboard = () => {
     { icon: <Briefcase size={20} />, label: 'Workspaces', onClick: () => setActiveSection('workspaces'), active: activeSection === 'workspaces' },
     { icon: <MessageSquare size={20} />, label: 'View Queries', onClick: () => setActiveSection('queries'), active: activeSection === 'queries' },
     { icon: <Bot size={20} />, label: 'AI CSV Generator', onClick: () => setActiveSection('aiCsv'), active: activeSection === 'aiCsv' },
-    { icon: <Settings size={20} />, label: 'Settings', onClick: () => setActiveSection('settings'), active: activeSection === 'settings' },
+
     { icon: <Database size={20} />, label: 'Backup Files', onClick: () => setActiveSection('backup'), active: activeSection === 'backup' },
   ];
 
@@ -1660,7 +1552,7 @@ const AdminDashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {recentOperations.map((op, i) => (
+                    {recentOperations.slice(0, 6).map((op, i) => (
                       <div key={i} className="flex items-center justify-between border-b border-slate-800 pb-2 last:border-0 last:pb-0">
                         <div className="flex items-center gap-3">
                           <div className={`w-2 h-2 rounded-full ${op.type === 'success' ? 'bg-green-500' : op.type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'}`} />
@@ -2185,17 +2077,7 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* SETTINGS */}
-      {activeSection === 'settings' && (
-        <div className="space-y-6">
-          <h2 className="text-xl font-semibold">Settings</h2>
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              Settings functionality coming soon...
-            </CardContent>
-          </Card>
-        </div>
-      )}
+
 
       {/* DIALOGS */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

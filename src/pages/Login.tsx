@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { GraduationCap, Lock, User, Moon, Sun, Home } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import { db, auth } from '@/lib/firebase';
-import { secondaryDb } from '@/lib/firebaseSecondary';
+
 import {
   getAuth,
   signInWithEmailAndPassword,
@@ -68,43 +68,6 @@ const Login = () => {
       // 1. Sign in with Firebase Auth (Main)
       const userCredential = await signInWithEmailAndPassword(auth, email, pass);
       const user = userCredential.user;
-
-      // 2. Sign in with Secondary Auth (Attendance DB)
-      // This is required for secure rules on the secondary DB
-      try {
-        const secondaryAuth = getAuth(secondaryDb.app);
-        await signInWithEmailAndPassword(secondaryAuth, email, pass);
-      } catch (secErr: any) {
-        console.error("Secondary Auth Login Failed:", secErr);
-        const secondaryAuth = getAuth(secondaryDb.app);
-
-        if (secErr.code === 'auth/user-not-found') {
-          try {
-            // Try to create the user in secondary auth (Syncing accounts)
-            await createUserWithEmailAndPassword(secondaryAuth, email, pass);
-            console.log("Created missing user in Secondary Auth");
-            toast.success("Account synced with Attendance System");
-          } catch (createErr) {
-            console.error("Failed to create secondary user, falling back to anonymous:", createErr);
-            await signInAnonymously(secondaryAuth);
-            // toast.warning("Attendance features limited (Guest Mode)"); // Suppress to avoid confusion
-          }
-        } else if (secErr.code === 'auth/wrong-password') {
-          // Password mismatch between Main and Secondary DB
-          console.warn("Password mismatch for Secondary DB. Falling back to Guest.");
-          await signInAnonymously(secondaryAuth);
-          // toast.info("Attendance access: Guest Mode (Password Mismatch)"); // Informative but not an error
-        } else {
-          // Fallback to anonymous for other errors
-          console.log("Falling back to anonymous auth for Secondary DB:", secErr.code);
-          try {
-            await signInAnonymously(secondaryAuth);
-          } catch (anonErr) {
-            console.error("Anonymous auth failed:", anonErr);
-          }
-          // toast.warning("Attendance features limited");
-        }
-      }
 
       // 2. Fetch User Document from Firestore
       // We expect the document ID to match the Auth UID

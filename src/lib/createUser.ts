@@ -13,8 +13,7 @@ interface CreateUserParams {
 }
 
 /**
- * Creates a new user in the Main Firebase Project (Auth & Firestore)
- * and creates a corresponding document in the Secondary Firebase Project's Firestore.
+ * Creates a new user in the Main Firebase Project (Auth & Firestore).
  * Handles restoration of deleted users if they still exist in Auth.
  * 
  * @param params User creation parameters
@@ -26,6 +25,7 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
     let isRestored = false;
 
     // 1. Initialize Temporary Main App for Auth Creation
+    // (We use a temp app to avoid signing out the current Admin user)
     const tempMainApp = initializeApp({
         apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
         authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -34,16 +34,6 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
         messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
         appId: import.meta.env.VITE_FIREBASE_APP_ID
     }, `TempMainApp-${Date.now()}`);
-
-    // 2. Initialize Temporary Secondary App for Auth & Firestore
-    const tempSecondaryApp = initializeApp({
-        apiKey: import.meta.env.VITE_ATTENDANCE_API_KEY,
-        authDomain: import.meta.env.VITE_ATTENDANCE_AUTH_DOMAIN,
-        projectId: import.meta.env.VITE_ATTENDANCE_PROJECT_ID,
-        storageBucket: import.meta.env.VITE_ATTENDANCE_STORAGE_BUCKET,
-        messagingSenderId: import.meta.env.VITE_ATTENDANCE_MESSAGING_SENDER_ID,
-        appId: import.meta.env.VITE_ATTENDANCE_APP_ID
-    }, `TempSecondaryApp-${Date.now()}`);
 
     let mainUid = '';
 
@@ -71,7 +61,6 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                         const recoveredCred = await signInWithEmailAndPassword(mainAuth, email, password);
                         mainUid = recoveredCred.user.uid;
                         console.log(`[createUser] Recovered UID via login: ${mainUid}`);
-                        // We don't mark as restored, we just treat as existing user to be synced.
                     } catch (loginError) {
                         console.error(`[createUser] Failed to recover user via login (Wrong password?):`, loginError);
                         throw new Error(`User ${email} already exists and password does not match.`);
@@ -79,82 +68,6 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                 }
             } else {
                 throw error;
-            }
-        }
-        // --- Step B & C: Secondary System ---
-        const secondaryAuth = getAuth(tempSecondaryApp);
-        const tempSecondaryDb = getFirestore(tempSecondaryApp);
-
-        console.log(`[createUser] Secondary App Project ID: ${tempSecondaryApp.options.projectId}`);
-
-        if (!isRestored) {
-            // New User Flow (Main Auth was new)
-            console.log(`[createUser] Creating user in Secondary Auth: ${email}`);
-            let secUid = '';
-
-            try {
-                const secCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-                secUid = secCred.user.uid;
-            } catch (secAuthError: any) {
-                if (secAuthError.code === 'auth/email-already-in-use') {
-                    console.log(`[createUser] User already exists in Secondary Auth. Signing in...`);
-                    try {
-                        const secCred = await signInWithEmailAndPassword(secondaryAuth, email, password);
-                        secUid = secCred.user.uid;
-                    } catch (secLoginError) {
-                        console.error(`[createUser] Failed to sign in to Secondary Auth:`, secLoginError);
-                        // Fallback: Try anonymous auth if password fails
-                        console.log(`[createUser] Fallback: Using Anonymous Auth for Secondary DB write...`);
-                        try {
-                            await signInAnonymously(secondaryAuth);
-                            // We don't care about the UID, we just need to be authenticated to write.
-                        } catch (anonError) {
-                            throw new Error("Failed to authenticate with Secondary System (even anonymously).");
-                        }
-                    }
-                } else {
-                    throw secAuthError;
-                }
-            }
-
-            console.log(`[createUser] Secondary Auth UID: ${secUid}`);
-            console.log(`[createUser] Main Auth UID: ${mainUid}`);
-
-            const secUserRef = doc(tempSecondaryDb, 'users', mainUid);
-            console.log(`[createUser] Writing to Secondary DB at: users/${mainUid}`);
-
-            await setDoc(secUserRef, {
-                email: email,
-                email_lower: emailLower,
-                role: role,
-                createdAt: serverTimestamp()
-            });
-            console.log(`[createUser] Write operation completed.`);
-
-            // Verify Write
-            console.log(`[createUser] Verifying document existence...`);
-            const verifySnap = await getDoc(secUserRef);
-            if (verifySnap.exists()) {
-                console.log(`[createUser] VERIFIED: Document exists in Secondary DB.`);
-            } else {
-                console.error(`[createUser] VERIFICATION FAILED: Document NOT found in Secondary DB after write.`);
-                // Don't throw here, just log. We don't want to fail the whole process if Main DB succeeds.
-                console.warn("Secondary DB write verification failed. Proceeding with Main DB.");
-            }
-
-        } else {
-            // Restore Flow
-            try {
-                await signInAnonymously(secondaryAuth);
-                await setDoc(doc(tempSecondaryDb, 'users', mainUid), {
-                    email: email,
-                    email_lower: emailLower,
-                    role: role,
-                    createdAt: serverTimestamp(),
-                    restored: true
-                });
-            } catch (secError) {
-                console.warn("Failed to restore user in Secondary DB (Auth restriction):", secError);
             }
         }
 
@@ -168,7 +81,7 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
             assignedWorkspaces: [],
             createdAt: serverTimestamp(),
             ...(hashedPassword && { password: hashedPassword })
-        });
+        }, { merge: true }); // Merge to update if exists/restoring
 
         // Cleanup deleted_users record if restored
         if (isRestored) {
@@ -182,15 +95,14 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
         return { uid: mainUid, isRestored };
 
     } catch (error) {
-        console.error("Error creating/restoring user in both systems:", error);
+        console.error("Error creating/restoring user:", error);
         throw error;
     } finally {
-        // Cleanup: Delete temporary apps
+        // Cleanup: Delete temporary app
         try {
             await deleteApp(tempMainApp);
-            await deleteApp(tempSecondaryApp);
         } catch (cleanupError) {
-            console.warn("Failed to cleanup temp apps:", cleanupError);
+            console.warn("Failed to cleanup temp app:", cleanupError);
         }
     }
 };
