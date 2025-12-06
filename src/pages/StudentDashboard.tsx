@@ -43,6 +43,8 @@ import autoTable from 'jspdf-autotable';
 import { db } from '@/lib/firebase';
 
 import { hashPassword, verifyPassword } from '@/lib/security';
+import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import {
   collection,
   query,
@@ -1584,47 +1586,48 @@ const StudentDashboard = () => {
     }
 
     try {
-      const q = query(collection(db, 'users'), where('email', '==', userEmail));
+      const user = auth.currentUser;
+      if (!user || !user.email) {
+        toast.error("No authenticated user session. Please login again.");
+        return;
+      }
+
+      // 1. Re-authenticate with Firebase Auth
+      try {
+        const credential = EmailAuthProvider.credential(user.email, passwordForm.current);
+        await reauthenticateWithCredential(user, credential);
+      } catch (authError: any) {
+        console.error("Re-auth error:", authError);
+        if (authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
+          toast.error("Incorrect current password");
+          return;
+        }
+        throw authError; // Rethrow other errors
+      }
+
+      // 2. Update password in Firebase Auth
+      await updatePassword(user, passwordForm.new);
+
+      // 3. Update password in Firestore (Sync)
+      const q = query(collection(db, 'users'), where('email', '==', user.email));
       const snap = await getDocs(q);
 
-      if (snap.empty) {
-        toast.error("User not found");
-        return;
+      if (!snap.empty) {
+        const userDoc = snap.docs[0];
+        const newHash = await hashPassword(passwordForm.new);
+        await updateDoc(doc(db, 'users', userDoc.id), {
+          password: newHash,
+          updatedAt: serverTimestamp()
+        });
       }
-
-      const userDoc = snap.docs[0];
-      const userData = userDoc.data();
-
-      // Verify current password
-      const storedPassword = userData.password || '';
-      let isMatch = false;
-
-      if (storedPassword.startsWith('$2')) {
-        isMatch = await verifyPassword(passwordForm.current, storedPassword);
-      } else {
-        if (storedPassword === passwordForm.current) {
-          isMatch = true;
-        }
-      }
-
-      if (!isMatch) {
-        toast.error("Incorrect current password");
-        return;
-      }
-
-      const newHash = await hashPassword(passwordForm.new);
-      await updateDoc(doc(db, 'users', userDoc.id), {
-        password: newHash,
-        updatedAt: serverTimestamp()
-      });
 
       toast.success("Password updated successfully");
       setShowPasswordModal(false);
       setPasswordForm({ current: '', new: '', confirm: '' });
 
     } catch (error: any) {
-      console.error(error);
-      toast.error("Failed to update password");
+      console.error("Password update error:", error);
+      toast.error("Failed to update password: " + error.message);
     }
   };
 
