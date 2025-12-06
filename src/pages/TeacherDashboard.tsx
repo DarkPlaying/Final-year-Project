@@ -962,7 +962,7 @@ const TeacherDashboard = () => {
         if (!studentMarksMap.has(a.studentEmail)) {
           studentMarksMap.set(a.studentEmail, new Map());
         }
-        const title = a.assignmentTitle || a.title || 'Untitled';
+        const title = (a.assignmentTitle || a.title || 'Untitled').toLowerCase();
         assignmentTitlesSet.add(title);
 
         // Use marks if graded, otherwise status or '-'
@@ -1635,7 +1635,7 @@ const TeacherDashboard = () => {
       const submissions = submissionsSnap.docs.map(d => ({
         id: d.id,
         type: 'Assignment',
-        title: d.data().assignmentTitle || 'Untitled Assignment',
+        title: (d.data().assignmentTitle || 'Untitled Assignment').toLowerCase(),
         marks: d.data().marks,
         date: d.data().gradedAt
       }));

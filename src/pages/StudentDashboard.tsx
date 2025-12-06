@@ -1626,7 +1626,7 @@ const StudentDashboard = () => {
       }
 
       await addDoc(collection(db, 'submissions'), {
-        assignmentTitle,
+        assignmentTitle: assignmentTitle.toLowerCase(),
         type: assignmentType,
         googleDriveLink: finalLink,
         studentEmail: userEmail,
