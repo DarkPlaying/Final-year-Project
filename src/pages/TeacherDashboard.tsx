@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef, useCallback } from 'react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { DashboardLayout } from '@/components/DashboardLayout';
@@ -50,7 +50,8 @@ import {
   Unlock,
   Download,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  RotateCcw
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { secondaryDb } from '@/lib/firebaseSecondary';
@@ -70,7 +71,8 @@ import {
   limit,
   writeBatch,
   Timestamp,
-  setDoc
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 import { database } from '@/lib/firebase';
 import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update } from 'firebase/database';
@@ -198,6 +200,13 @@ const TeacherDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [unomSearch, setUnomSearch] = useState('');
+
+  // UNOM Download Dialog State
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [downloadReportData, setDownloadReportData] = useState<any>(null);
+  const [deptInput, setDeptInput] = useState('');
+  const [monthYearInput, setMonthYearInput] = useState('');
+  const [dateResultInput, setDateResultInput] = useState('');
   const [unomSortConfig, setUnomSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
   // Filters & History Search
@@ -249,6 +258,32 @@ const TeacherDashboard = () => {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [showMaintenanceDialog, setShowMaintenanceDialog] = useState(false);
   const [maintenanceCountdown, setMaintenanceCountdown] = useState<number | null>(null);
+
+  // Student Details Config State
+  const [studentDetailsConfig, setStudentDetailsConfig] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth']);
+  const [showDetailsConfigDialog, setShowDetailsConfigDialog] = useState(false);
+  const [newDetailField, setNewDetailField] = useState('');
+
+  // Load Config from LocalStorage
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('studentExportConfig');
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        // Migration: If config is the old default, update to new default
+        const oldDefault = ['name', 'va_no', 'personal_mobile'];
+        if (Array.isArray(parsed) && parsed.length === 3 && parsed.every(f => oldDefault.includes(f))) {
+          const newDefault = ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+          setStudentDetailsConfig(newDefault);
+          localStorage.setItem('studentExportConfig', JSON.stringify(newDefault));
+        } else {
+          setStudentDetailsConfig(parsed);
+        }
+      } catch (e) {
+        console.error("Error parsing saved config", e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const email = localStorage.getItem('userEmail');
@@ -736,6 +771,200 @@ const TeacherDashboard = () => {
       toast.dismiss();
       toast.error('Upload failed');
       console.error(err);
+    }
+  };
+
+  // --- Student Details Export ---
+  const handleAddDetailField = () => {
+    if (!newDetailField.trim()) return;
+    if (studentDetailsConfig.includes(newDetailField.trim())) {
+      toast.error("Field already exists");
+      return;
+    }
+    const newConfig = [...studentDetailsConfig, newDetailField.trim()];
+    setStudentDetailsConfig(newConfig);
+    setNewDetailField('');
+    saveDetailsConfig(newConfig);
+  };
+
+  const handleRemoveDetailField = (field: string) => {
+    const newConfig = studentDetailsConfig.filter(f => f !== field);
+    setStudentDetailsConfig(newConfig);
+    saveDetailsConfig(newConfig);
+  };
+
+  const saveDetailsConfig = (config: string[]) => {
+    try {
+      localStorage.setItem('studentExportConfig', JSON.stringify(config));
+      toast.success("Configuration saved");
+    } catch (error) {
+      console.error("Error saving config:", error);
+      toast.error("Failed to save configuration");
+    }
+  };
+
+  const handleDownloadStudentDetails = async () => {
+    if (!viewMarksWorkspace) {
+      toast.error("Please select a workspace first");
+      return;
+    }
+
+    toast.loading("Generating report...");
+    try {
+      const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+      if (!ws || !ws.students || ws.students.length === 0) {
+        toast.error("No students in this workspace");
+        return;
+      }
+
+      const studentsData: any[] = [];
+      const chunks = [];
+      const chunkSize = 10;
+      for (let i = 0; i < ws.students.length; i += chunkSize) {
+        chunks.push(ws.students.slice(i, i + chunkSize));
+      }
+
+      for (const chunk of chunks) {
+        const q = query(collection(db, 'users'), where('email', 'in', chunk));
+        const snap = await getDocs(q);
+        snap.forEach(d => studentsData.push(d.data()));
+      }
+
+      // Sort by Email
+      studentsData.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+
+      // Generate Excel
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Student Details');
+
+      // Columns: Email + Configured Fields
+      const columns = [
+        { header: 'Email', key: 'email', width: 30 },
+        ...studentDetailsConfig.map(field => ({
+          header: field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, ' '),
+          key: field,
+          width: 20
+        }))
+      ];
+      worksheet.columns = columns;
+
+      studentsData.forEach(student => {
+        const row: any = { email: student.email };
+        studentDetailsConfig.forEach(field => {
+          row[field] = student[field] || '';
+        });
+        worksheet.addRow(row);
+      });
+
+      // Style the worksheet
+      worksheet.eachRow((row, rowNumber) => {
+        row.eachCell((cell) => {
+          // Add borders to all cells
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+
+          // Style Header Row
+          if (rowNumber === 1) {
+            cell.font = { bold: true, color: { argb: 'FF0070C0' } }; // Blue color
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFE0E0E0' } // Light gray background for header
+            };
+          }
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `Student_Details_${ws.name.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
+      toast.dismiss();
+      toast.success("Downloaded successfully");
+
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Failed to download details");
+    }
+  };
+
+  const handleRaiseAgainAll = async () => {
+    if (!viewMarksWorkspace) {
+      toast.error("Please select a workspace first");
+      return;
+    }
+
+    const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+    if (!ws || !ws.students || ws.students.length === 0) {
+      toast.error("No students in this workspace");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to force ALL ${ws.students.length} students in this workspace to re-enter their details?`)) {
+      return;
+    }
+
+    toast.loading("Processing...");
+    try {
+      // Get configured fields
+      const storedConfig = localStorage.getItem('studentExportConfig');
+      const requiredFields = storedConfig ? JSON.parse(storedConfig) : ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+
+      // Create a system announcement for compulsory update
+      // This bypasses permission issues as teachers can create announcements
+      await addDoc(collection(db, 'announcements'), {
+        title: 'SYSTEM: Compulsory Profile Update',
+        description: 'Action Required: Please update your profile details immediately.',
+        link: '',
+        workspaceId: viewMarksWorkspace,
+        students: ws.students,
+        teacherEmail: userEmail,
+        type: 'compulsory_update_request',
+        requiredFields: requiredFields, // Pass the fields to the student
+        createdAt: serverTimestamp()
+      });
+
+      toast.dismiss();
+      toast.success(`Request raised for all students in workspace`);
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Failed to raise request");
+    }
+  };
+
+  const handleRaiseAgainSingle = async (studentEmail: string) => {
+    if (!viewMarksWorkspace) return;
+
+    if (!confirm(`Force ${studentEmail} to re-enter details?`)) return;
+
+    toast.loading("Processing...");
+    try {
+      const storedConfig = localStorage.getItem('studentExportConfig');
+      const requiredFields = storedConfig ? JSON.parse(storedConfig) : ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+
+      await addDoc(collection(db, 'announcements'), {
+        title: 'SYSTEM: Compulsory Profile Update',
+        description: 'Action Required: Please update your profile details immediately.',
+        link: '',
+        workspaceId: viewMarksWorkspace,
+        students: [studentEmail],
+        teacherEmail: userEmail,
+        type: 'compulsory_update_request',
+        requiredFields: requiredFields,
+        createdAt: serverTimestamp()
+      });
+
+      toast.dismiss();
+      toast.success(`Request raised for ${studentEmail}`);
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Failed to raise request");
     }
   };
 
@@ -1644,7 +1873,7 @@ const TeacherDashboard = () => {
     }
   };
 
-  const fetchMarkBatches = async () => {
+  const fetchMarkBatches = useCallback(async () => {
     try {
       // Removed orderBy to avoid index requirement issues
       const q = query(collection(secondaryDb, 'mark_batches'), where('teacherEmail', '==', userEmail));
@@ -1663,13 +1892,13 @@ const TeacherDashboard = () => {
     } catch (error) {
       console.error("Error fetching batches:", error);
     }
-  };
+  }, [userEmail]);
 
   useEffect(() => {
     if (activeSection === 'assign-marks') {
       fetchMarkBatches();
     }
-  }, [activeSection, userEmail]);
+  }, [activeSection, userEmail, fetchMarkBatches]);
 
   const handleDeleteBatch = async (batchId: string) => {
     try {
@@ -1977,7 +2206,7 @@ const TeacherDashboard = () => {
     }
   };
 
-  const fetchUnomReports = async () => {
+  const fetchUnomReports = useCallback(async () => {
     try {
       if (workspaces.length === 0) {
         setUnomReports([]);
@@ -1985,7 +2214,7 @@ const TeacherDashboard = () => {
       }
 
       const workspaceIds = workspaces.map(w => w.id);
-      let allReports: any[] = [];
+      const allReports: any[] = [];
 
       // Chunking for 'in' query limit of 10
       const chunks = [];
@@ -2011,13 +2240,13 @@ const TeacherDashboard = () => {
     } catch (error) {
       console.error("Error fetching UNOM reports:", error);
     }
-  };
+  }, [workspaces]);
 
   useEffect(() => {
     if (activeSection === 'unom' && workspaces.length > 0) {
       fetchUnomReports();
     }
-  }, [activeSection, workspaces]);
+  }, [activeSection, workspaces, fetchUnomReports]);
 
   // Sync viewing data when reports update
   useEffect(() => {
@@ -2039,273 +2268,323 @@ const TeacherDashboard = () => {
       toast.error("Failed to delete UNOM report");
     }
   };
-  const handleDownloadUnomCsv = async (report: any) => {
+
+  const handleDownloadUnomCsv = (report: any) => {
+    setDownloadReportData(report);
+    setDeptInput('');
+    setMonthYearInput('');
+    setDateResultInput('');
+    setDownloadDialogOpen(true);
+  };
+
+  const executeUnomDownload = async (report: any, dept: string, monthYear: string, dateResult: string) => {
     if (!report || !report.data) return;
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Result Analysis');
+    try {
+      let workbook = new ExcelJS.Workbook();
+      let worksheet: any;
 
-    const subjects = report.subjects || [];
-    const labSubjects = report.labSubjects || [];
+      try {
+        // Fetch and load the template
+        const response = await fetch('/unom_template.xlsx');
+        if (!response.ok) throw new Error('Template file not found');
 
-    // Define styles
-    const headerFill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF9BC2E6' } // Light Blue
-    };
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
+        worksheet = workbook.worksheets[0];
 
-    const headerFont = {
-      name: 'Calibri',
-      size: 11,
-      bold: true,
-      color: { argb: 'FF000000' } // Black
-    };
+        // Replace Placeholders
+        for (let r = 1; r <= 10; r++) { // Scan first 10 rows to be safe
+          const row = worksheet.getRow(r);
+          row.eachCell((cell: any) => {
+            if (cell.value && typeof cell.value === 'string') {
+              let val = cell.value;
+              let modified = false;
+              if (val.includes('[Department]')) { val = val.replace('[Department]', dept.toUpperCase()); modified = true; }
+              if (val.includes('[month - year]')) { val = val.replace('[month - year]', monthYear.toUpperCase()); modified = true; }
+              if (val.includes('[date-month-year]')) { val = val.replace('[date-month-year]', dateResult.toUpperCase()); modified = true; }
+              if (val.includes('[day-month-year]')) { val = val.replace('[day-month-year]', dateResult.toUpperCase()); modified = true; }
 
-    const borderStyle = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' }
-    };
+              if (modified) cell.value = val;
+            }
+          });
+        }
 
-    const centerAlign = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      } catch (templateError) {
+        console.warn("Template load failed, falling back to fresh workbook:", templateError);
+        // Fallback: Create fresh workbook
+        workbook = new ExcelJS.Workbook();
+        worksheet = workbook.addWorksheet('Report');
 
-    // --- Header Row 1 ---
-    const row1Values = [
-      'S.NO', 'VANO', 'REGNO', 'NAME',
-      ...subjects.flatMap((sub: string) => [sub, '', '']),
-      'TOTAL', 'PASS %', 'ARREAR COUNT', 'PASS/FAIL',
-      'NO OF SUB PASS', 'NO OF LAB PASS', 'NO OF SUB FAIL', 'NO OF SUB ABS',
-      'TOTAL NO OF THEORY FAIL', 'NO OF LAB FAIL'
-    ];
-    const row1 = worksheet.addRow(row1Values);
-    row1.height = 30;
+        // Add basic title since template is missing
+        worksheet.mergeCells('A1:H1');
+        const titleCell = worksheet.getCell('A1');
+        titleCell.value = report.title || 'UNOM Report';
+        titleCell.font = { name: 'Calibri', size: 18, bold: true };
+        titleCell.alignment = { horizontal: 'center' };
+      }
 
-    // --- Header Row 2 ---
-    const row2Values = [
-      '', '', '', '', // Placeholders for vertical merge
-      ...subjects.flatMap(() => ['EX', 'IN', 'TOT']),
-      '', '', '', '', '', '', '', '', '', '' // Placeholders for vertical merge
-    ];
-    const row2 = worksheet.addRow(row2Values);
-    row2.height = 30;
+      const subjects = report.subjects || [];
+      const labSubjects = report.labSubjects || [];
 
-    // --- Merging Headers ---
-    // Merge Static Columns (S.NO, VANO, REGNO, NAME)
-    worksheet.mergeCells('A1:A2');
-    worksheet.mergeCells('B1:B2');
-    worksheet.mergeCells('C1:C2');
-    worksheet.mergeCells('D1:D2');
+      // Define Styles
+      const headerFill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF9BC2E6' } // Light Blue
+      };
+      const headerFont = {
+        name: 'Calibri',
+        size: 60, // Requested font size
+        bold: true,
+        color: { argb: 'FF000000' }
+      };
+      const dataFont = {
+        name: 'Calibri',
+        size: 60, // Requested font size for content
+        bold: false,
+        color: { argb: 'FF000000' }
+      };
+      const borderStyle = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+      const centerAlign = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
-    // Merge Subject Columns (Subject Name spans EX, IN, TOT)
-    let colIndex = 5; // Start at column E (5)
-    subjects.forEach(() => {
-      worksheet.mergeCells(1, colIndex, 1, colIndex + 2); // Merge 3 cells in Row 1
-      colIndex += 3;
-    });
+      // --- Handle Footer & Placeholders ---
+      // 1. Find where the footer starts (first non-empty row after header)
+      // 2. Remove empty placeholder rows between header and footer
+      // 3. Insert data rows
 
-    // Merge Stat Columns
-    const statStartCol = 5 + (subjects.length * 3);
-    const statCols = [
-      'TOTAL', 'PASS %', 'ARREAR COUNT', 'PASS/FAIL',
-      'NO OF SUB PASS', 'NO OF LAB PASS', 'NO OF SUB FAIL', 'NO OF SUB ABS',
-      'TOTAL NO OF THEORY FAIL', 'NO OF LAB FAIL'
-    ];
-    statCols.forEach((_, i) => {
-      worksheet.mergeCells(1, statStartCol + i, 2, statStartCol + i);
-    });
+      const startRow = 7;
+      let footerRowIndex = -1;
+      const totalRows = worksheet.rowCount;
 
-    // Apply Styles to Headers
-    [row1, row2].forEach(row => {
-      row.eachCell((cell) => {
+      // Scan for footer
+      for (let r = startRow; r <= totalRows; r++) {
+        const row = worksheet.getRow(r);
+        let hasContent = false;
+        row.eachCell((cell: any) => {
+          if (cell.value && cell.value.toString().trim() !== '') {
+            hasContent = true;
+          }
+        });
+        if (hasContent) {
+          footerRowIndex = r;
+          break;
+        }
+      }
+
+      // If footer found, remove empty rows before it
+      if (footerRowIndex !== -1) {
+        const rowsToDelete = footerRowIndex - startRow;
+        if (rowsToDelete > 0) {
+          worksheet.spliceRows(startRow, rowsToDelete);
+        }
+      } else {
+        // No footer found, just clear everything after header to be safe (remove existing grid)
+        if (totalRows >= startRow) {
+          worksheet.spliceRows(startRow, totalRows - startRow + 1);
+        }
+      }
+
+      // Insert new rows for data (pushing footer down if it exists)
+      if (report.data.length > 0) {
+        const emptyRows = new Array(report.data.length).fill(null).map(() => []);
+        worksheet.insertRows(startRow, emptyRows);
+      }
+
+      // --- Rebuild Headers (Rows 5 & 6) ---
+
+
+
+      // 0. Static Headers (A-D)
+      const staticHeaders = [
+        { col: 1, label: 'S.NO' },
+        { col: 2, label: 'VA NO' },
+        { col: 3, label: 'REGNO' },
+        { col: 4, label: 'NAME' }
+      ];
+
+      staticHeaders.forEach(header => {
+        const c = header.col;
+
+        try {
+          worksheet.mergeCells(5, c, 6, c);
+        } catch (e) {
+          try { worksheet.unMergeCells(5, c, 6, c); } catch (e2) { /* empty */ }
+          try { worksheet.mergeCells(5, c, 6, c); } catch (e3) { /* empty */ }
+        }
+
+        const cell = worksheet.getCell(5, c);
+        cell.value = header.label;
         cell.fill = headerFill as any;
         cell.font = headerFont as any;
         cell.alignment = centerAlign as any;
         cell.border = borderStyle as any;
+
+        const cellBottom = worksheet.getCell(6, c);
+        cellBottom.border = borderStyle as any;
       });
-    });
 
-    // --- Data Rows ---
-    report.data.forEach((row: any, index: number) => {
-      let totalMarks = 0;
-      let subjectCount = 0;
+      // Apply same blue header fill to S.NO / VA NO / REGNO / NAME
+      [5, 6].forEach((r) => {
+        const row = worksheet.getRow(r);
+        [1, 2, 3, 4].forEach((c) => {
+          const cell = row.getCell(c);
+          cell.fill = headerFill as any;          // same blue
+          cell.font = headerFont as any;
+          cell.alignment = centerAlign as any;
+          cell.border = borderStyle as any;
+        });
+      });
 
-      let theoryPass = 0;
-      let theoryFail = 0;
-      let theoryAbsent = 0;
+      let colIndex = 5; // Start at column E (5)
 
-      let labPass = 0;
-      let labFail = 0;
-      let labAbsent = 0;
+      // Merge Main Heading (Row 1) to span full width
+      const totalColumns = 4 + (subjects.length * 3) + 10; // 4 static + subjects*3 + 10 stats
+      try {
+        worksheet.mergeCells(1, 1, 1, totalColumns);
+        worksheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+      } catch (e) {
+        // If already merged or error, try to unmerge and merge again
+        try { worksheet.unMergeCells(1, 1, 1, totalColumns); } catch (e2) { }
+        try { worksheet.mergeCells(1, 1, 1, totalColumns); } catch (e3) { }
+        try { worksheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' }; } catch (e4) { }
+      }
 
-      const subjectCells: any[] = [];
-
+      // 1. Subject Headers
       subjects.forEach((sub: string) => {
-        const isLab = labSubjects.includes(sub);
-        const internalStr = row[`${sub}_internal`] || '0';
-        const externalStr = row[`${sub}_external`] || '0';
-        const totalStr = row[sub] || '0';
-
-        const internal = parseInt(internalStr);
-        const external = parseInt(externalStr);
-
-        let total = 0;
-        let isRA = false;
-        let isAB = false;
-
-        if (totalStr === 'AB') {
-          isAB = true;
-        } else if (typeof totalStr === 'string' && totalStr.startsWith('RA')) {
-          isRA = true;
-          if (totalStr.includes('_')) {
-            total = parseInt(totalStr.split('_')[1]);
-          }
-        } else {
-          total = parseInt(totalStr);
+        // Merge 3 cells for Subject Name in Row 5
+        try {
+          worksheet.mergeCells(5, colIndex, 5, colIndex + 2);
+        } catch (e) {
+          try { worksheet.unMergeCells(5, colIndex, 5, colIndex + 2); } catch (e2) { /* empty */ }
+          try { worksheet.mergeCells(5, colIndex, 5, colIndex + 2); } catch (e3) { /* empty */ }
         }
 
-        if (isNaN(total)) total = 0;
-
-        // Stats
-        subjectCount++;
-        if (isAB) {
-          if (isLab) labAbsent++; else theoryAbsent++;
-        } else if (isRA) {
-          if (isLab) labFail++; else theoryFail++;
-          totalMarks += total;
-        } else {
-          if (total < 40) {
-            if (isLab) labFail++; else theoryFail++;
-          } else {
-            if (isLab) labPass++; else theoryPass++;
-          }
-          totalMarks += total;
-        }
-
-        let displayTotal = totalStr;
-        if (isRA && totalStr.includes('_')) {
-          displayTotal = totalStr.split('_')[1];
-        }
-
-        subjectCells.push(externalStr === '' ? '-' : externalStr);
-        subjectCells.push(internalStr === '' ? '-' : internalStr);
-        subjectCells.push(displayTotal);
-      });
-
-      const totalPass = theoryPass + labPass;
-      const totalFail = theoryFail + labFail + theoryAbsent + labAbsent;
-      const totalAbsent = theoryAbsent + labAbsent;
-      const totalTheoryFail = theoryFail + theoryAbsent;
-      const totalLabFail = labFail + labAbsent;
-
-      const passPercentage = subjectCount > 0 ? (totalMarks / (subjectCount * 100)) * 100 : 0;
-      const resultStatus = totalFail > 0 ? 'FAIL' : 'PASS';
-      const name = studentMap.get(row.email) || '';
-
-      const rowValues = [
-        index + 1,
-        '', // VANO placeholder
-        row.email,
-        name,
-        ...subjectCells,
-        totalMarks,
-        `${passPercentage.toFixed(0)}`,
-        totalFail,
-        resultStatus,
-        totalPass,
-        labPass,
-        totalFail,
-        totalAbsent,
-        totalTheoryFail,
-        totalLabFail
-      ];
-
-      const excelRow = worksheet.addRow(rowValues);
-
-      // --- Row Styling ---
-      excelRow.eachCell((cell, colNumber) => {
+        const cell = worksheet.getCell(5, colIndex);
+        cell.value = sub;
+        cell.fill = headerFill as any;
+        cell.font = headerFont as any;
         cell.alignment = centerAlign as any;
         cell.border = borderStyle as any;
-        cell.font = { name: 'Calibri', size: 11 } as any;
 
-        // Bold Total Column (Static Index + Subject Cols + 1)
-        // Static (4) + Subjects * 3 + 1 (Total is next)
-        const totalColIndex = 4 + (subjects.length * 3) + 1;
-        if (colNumber === totalColIndex) {
-          cell.font = { ...cell.font, bold: true };
-        }
+        // Sub-headers (EX, IN, TOT) in Row 6
+        ['EX', 'IN', 'TOT'].forEach((h, i) => {
+          const subCell = worksheet.getCell(6, colIndex + i);
+          subCell.value = h;
+          subCell.fill = headerFill as any;
+          subCell.font = h === 'TOT' ? { ...headerFont, bold: true } : headerFont as any;
+          subCell.alignment = centerAlign as any;
+          subCell.border = borderStyle as any;
+        });
 
-        // Red Color for RA/AB
-        const cellValue = cell.value?.toString() || '';
-        if (cellValue === 'AB' || cellValue.startsWith('RA') || (colNumber > 4 && colNumber < totalColIndex && (cellValue === 'RA' || cellValue === 'AB'))) {
-          cell.font = { ...cell.font, color: { argb: 'FFFF0000' } }; // Red
-        }
+        colIndex += 3;
       });
-    });
 
-    // Auto-width columns (simple approximation)
-    worksheet.columns.forEach(column => {
-      column.width = 10;
-    });
-    worksheet.getColumn(3).width = 15; // REGNO
-    worksheet.getColumn(4).width = 25; // NAME
+      // Set Row Heights for Headers
+      worksheet.getRow(5).height = 80;
+      worksheet.getRow(6).height = 80;
 
-    // Save
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    saveAs(blob, `${report.title || 'unom_report'}.xlsx`);
-  };
+      // 2. Summary Headers
+      const statCols = [
+        'TOTAL', 'PASS %', 'ARREAR COUNT', 'PASS/FAIL',
+        'NO OF SUB PASS', 'NO OF LAB PASS', 'NO OF SUB FAIL', 'NO OF SUB ABS',
+        'TOTAL NO OF THEORY FAIL', 'NO OF LAB FAIL'
+      ];
 
-  const handleDownloadUnomCsvOld = (report: any) => {
-    if (!report || !report.data) return;
+      statCols.forEach((stat) => {
+        try {
+          worksheet.mergeCells(5, colIndex, 6, colIndex);
+        } catch (e) {
+          try { worksheet.unMergeCells(5, colIndex, 6, colIndex); } catch (e2) { /* empty */ }
+          try { worksheet.mergeCells(5, colIndex, 6, colIndex); } catch (e3) { /* empty */ }
+        }
 
-    const subjects = report.subjects || [];
-    const labSubjects = report.labSubjects || [];
+        const cell = worksheet.getCell(5, colIndex);
+        cell.value = stat;
+        cell.fill = headerFill as any;
+        cell.font = headerFont as any;
+        cell.alignment = centerAlign as any;
+        cell.border = borderStyle as any;
 
-    // Row 1: Subject Names spaced out
-    // Structure: 4 empty (for S.NO, VANO, REGNO, NAME), then Subject, empty, empty, Subject, empty, empty..., then empty for summary
-    const row1 = [
-      '', '', '', '', // Static columns
-      ...subjects.flatMap((sub: string) => [sub, '', '']),
-      '', '', '', '', '', '', '', '', '', '' // Summary columns placeholders
-    ];
+        const cellBottom = worksheet.getCell(6, colIndex);
+        cellBottom.border = borderStyle as any;
 
-    // Row 2: Headers
-    const row2 = [
-      'S.NO',
-      'VANO',
-      'REGNO',
-      'NAME',
-      ...subjects.flatMap(() => ['EX', 'IN', 'TOT']),
-      'TOTAL',
-      'PASS %',
-      'ARREAR COUNT',
-      'PASS/FAIL',
-      'NO OF SUB PASS',
-      'NO OF LAB PASS',
-      'NO OF SUB FAIL',
-      'NO OF SUB ABS',
-      'TOTAL NO OF THEORY FAIL',
-      'NO OF LAB FAIL'
-    ];
+        colIndex++;
+      });
 
-    const csvRows = [
-      row1.map(v => `"${v}"`).join(','),
-      row2.join(','),
-      ...report.data.map((row: any, index: number) => {
+      // Clear potential duplicate headers from template
+      for (let c = colIndex; c < colIndex + 20; c++) {
+        [5, 6].forEach(r => {
+          const cell = worksheet.getCell(r, c);
+          cell.value = null;
+          cell.fill = { type: 'pattern', pattern: 'none' };
+          cell.border = null as any;
+        });
+      }
+
+      // Set Column Widths
+      // Static columns (A-D) - Increased widths for large font
+      worksheet.getColumn(1).width = 30; // S.No
+      worksheet.getColumn(2).width = 30; // VANO
+      worksheet.getColumn(3).width = 50; // Email/RegNo
+      worksheet.getColumn(4).width = 50; // Name
+
+      // Subject Columns
+      let widthColIndex = 5;
+      subjects.forEach(() => {
+        worksheet.getColumn(widthColIndex).width = 30;     // EX
+        worksheet.getColumn(widthColIndex + 1).width = 30; // IN
+        worksheet.getColumn(widthColIndex + 2).width = 30; // TOT
+        widthColIndex += 3;
+      });
+
+      // Summary Stat Columns
+      statCols.forEach(() => {
+        worksheet.getColumn(widthColIndex).width = 70; // Increased width for stats
+        widthColIndex++;
+      });
+
+      // After all header cells (row 5 & 6) are created
+      const firstHeaderCol = 1; // S.NO
+      const lastHeaderCol = 4 + (subjects.length * 3) + statCols.length;
+
+      // Force same blue header fill for the whole header band
+      for (let r = 5; r <= 6; r++) {
+        const row = worksheet.getRow(r);
+        for (let c = firstHeaderCol; c <= lastHeaderCol; c++) {
+          const cell = row.getCell(c);
+
+          // keep text/merges, only override style
+          cell.fill = headerFill as any;          // FF9BC2E6
+          cell.font = headerFont as any;
+          cell.alignment = centerAlign as any;
+          cell.border = borderStyle as any;
+        }
+      }
+
+      // --- Add Data Rows ---
+      let currentRowIndex = startRow;
+
+      report.data.forEach((row: any, index: number) => {
         let totalMarks = 0;
         let subjectCount = 0;
 
         let theoryPass = 0;
-        let theoryFail = 0; // Present but failed
+        let theoryFail = 0;
         let theoryAbsent = 0;
 
         let labPass = 0;
-        let labFail = 0; // Present but failed
+        let labFail = 0;
         let labAbsent = 0;
 
-        const subjectValues = subjects.flatMap((sub: string) => {
+        const subjectCells: any[] = [];
+
+        subjects.forEach((sub: string) => {
           const isLab = labSubjects.includes(sub);
           const internalStr = row[`${sub}_internal`] || '0';
           const externalStr = row[`${sub}_external`] || '0';
@@ -2322,11 +2601,8 @@ const TeacherDashboard = () => {
             isAB = true;
           } else if (typeof totalStr === 'string' && totalStr.startsWith('RA')) {
             isRA = true;
-            // Extract mark if available (e.g., RA_25)
             if (totalStr.includes('_')) {
               total = parseInt(totalStr.split('_')[1]);
-            } else {
-              total = 0; // Just RA
             }
           } else {
             total = parseInt(totalStr);
@@ -2334,7 +2610,7 @@ const TeacherDashboard = () => {
 
           if (isNaN(total)) total = 0;
 
-          // Stats Calculation
+          // Stats
           subjectCount++;
           if (isAB) {
             if (isLab) labAbsent++; else theoryAbsent++;
@@ -2342,7 +2618,6 @@ const TeacherDashboard = () => {
             if (isLab) labFail++; else theoryFail++;
             totalMarks += total;
           } else {
-            // Normal mark
             if (total < 40) {
               if (isLab) labFail++; else theoryFail++;
             } else {
@@ -2351,21 +2626,18 @@ const TeacherDashboard = () => {
             totalMarks += total;
           }
 
-          // Return formatted columns for this subject
           let displayTotal = totalStr;
           if (isRA && totalStr.includes('_')) {
-            displayTotal = totalStr.split('_')[1]; // Show just the mark
+            displayTotal = totalStr.split('_')[1];
           }
 
-          return [
-            externalStr === '' ? '-' : externalStr,
-            internalStr === '' ? '-' : internalStr,
-            displayTotal
-          ];
+          subjectCells.push(externalStr === '' ? '-' : externalStr);
+          subjectCells.push(internalStr === '' ? '-' : internalStr);
+          subjectCells.push(displayTotal);
         });
 
         const totalPass = theoryPass + labPass;
-        const totalFail = theoryFail + labFail + theoryAbsent + labAbsent; // Total Arrears
+        const totalFail = theoryFail + labFail + theoryAbsent + labAbsent;
         const totalAbsent = theoryAbsent + labAbsent;
         const totalTheoryFail = theoryFail + theoryAbsent;
         const totalLabFail = labFail + labAbsent;
@@ -2374,36 +2646,322 @@ const TeacherDashboard = () => {
         const resultStatus = totalFail > 0 ? 'FAIL' : 'PASS';
         const name = studentMap.get(row.email) || '';
 
-        const values = [
-          (index + 1).toString(), // S.NO
+        const rowValues = [
+          index + 1,
           '', // VANO
-          row.email, // REGNO (Using email as identifier)
-          name, // NAME
-          ...subjectValues,
-          totalMarks.toString(),
-          `${passPercentage.toFixed(2)}%`,
-          totalFail.toString(), // ARREAR COUNT
+          row.email,
+          name,
+          ...subjectCells,
+          totalMarks,
+          `${passPercentage.toFixed(0)}`,
+          totalFail,
           resultStatus,
-          totalPass.toString(), // NO OF SUB PASS
-          labPass.toString(), // NO OF LAB PASS
-          totalFail.toString(), // NO OF SUB FAIL (Assuming this means total failures)
-          totalAbsent.toString(), // NO OF SUB ABS
-          totalTheoryFail.toString(), // TOTAL NO OF THEORY FAIL
-          totalLabFail.toString() // NO OF LAB FAIL
+          totalPass,
+          labPass,
+          totalFail,
+          totalAbsent,
+          totalTheoryFail,
+          totalLabFail
         ];
-        return values.map(v => `"${v}"`).join(',');
-      })
-    ];
 
-    const csvContent = csvRows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${report.title || 'unom_report'}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+        // Explicitly get the row and set values
+        const excelRow = worksheet.getRow(currentRowIndex);
+        excelRow.values = rowValues;
+        excelRow.height = 80; // Set height for data row
+
+        // Apply Styles to Data Row
+        excelRow.eachCell((cell: any, colNumber: number) => {
+          cell.alignment = centerAlign as any;
+          cell.border = borderStyle as any;
+          cell.font = dataFont as any;
+
+          // Bold Subject Total Columns (Every 3rd column starting from 5 + 2)
+          if (colNumber >= 5 && colNumber < 5 + (subjects.length * 3)) {
+            const relIndex = colNumber - 5;
+            if (relIndex % 3 === 2) { // 0=EX, 1=IN, 2=TOT
+              cell.font = { ...dataFont, bold: true } as any;
+            }
+          }
+
+          // Bold Grand Total Column (Static 4 + Subjects*3 + 1)
+          const totalColIndex = 4 + (subjects.length * 3) + 1;
+          if (colNumber === totalColIndex) {
+            cell.font = { ...dataFont, bold: true } as any;
+          }
+
+          // Red Color for RA/AB
+          const cellValue = cell.value?.toString() || '';
+          if (cellValue === 'AB' || cellValue.startsWith('RA') || (colNumber > 4 && colNumber < totalColIndex && (cellValue === 'RA' || cellValue === 'AB'))) {
+            cell.font = { ...cell.font, color: { argb: 'FFFF0000' } } as any;
+          }
+        });
+
+        currentRowIndex++;
+      });
+
+      // === FINAL GRID FIX: draw full box around data region ===
+      const firstDataRow = startRow;              // 7
+      const lastDataRow = currentRowIndex - 1;   // last row you filled
+      const firstCol = 1;                     // S.NO
+      const lastCol = 4 + subjects.length * 3 + statCols.length;
+
+      // loop every cell in the rectangle and force the same border
+      for (let r = firstDataRow; r <= lastDataRow; r++) {
+        const row = worksheet.getRow(r);
+        row.height = 80;
+
+        for (let c = firstCol; c <= lastCol; c++) {
+          const cell = row.getCell(c);
+
+          // clear everything so template can't keep half lines
+          // cell.style = {}; // Commented out to preserve bold/color logic applied earlier
+
+          // apply uniform style
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' },
+          } as any;
+
+          // Only reset basic alignment/font if not already set (to preserve bolding logic)
+          // Actually, let's just enforce border here to be safe, as font/alignment were set in the main loop
+        }
+      }
+
+      // Clear accidental styling to the right of the table
+      for (let r = 5; r <= currentRowIndex + 30; r++) {
+        const row = worksheet.getRow(r);
+        for (let c = lastCol + 1; c <= lastCol + 10; c++) {
+          const cell = row.getCell(c);
+          cell.value = null;
+          cell.style = {};
+        }
+      }
+
+
+
+      // --- Footer Statistics ---
+      const footerStartRow = currentRowIndex + 1; // Leave one empty row
+
+      // Clear next 25 rows to avoid duplicates/ghosting from template
+      for (let r = footerStartRow; r < footerStartRow + 25; r++) {
+        const row = worksheet.getRow(r);
+        row.values = [];
+        row.eachCell((cell: any) => {
+          cell.value = null;
+          cell.fill = { type: 'pattern', pattern: 'none' };
+          cell.border = null as any;
+        });
+      }
+
+      // Calculate Stats
+      const subjectStats = subjects.map((sub: string) => {
+        let maxMark = -1;
+        let toppers: string[] = [];
+        let registered = 0;
+        let absent = 0;
+        let pass = 0;
+        let fail = 0;
+
+        report.data.forEach((row: any) => {
+          registered++;
+          const totalStr = row[sub];
+          let total = 0;
+          let isAbsent = false;
+
+          if (totalStr === 'AB') {
+            isAbsent = true;
+            absent++;
+          } else if (typeof totalStr === 'string' && totalStr.startsWith('RA')) {
+            // RA is fail
+            fail++;
+            if (totalStr.includes('_')) total = parseInt(totalStr.split('_')[1]);
+          } else {
+            total = parseInt(totalStr || '0');
+            if (isNaN(total)) total = 0;
+            if (total >= 40) pass++; else fail++;
+          }
+
+          if (!isAbsent) {
+            if (total > maxMark) {
+              maxMark = total;
+              toppers = [studentMap.get(row.email) || row.email];
+            } else if (total === maxMark) {
+              toppers.push(studentMap.get(row.email) || row.email);
+            }
+          }
+        });
+
+        const appeared = registered - absent;
+        return {
+          maxMark: maxMark === -1 ? '-' : maxMark,
+          toppers: toppers.join(', '),
+          registered,
+          appeared,
+          pass,
+          fail,
+          absent,
+          passPercReg: (registered > 0 ? Math.round((pass / registered) * 100) : 0) + '%',
+          failPercReg: (registered > 0 ? Math.round((fail / registered) * 100) : 0) + '%'
+        };
+      });
+
+      // Overall Stats
+      let totalPassedAll = 0;
+      let totalAttended = 0; // Count students who appeared for at least one subject
+
+      report.data.forEach((row: any) => {
+        let allPass = true;
+        let attendedAny = false;
+        subjects.forEach((sub: string) => {
+          const val = row[sub];
+          if (val !== 'AB') attendedAny = true;
+
+          let isPass = false;
+          if (val !== 'AB') {
+            const strVal = val ? val.toString() : '0';
+            if (!strVal.startsWith('RA')) {
+              const num = parseInt(strVal);
+              if (!isNaN(num) && num >= 40) isPass = true;
+            }
+          }
+          if (!isPass) allPass = false;
+        });
+
+        if (allPass) totalPassedAll++;
+        if (attendedAny) totalAttended++;
+      });
+
+      // Write Footer Rows
+      let currentFooterRow = footerStartRow;
+      const footerLabels = [
+        { key: 'maxMark', label: 'Subject Topper Mark' },
+        { key: 'toppers', label: 'Subject Toppers' },
+        { key: 'subjects', label: 'Subjects' },
+        { key: 'registered', label: 'Total No of Student Registered' },
+        { key: 'pass', label: 'No. of Pass' },
+        { key: 'fail', label: 'No. of Failures' },
+        { key: 'absent', label: 'No.of Absentees' },
+        { key: 'passPercReg', label: 'Overall Pass Percentage' },
+        { key: 'failPercReg', label: 'Overall Fail Percentage' }
+      ];
+
+      footerLabels.forEach(item => {
+        const row = worksheet.getRow(currentFooterRow);
+
+        // Label in Column B (2) - Merge B-D?
+        try { worksheet.mergeCells(currentFooterRow, 2, currentFooterRow, 4); } catch (e) { }
+        const labelCell = row.getCell(2);
+        labelCell.value = item.label;
+        labelCell.font = { bold: true, name: 'Calibri', size: 60 };
+        labelCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        labelCell.border = borderStyle as any;
+
+        // Apply border to merged cells B-D
+        for (let c = 2; c <= 4; c++) {
+          row.getCell(c).border = borderStyle as any;
+        }
+
+        let colIndex = 5;
+        subjectStats.forEach((stat: any, i: number) => {
+          try { worksheet.mergeCells(currentFooterRow, colIndex, currentFooterRow, colIndex + 2); } catch (e) { }
+          const cell = row.getCell(colIndex);
+
+          if (item.key === 'subjects') {
+            cell.value = subjects[i];
+          } else {
+            cell.value = stat[item.key];
+          }
+
+          cell.font = { bold: true, name: 'Calibri', size: 60 };
+          cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+          cell.border = borderStyle as any;
+
+          // Apply border to merged cells
+          for (let c = colIndex; c < colIndex + 3; c++) {
+            row.getCell(c).border = borderStyle as any;
+          }
+
+          colIndex += 3;
+        });
+
+        row.height = item.key === 'toppers' ? 150 : 80;
+        currentFooterRow++;
+      });
+
+      // Overall Stats Block
+      currentFooterRow += 2; // Gap
+
+      const totalRegistered = report.data.length;
+      const overallPassPerc = totalRegistered > 0 ? Math.round((totalPassedAll / totalRegistered) * 100) : 0;
+      const overallFailPerc = 100 - overallPassPerc;
+
+      const overallStats = [
+        { label: 'OVERALL PASS PERCENTAGE', value: `${overallPassPerc}%` },
+        { label: 'OVERALL FAIL PERCENTAGE', value: `${overallFailPerc}%` }
+      ];
+
+      overallStats.forEach(stat => {
+        const row = worksheet.getRow(currentFooterRow);
+
+        // Label: Merge B-D (2-4)
+        try { worksheet.mergeCells(currentFooterRow, 2, currentFooterRow, 4); } catch (e) { }
+        const labelCell = row.getCell(2);
+        labelCell.value = stat.label;
+        labelCell.font = { bold: true, name: 'Calibri', size: 60 };
+        labelCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        labelCell.border = borderStyle as any;
+
+        // Value: Merge E-G (5-7)
+        try { worksheet.mergeCells(currentFooterRow, 5, currentFooterRow, 7); } catch (e) { }
+        const valCell = row.getCell(5);
+        valCell.value = stat.value;
+        valCell.font = { bold: true, name: 'Calibri', size: 60 };
+        valCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        valCell.border = borderStyle as any;
+
+        // Apply borders
+        for (let c = 2; c <= 7; c++) {
+          row.getCell(c).border = borderStyle as any;
+        }
+
+        row.height = 80;
+        currentFooterRow++;
+      });
+
+      // --- Signature Section ---
+      currentFooterRow += 4; // Add gap before signature
+
+      const sigRow = worksheet.getRow(currentFooterRow);
+      sigRow.height = 80;
+
+      // CLASS INCHARGE (Left)
+      try { worksheet.mergeCells(currentFooterRow, 2, currentFooterRow, 5); } catch (e) { }
+      const classInchargeCell = sigRow.getCell(2);
+      classInchargeCell.value = 'CLASS INCHARGE';
+      classInchargeCell.font = { bold: true, name: 'Calibri', size: 60 };
+      classInchargeCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+      // HOD (Right)
+      // Calculate position: Total Columns - 3 (approx)
+      const totalCols = 4 + (subjects.length * 3) + 10;
+      const hodColStart = Math.max(10, totalCols - 5);
+
+      try { worksheet.mergeCells(currentFooterRow, hodColStart, currentFooterRow, hodColStart + 3); } catch (e) { }
+      const hodCell = sigRow.getCell(hodColStart);
+      hodCell.value = 'HOD';
+      hodCell.font = { bold: true, name: 'Calibri', size: 60 };
+      hodCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      // Save
+      const outBuffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([outBuffer]), `${report.title || 'unom_report'}.xlsx`);
+
+    } catch (error: any) {
+      console.error("Error generating UNOM Excel:", error);
+      toast.error(`Failed to generate Excel report: ${error.message || 'Unknown error'}`);
+    }
   };
 
   const handleDeleteAllWorkspaceMarks = async () => {
@@ -4001,6 +4559,19 @@ const TeacherDashboard = () => {
                         Delete All
                       </Button>
                     </div>
+
+                    <div className="flex items-center gap-2 mb-4">
+                      <Button onClick={handleDownloadStudentDetails} className="bg-green-600 hover:bg-green-700 text-white">
+                        <Download className="h-4 w-4 mr-2" /> Download Student Details
+                      </Button>
+                      <Button variant="outline" onClick={() => setShowDetailsConfigDialog(true)} className="border-slate-600 text-slate-300 hover:bg-slate-700">
+                        <Edit className="h-4 w-4 mr-2" /> Configure Fields
+                      </Button>
+                      <Button variant="outline" onClick={handleRaiseAgainAll} className="border-slate-600 text-slate-300 hover:bg-slate-700" title="Force all students to re-enter details">
+                        <RotateCcw className="h-4 w-4 mr-2" /> Raise Again for All
+                      </Button>
+                    </div>
+
                     {workspaces.find(w => w.id === viewMarksWorkspace)?.students
                       ?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()))
                       .slice((marksPage - 1) * 20, marksPage * 20)
@@ -4039,9 +4610,14 @@ const TeacherDashboard = () => {
                               <p className="text-xs text-slate-500 truncate">{email}</p>
                             </div>
                           </div>
-                          <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white w-full md:w-auto" onClick={() => handleFetchStudentMarks(email)}>
-                            View Marks
-                          </Button>
+                          <div className="flex gap-2 w-full md:w-auto">
+                            <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => handleRaiseAgainSingle(email)} title="Force re-entry of details">
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white flex-1 md:flex-none" onClick={() => handleFetchStudentMarks(email)}>
+                              View Marks
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     {workspaces.find(w => w.id === viewMarksWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase())).length > 20 && (
@@ -4058,6 +4634,65 @@ const TeacherDashboard = () => {
                 )}
               </CardContent>
             </Card>
+
+            {/* Configure Fields Dialog */}
+            <Dialog open={showDetailsConfigDialog} onOpenChange={setShowDetailsConfigDialog}>
+              <DialogContent className="bg-slate-900 border-slate-700 text-white">
+                <DialogHeader>
+                  <DialogTitle>Configure Student Details Fields</DialogTitle>
+                  <DialogDescription className="text-slate-400">
+                    Add or remove fields to include in the student details download.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Field name (e.g. address)"
+                      value={newDetailField}
+                      onChange={(e) => setNewDetailField(e.target.value)}
+                      className="bg-slate-800 border-slate-700 text-white"
+                    />
+                    <Button onClick={handleAddDetailField} className="bg-blue-600 hover:bg-blue-700">Add</Button>
+                  </div>
+                  <div className="text-xs text-slate-400 flex items-center gap-2">
+                    <span><span className="text-yellow-500 font-semibold">Notice:</span> Use <code className="bg-slate-800 px-1 rounded text-slate-300">reg_no</code> for Register Number (after 1st year get thier Register Number).</span>
+                    {!studentDetailsConfig.includes('reg_no') && (
+                      <button
+                        onClick={() => {
+                          if (!studentDetailsConfig.includes('reg_no')) {
+                            const newConfig = [...studentDetailsConfig, 'reg_no'];
+                            setStudentDetailsConfig(newConfig);
+                            saveDetailsConfig(newConfig);
+                            toast.success("Added reg_no field");
+                          }
+                        }}
+                        className="text-blue-400 hover:underline flex items-center gap-1"
+                      >
+                        <PlusCircle className="h-3 w-3" /> Add now
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Current Fields</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {studentDetailsConfig.map(field => (
+                        <div key={field} className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                          <span className="text-sm">{field}</span>
+                          {['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'].includes(field) ? null : (
+                            <button onClick={() => handleRemoveDetailField(field)} className="text-slate-400 hover:text-red-400 ml-1">
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowDetailsConfigDialog(false)} className="border-slate-600 hover:bg-slate-800 text-white">Close</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         )
       }
@@ -4351,7 +4986,7 @@ const TeacherDashboard = () => {
                             <div>
                               <h4 className="font-semibold text-white text-lg">{batch.sectionTitle}</h4>
                               <p className="text-sm text-slate-400">
-                                {batch.subject} • {batch.createdAt?.toDate?.().toLocaleDateString()} • {batch.count} students
+                                {batch.subject} â€¢ {batch.createdAt?.toDate?.().toLocaleDateString()} â€¢ {batch.count} students
                                 {batch.status === 'deleted' && <span className="ml-2 text-red-400">(Deleted)</span>}
                               </p>
                             </div>
@@ -5073,7 +5708,7 @@ const TeacherDashboard = () => {
           <DialogHeader>
             <DialogTitle>Student Marks</DialogTitle>
             <DialogDescription className="text-slate-400">
-              Student: {selectedStudentMarks?.email} • {studentMarksData.length} record(s)
+              Student: {selectedStudentMarks?.email} â€¢ {studentMarksData.length} record(s)
             </DialogDescription>
           </DialogHeader>
 
@@ -5100,6 +5735,65 @@ const TeacherDashboard = () => {
 
           <DialogFooter>
             <Button variant="secondary" onClick={() => setSelectedStudentMarks(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* UNOM DOWNLOAD DIALOG */}
+      <Dialog open={downloadDialogOpen} onOpenChange={setDownloadDialogOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle>Download UNOM Report</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Please enter the details to fill in the report template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Department</Label>
+              <Input
+                placeholder="e.g. B.Sc(CS) - 'A'"
+                value={deptInput}
+                onChange={(e) => setDeptInput(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Month - Year</Label>
+              <Input
+                placeholder="e.g. APRIL 2025"
+                value={monthYearInput}
+                onChange={(e) => setMonthYearInput(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Date of Result</Label>
+              <Input
+                placeholder="e.g. 19-JULY-2025"
+                value={dateResultInput}
+                onChange={(e) => setDateResultInput(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDownloadDialogOpen(false)} className="border-slate-600 text-slate-300 hover:bg-slate-800">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!deptInput || !monthYearInput || !dateResultInput) {
+                  toast.error("Please fill all fields");
+                  return;
+                }
+                executeUnomDownload(downloadReportData, deptInput, monthYearInput, dateResultInput);
+                setDownloadDialogOpen(false);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Download
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

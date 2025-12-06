@@ -48,6 +48,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   addDoc,
   updateDoc,
   doc,
@@ -72,6 +73,7 @@ const StudentDashboard = () => {
   const [activeSection, setActiveSection] = useState('overview');
   const [userEmail, setUserEmail] = useState('');
   const [userId, setUserId] = useState('');
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -150,6 +152,10 @@ const StudentDashboard = () => {
   // Notification Permission State
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(Notification.permission);
   const [isCheckingPermission, setIsCheckingPermission] = useState(true);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [detailsForm, setDetailsForm] = useState<any>({});
+  const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth']);
+  const [detailsPage, setDetailsPage] = useState(1);
 
   // Google Drive Auth State
   const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
@@ -239,18 +245,72 @@ const StudentDashboard = () => {
 
       if (docSnap.exists()) {
         const data = docSnap.data();
+        setUserProfile(data); // Store user profile for reports
+
         const currentSessionId = localStorage.getItem('sessionId');
         if (data.activeSessionId && data.activeSessionId !== currentSessionId) {
           toast.error('You have been logged out because your account was logged in from another device.');
           handleLogout();
         }
+
+        // Check for compulsory details or forced update notification
+        // We check notifications in a separate effect, but we can also check the user doc for legacy flag
+        if (!data.va_no || !data.personal_mobile || !data.name || data.forceProfileUpdate) {
+          setShowDetailsModal(true);
+          setDetailsForm(prev => ({
+            name: prev.name || data.name || '',
+            va_no: prev.va_no || data.va_no || '',
+            personal_mobile: prev.personal_mobile || data.personal_mobile || ''
+          }));
+        }
       }
     });
+
+    // Listen for Compulsory Update Announcements
+    const unsubCompulsoryAnnouncements = onSnapshot(query(collection(db, 'announcements'), where('students', 'array-contains', email), where('type', '==', 'compulsory_update_request')), (snap) => {
+      if (snap.empty) return;
+
+      // Sort by createdAt desc to get the latest request
+      const announcements = snap.docs.map(d => d.data());
+      announcements.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+      const latestAnnouncement = announcements[0];
+      if (latestAnnouncement) {
+        checkCompulsoryUpdate(latestAnnouncement);
+      }
+    });
+
+    const checkCompulsoryUpdate = async (announcementData: any) => {
+      if (!uid) return;
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const lastUpdate = userData.profileUpdatedAt; // Timestamp
+        const requestTimestamp = announcementData.createdAt;
+
+        // If never updated OR request is newer than user update
+        if (!lastUpdate || (requestTimestamp?.seconds > lastUpdate?.seconds)) {
+          setShowDetailsModal(true);
+
+          // Set required fields from announcement or default
+          const fields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+          setRequiredFields(fields);
+
+          // Pre-fill form with existing data for these fields
+          const initialForm: any = {};
+          fields.forEach((field: string) => {
+            initialForm[field] = userData[field] || '';
+          });
+          setDetailsForm(initialForm);
+        }
+      }
+    };
 
     return () => {
       clearInterval(timer);
       unsubMaintenance();
       unsubSession();
+      unsubCompulsoryAnnouncements();
     };
   }, []);
 
@@ -759,15 +819,22 @@ const StudentDashboard = () => {
       const leftColX = 15;
       const rightColX = 110;
 
-      doc.text(`Email: ${userEmail}`, leftColX, yPos);
-      doc.text(`Branch: Computer Science`, rightColX, yPos);
+      const studentName = userProfile?.name || userProfile?.full_name || userEmail;
+      const studentDept = userProfile?.department || workspaceCategory || 'N/A';
+      const studentRegNo = userProfile?.reg_no || userProfile?.register_no || 'N/A';
+      const studentBatch = userProfile?.batch_year || workspaceName || 'N/A';
+      const studentDob = userProfile?.date_of_birth || 'N/A';
+
+      doc.text(`Name: ${studentName}`, leftColX, yPos);
+      doc.text(`Register No: ${studentRegNo}`, rightColX, yPos);
 
       yPos += 6;
-      doc.text(`Batch: ${workspaceName}`, leftColX, yPos);
-      doc.text(`Department: ${workspaceCategory}`, rightColX, yPos);
+      doc.text(`Department: ${studentDept}`, leftColX, yPos);
+      doc.text(`Batch: ${studentBatch}`, rightColX, yPos);
 
       yPos += 6;
-      doc.text(`Semester: ${report.title}`, leftColX, yPos);
+      doc.text(`DOB: ${studentDob}`, leftColX, yPos);
+      doc.text(`Semester: ${report.title}`, rightColX, yPos);
 
       // --- Marks Table ---
       // --- Marks Table ---
@@ -846,8 +913,8 @@ const StudentDashboard = () => {
       doc.setFont("helvetica", "normal");
 
       const teacherName = classTeacherProfile
-        ? (classTeacherProfile.name || classTeacherProfile.email)
-        : (teachers.length > 0 ? (teachers[0].name || teachers[0].email) : "Class Teacher");
+        ? (classTeacherProfile.full_name || classTeacherProfile.name || "Class Teacher")
+        : (teachers.length > 0 ? (teachers[0].full_name || teachers[0].name || "Class Teacher") : "Class Teacher");
 
       const labelX = 20;
       const valueX = 60;
@@ -1038,26 +1105,13 @@ const StudentDashboard = () => {
   };
 
   const handleGenerateReport = async () => {
-    if (!downloadFrom || !downloadTo) {
-      toast.error("Please select both From and To months");
+    if (!downloadFrom) {
+      toast.error("Please select a month");
       return;
     }
 
-    const start = new Date(downloadFrom + "-01");
-    const end = new Date(downloadTo + "-01");
-
-    // Calculate difference in months
-    const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-
-    if (diffMonths < 0) {
-      toast.error("End month must be after Start month");
-      return;
-    }
-
-    if (diffMonths >= 6) {
-      toast.error("You can select a maximum of 6 months");
-      return;
-    }
+    // Enforce single month report to save reads
+    const downloadTo = downloadFrom;
 
     setShowDownloadDialog(false);
     const toastId = toast.loading("Fetching data and generating report...");
@@ -1150,18 +1204,25 @@ const StudentDashboard = () => {
       const rightColX = 110;
 
       // Changed Name to Email, Semester to Batch
-      doc.text(`Email: ${userEmail}`, leftColX, yPos);
-      doc.text(`Branch: Computer Science`, rightColX, yPos);
+      const studentName = userProfile?.name || userProfile?.full_name || userEmail;
+      const studentDept = userProfile?.department || workspaceCategory || 'N/A';
+      const studentRegNo = userProfile?.reg_no || userProfile?.register_no || 'N/A';
+      const studentBatch = userProfile?.batch_year || workspaceName || 'N/A';
+      const studentDob = userProfile?.date_of_birth || 'N/A';
+
+      doc.text(`Name: ${studentName}`, leftColX, yPos);
+      doc.text(`Register No: ${studentRegNo}`, rightColX, yPos);
 
       yPos += 6;
-      doc.text(`Batch: ${workspaceName}`, leftColX, yPos);
-      doc.text(`Department: ${workspaceCategory}`, rightColX, yPos);
+      doc.text(`Department: ${studentDept}`, leftColX, yPos);
+      doc.text(`Batch: ${studentBatch}`, rightColX, yPos);
 
       yPos += 6;
+      doc.text(`DOB: ${studentDob}`, leftColX, yPos);
+
       // Added Period
       const fromMonthName = new Date(downloadFrom + "-01").toLocaleDateString('default', { month: 'long', year: 'numeric' });
-      const toMonthName = new Date(downloadTo + "-01").toLocaleDateString('default', { month: 'long', year: 'numeric' });
-      doc.text(`Period: ${fromMonthName} - ${toMonthName}`, leftColX, yPos);
+      doc.text(`Period: ${fromMonthName}`, rightColX, yPos);
 
       yPos += 10;
       doc.setDrawColor(220, 220, 220);
@@ -1235,11 +1296,16 @@ const StudentDashboard = () => {
 
       const absentDays = reportAttendance.filter(a => a.status === 'absent');
 
-      if (absentDays.length > 0) {
+      // Sort by date descending (newest first) and take top 4
+      const recentAbsentDays = absentDays
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 4);
+
+      if (recentAbsentDays.length > 0) {
         autoTable(doc, {
           startY: yPos + 5,
           head: [['Date', 'Day', 'Status', 'Remarks']],
-          body: absentDays.map(d => [
+          body: recentAbsentDays.map(d => [
             d.date,
             new Date(d.date).toLocaleDateString('default', { weekday: 'long' }),
             "Absent",
@@ -1250,14 +1316,14 @@ const StudentDashboard = () => {
           styles: { fontSize: 9, cellPadding: 3 },
           margin: { left: 15, right: 15 }
         });
-        yPos = (doc as any).lastAutoTable.finalY + 15;
+        yPos = (doc as any).lastAutoTable.finalY + 10;
       } else {
         yPos += 8;
         doc.setFont("helvetica", "italic");
         doc.setFontSize(10);
         doc.setTextColor(100, 100, 100);
         doc.text("No absences recorded for this period. Excellent record!", 15, yPos);
-        yPos += 15;
+        yPos += 10;
       }
 
       // --- Remarks & Advice ---
@@ -1266,7 +1332,7 @@ const StudentDashboard = () => {
       doc.setFontSize(11);
       doc.text("REMARKS & ADVICE", 15, yPos);
 
-      yPos += 8;
+      yPos += 6;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
 
@@ -1285,22 +1351,19 @@ const StudentDashboard = () => {
       const splitRemarks = doc.splitTextToSize(`This is a computer-generated report based on digital attendance records. ${isGood ? "The student has maintained good attendance." : "Attendance is below recommended levels."}`, pageWidth - 30);
       doc.text(splitRemarks, 15, yPos);
 
-      yPos += 10;
+      yPos += 8;
       doc.setFont("helvetica", "italic");
       doc.setTextColor(80, 80, 80);
       doc.text(`"Advice: ${randomAdvice}"`, 15, yPos);
 
       // --- Verified By ---
-      yPos += 20;
-      // Ensure we don't run off page
-      if (yPos > pageHeight - 40) {
-        doc.addPage();
-        yPos = 20;
-      }
+      yPos += 15;
+      // Removed page break logic to fit in one page
+
 
       const teacherName = classTeacherProfile
-        ? (classTeacherProfile.name || classTeacherProfile.email)
-        : (teachers.length > 0 ? (teachers[0].name || teachers[0].email) : "Class Teacher");
+        ? (classTeacherProfile.full_name || classTeacherProfile.name || "Class Teacher")
+        : (teachers.length > 0 ? (teachers[0].full_name || teachers[0].name || "Class Teacher") : "Class Teacher");
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(0, 0, 0);
@@ -1449,6 +1512,30 @@ const StudentDashboard = () => {
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handleDetailsSubmit = async () => {
+    // Validate all required fields
+    for (const field of requiredFields) {
+      if (!detailsForm[field] || !detailsForm[field].toString().trim()) {
+        toast.error(`Please enter your ${field.replace(/_/g, ' ')}`);
+        return;
+      }
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        ...detailsForm,
+        profileUpdatedAt: serverTimestamp(), // Mark this update
+        updatedAt: serverTimestamp()
+      });
+
+      toast.success("Details updated successfully");
+      setShowDetailsModal(false);
+    } catch (error) {
+      console.error("Error updating details:", error);
+      toast.error("Failed to update details");
+    }
   };
 
   const handleChangePasswordSubmit = async () => {
@@ -2599,13 +2686,13 @@ const StudentDashboard = () => {
           <DialogHeader>
             <DialogTitle>Download Attendance Report</DialogTitle>
             <DialogDescription className="text-slate-400">
-              Select the period for the report. Maximum 6 months allowed.
+              Select the month for the report.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
-                <Label>From Month</Label>
+                <Label>Select Month</Label>
                 <Input
                   type="month"
                   className="bg-slate-800 border-slate-700 text-white"
@@ -2613,20 +2700,87 @@ const StudentDashboard = () => {
                   onChange={(e) => setDownloadFrom(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>To Month</Label>
-                <Input
-                  type="month"
-                  className="bg-slate-800 border-slate-700 text-white"
-                  value={downloadTo}
-                  onChange={(e) => setDownloadTo(e.target.value)}
-                />
-              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDownloadDialog(false)} className="border-slate-600 hover:bg-slate-800 text-white">Cancel</Button>
             <Button onClick={handleGenerateReport} className="bg-blue-600 hover:bg-blue-700 text-white">Generate PDF</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Compulsory Details Dialog */}
+      <Dialog open={showDetailsModal} onOpenChange={(open) => {
+        if (!open && showDetailsModal) return;
+        setShowDetailsModal(open);
+      }}>
+        <DialogContent className="sm:max-w-[425px] bg-slate-900 border-slate-700 text-white" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Complete Your Profile</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Please provide the following details to continue to your dashboard.
+              {requiredFields.length > 7 && <span className="block mt-1 text-xs text-blue-400">Page {detailsPage} of {Math.ceil(requiredFields.length / 7)}</span>}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto px-1">
+            {requiredFields
+              .slice((detailsPage - 1) * 7, detailsPage * 7)
+              .map((field) => {
+                let placeholder = `Enter your ${field.replace(/_/g, ' ')}`;
+                let type = "text";
+
+                if (field === 'batch_year') placeholder = "2023 - 2026";
+                if (field === 'date_of_birth') {
+                  placeholder = "11/12/2008";
+                  // We can use type="date" but user asked for "date selection field can also type"
+                  // Standard text input with placeholder is safest for "can also type", or type="date"
+                  // Let's use type="text" with the specific placeholder as requested, or type="date" if they want a picker.
+                  // "date selection field can also type" usually implies a date picker that allows manual entry.
+                  // HTML5 date input allows this on desktop.
+                  type = "date";
+                }
+
+                return (
+                  <div key={field} className="space-y-2">
+                    <Label className="capitalize">{field.replace(/_/g, ' ')}</Label>
+                    <Input
+                      type={type}
+                      className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+                      value={detailsForm[field] || ''}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, [field]: e.target.value })}
+                      placeholder={placeholder}
+                    />
+                    {field === 'date_of_birth' && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY (e.g. 11/12/2008)</p>}
+                  </div>
+                );
+              })}
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {detailsPage > 1 && (
+              <Button variant="outline" onClick={() => setDetailsPage(p => p - 1)} className="w-full sm:w-auto border-slate-600 text-slate-300 hover:bg-slate-800">
+                Back
+              </Button>
+            )}
+
+            {detailsPage < Math.ceil(requiredFields.length / 7) ? (
+              <Button onClick={() => {
+                // Validate current page fields before moving next
+                const currentFields = requiredFields.slice((detailsPage - 1) * 7, detailsPage * 7);
+                for (const field of currentFields) {
+                  if (!detailsForm[field] || !detailsForm[field].toString().trim()) {
+                    toast.error(`Please enter your ${field.replace(/_/g, ' ')}`);
+                    return;
+                  }
+                }
+                setDetailsPage(p => p + 1);
+              }} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">
+                Next
+              </Button>
+            ) : (
+              <Button onClick={handleDetailsSubmit} className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white">
+                Save & Continue
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
