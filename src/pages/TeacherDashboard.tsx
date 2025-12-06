@@ -450,39 +450,82 @@ const TeacherDashboard = () => {
         return;
       }
 
-      // 1. Re-authenticate with Firebase Auth
+      // Step 1: Try to Re-authenticate with Firebase Auth (The Standard Way)
+      let authSuccess = false;
       try {
         const credential = EmailAuthProvider.credential(user.email, passwordForm.current);
         await reauthenticateWithCredential(user, credential);
+        authSuccess = true;
       } catch (authError: any) {
-        console.error("Re-auth error:", authError);
+        console.warn("Re-auth failed, checking Firestore fallback...", authError.code);
+
+        // Step 1.5: Handle Sync Issues (Auth Password != Firestore Password)
+        // If Auth fails, we check if the entered password matches Firestore.
+        // If it does, the user knows the "intended" password, so we try to force an update.
         if (authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
-          toast.error("Incorrect current password");
-          return;
+          // Check Firestore
+          const q = query(collection(db, 'users'), where('email', '==', user.email));
+          const snap = await getDocs(q);
+
+          if (!snap.empty) {
+            const userDoc = snap.docs[0];
+            const userData = userDoc.data();
+            const storedPassword = userData.password || '';
+            let isFirestoreMatch = false;
+
+            if (storedPassword.startsWith('$2')) {
+              isFirestoreMatch = await verifyPassword(passwordForm.current, storedPassword);
+            } else if (storedPassword === passwordForm.current) {
+              isFirestoreMatch = true;
+            }
+
+            if (isFirestoreMatch) {
+              // Firestore matches! This is a Desync case.
+              // We will proceed to update WITHOUT re-auth, hoping session is fresh enough.
+              console.log("Firestore password matched. Attempting to fix sync...");
+              authSuccess = true; // allow flow to continue
+            } else {
+              toast.error("Incorrect current password");
+              return;
+            }
+          } else {
+            toast.error("User record not found to verify password.");
+            return;
+          }
+        } else {
+          throw authError; // Some other error
         }
-        throw authError; // Rethrow other errors
       }
 
-      // 2. Update password in Firebase Auth
-      await updatePassword(user, passwordForm.new);
+      if (authSuccess) {
+        // Step 2: Update password in Firebase Auth
+        try {
+          await updatePassword(user, passwordForm.new);
+        } catch (updateError: any) {
+          if (updateError.code === 'auth/requires-recent-login') {
+            toast.error("For security, please logout and login again before changing your password.");
+            return;
+          }
+          throw updateError;
+        }
 
-      // 3. Update password in Firestore (Sync)
-      // We search by email to find the doc
-      const q = query(collection(db, 'users'), where('email', '==', user.email));
-      const snap = await getDocs(q);
+        // Step 3: Update password in Firestore (Sync)
+        const q = query(collection(db, 'users'), where('email', '==', user.email));
+        const snap = await getDocs(q);
 
-      if (!snap.empty) {
-        const userDoc = snap.docs[0];
-        const newHash = await hashPassword(passwordForm.new);
-        await updateDoc(doc(db, 'users', userDoc.id), {
-          password: newHash,
-          updatedAt: serverTimestamp()
-        });
+        if (!snap.empty) {
+          const userDoc = snap.docs[0];
+          const newHash = await hashPassword(passwordForm.new);
+          await updateDoc(doc(db, 'users', userDoc.id), {
+            password: newHash,
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        toast.success("Password updated successfully");
+        setShowPasswordModal(false);
+        setPasswordForm({ current: '', new: '', confirm: '' });
       }
-
-      toast.success("Password updated successfully");
-      setShowPasswordModal(false);
-      setPasswordForm({ current: '', new: '', confirm: '' });
 
     } catch (error: any) {
       console.error("Password update error:", error);
