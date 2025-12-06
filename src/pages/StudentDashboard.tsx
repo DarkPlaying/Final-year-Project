@@ -760,6 +760,31 @@ const StudentDashboard = () => {
     }
   };
 
+  // Listen for Portal Status based on selected teacher
+  useEffect(() => {
+    if (!selectedTeacher) {
+      setPortalStatus('closed');
+      return;
+    }
+
+    // Find teacher's UID
+    const teacherObj = teachers.find(t => t.email === selectedTeacher);
+    if (!teacherObj || !teacherObj.id) {
+      setPortalStatus('closed');
+      return;
+    }
+
+    const unsubPortal = onSnapshot(doc(db, 'users', teacherObj.id), (d) => {
+      if (d.exists()) {
+        setPortalStatus(d.data().portalStatus || 'closed');
+      } else {
+        setPortalStatus('closed');
+      }
+    });
+
+    return () => unsubPortal();
+  }, [selectedTeacher, teachers]);
+
   const handleDownloadUnomReport = async (report: any) => {
     try {
       const studentData = report.data?.find((d: any) => d.email === userEmail);
