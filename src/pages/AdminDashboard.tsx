@@ -870,7 +870,9 @@ const AdminDashboard = () => {
 
         } catch (err: any) {
           // Auto-fix for Password Mismatch: Delete from Auth and Retry
-          if (err.message && err.message.includes('password does not match')) {
+          // Auto-fix for Password Mismatch or Existing User issues
+          const msg = (err.message || '').toLowerCase();
+          if (msg.includes('password does not match') || msg.includes('email-already-in-use') || msg.includes('already exists')) {
             try {
               console.log(`Attempting auto-fix for ${user.email}: cleaning up Auth record...`);
               const notifServiceUrl = 'https://edu-online-notifications.onrender.com/delete-user';
