@@ -1,16 +1,29 @@
 importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-compat.js');
 
-const firebaseConfig = {
-    apiKey: "AIzaSyBKFjGmeykAc4Ck9zDrKz745yZQyqGC8y8",
-    authDomain: "education-ai-af34e.firebaseapp.com",
-    projectId: "education-ai-af34e",
-    storageBucket: "education-ai-af34e.firebasestorage.app",
-    messagingSenderId: "815335775209",
-    appId: "1:815335775209:web:6c0bc09a99447a0f28c978"
-};
+// Retrieve config params from the script URL
+const params = new URLSearchParams(self.location.search);
+const apiKey = params.get('apiKey');
+const authDomain = params.get('authDomain');
+const projectId = params.get('projectId');
+const storageBucket = params.get('storageBucket');
+const messagingSenderId = params.get('messagingSenderId');
+const appId = params.get('appId');
 
-firebase.initializeApp(firebaseConfig);
+// Only initialize if config is present
+if (apiKey && projectId) {
+    const firebaseConfig = {
+        apiKey,
+        authDomain,
+        projectId,
+        storageBucket,
+        messagingSenderId,
+        appId
+    };
+    firebase.initializeApp(firebaseConfig);
+} else {
+    console.warn('Firebase Messaging SW: Missing config parameters in URL');
+}
 
 const messaging = firebase.messaging();
 
