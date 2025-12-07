@@ -999,7 +999,8 @@ const AdminDashboard = () => {
       }
       const wsData = wsDoc.data();
       // Deduplicate emails
-      const userEmails = Array.from(new Set([...(wsData.teachers || []), ...(wsData.students || [])]));
+      // Deduplicate emails and filter invalid values
+      const userEmails = Array.from(new Set([...(wsData.teachers || []), ...(wsData.students || [])])).filter(e => e && typeof e === 'string' && e.trim() !== '');
 
       // 2. Find Users and their related data (Queries, Submissions)
       const usersToDelete: any[] = [];
@@ -1038,6 +1039,16 @@ const AdminDashboard = () => {
               }
             });
 
+
+            // Fetch submissions by studentEmail (robustness against deleted user docs)
+            const subEmailQ = query(collection(db, 'submissions'), where('studentEmail', 'in', chunk));
+            const subEmailSnap = await getDocs(subEmailQ);
+            subEmailSnap.forEach(d => {
+              if (!seenSubmissionIds.has(d.id)) {
+                seenSubmissionIds.add(d.id);
+                submissionDocsToDelete.push(d);
+              }
+            });
 
             // 2.3 Fetch additional user-specific data (Announcements, Exams, Syllabi, Teacher Uploads)
             const announcementsQ = query(collection(db, 'announcements'), where('teacherEmail', 'in', chunk));
