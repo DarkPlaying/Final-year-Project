@@ -1991,27 +1991,27 @@ const AdminDashboard = () => {
       {/* USERS SECTION */}
       {activeSection === 'users' && (
         <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <div className="flex gap-2">
-              <Button onClick={() => setShowAddDialog(true)}>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex gap-2 w-full md:w-auto">
+              <Button onClick={() => setShowAddDialog(true)} className="flex-1 md:flex-none">
                 <UserPlus className="mr-2 h-4 w-4" /> Add User
               </Button>
-              <Button variant="outline" onClick={() => handleOpenCsvUpload()}>
+              <Button variant="outline" onClick={() => handleOpenCsvUpload()} className="flex-1 md:flex-none">
                 <Upload className="mr-2 h-4 w-4" /> Upload CSV
               </Button>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative w-64">
+            <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
+              <div className="relative w-full md:w-64">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                 <Input
                   placeholder="Search users..."
-                  className="pl-8 bg-slate-900 border-slate-700 h-9 text-sm"
+                  className="pl-8 bg-slate-900 border-slate-700 h-9 text-sm w-full"
                   value={userSearchQuery}
                   onChange={(e) => setUserSearchQuery(e.target.value)}
                 />
               </div>
               {uploadHistory.length > 0 && (
-                <Button variant="secondary" onClick={handleUndoUpload}>
+                <Button variant="secondary" onClick={handleUndoUpload} className="w-full md:w-auto">
                   <Undo2 className="mr-2 h-4 w-4" /> Undo Last Upload
                 </Button>
               )}
@@ -2112,24 +2112,26 @@ const AdminDashboard = () => {
             </CardContent>
           </Card>
 
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <h3 className="text-lg font-medium">My Workspaces ({filteredWorkspaces.length})</h3>
-            <div className="flex gap-2">
+            <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
               <Input
                 placeholder="Search workspaces..."
-                className="w-[200px]"
+                className="w-full md:w-[200px]"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="w-[150px]"><SelectValue placeholder="All Categories" /></SelectTrigger>
-                <SelectContent>
-                  {categories.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button variant="outline" onClick={handleReset}>Reset</Button>
+              <div className="flex gap-2">
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-full md:w-[150px]"><SelectValue placeholder="All Categories" /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={handleReset} className="flex-1 md:flex-none">Reset</Button>
+              </div>
             </div>
           </div>
 
