@@ -47,6 +47,7 @@ import {
   FileSpreadsheet,
   GraduationCap,
   School,
+  Mail,
   LineChart as LineChartIcon,
   CloudSun,
   Loader2,
@@ -184,6 +185,30 @@ const AdminDashboard = () => {
   const BACKUP_FOLDER_ID = '1ie0qArIerEv6Adct4s3meChXYImT6RgR';
   const GOOGLE_CLIENT_ID = '815335775209-mkgtp7o17o48e5ul7lmgn4uljko3e8ag.apps.googleusercontent.com'; // Using same as student dashboard
   const SCOPES = 'https://www.googleapis.com/auth/drive';
+
+  // Send Mail State
+  const [mailConfig, setMailConfig] = useState({
+    gmailUser: '',
+    appPassword: '',
+    fromName: 'EduPortal'
+  });
+  const [mailRecipients, setMailRecipients] = useState<any[]>([]);
+  const [mailLogs, setMailLogs] = useState<{ msg: string, type: 'success' | 'error' | 'info' | 'warn' }[]>([]);
+  const [mailStats, setMailStats] = useState({ total: 0, sent: 0, errors: 0 });
+  const [isSendingMail, setIsSendingMail] = useState(false);
+  const [mailProgress, setMailProgress] = useState(0);
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // Helper for logs
+  const addMailLog = (msg: string, type: 'success' | 'error' | 'info' | 'warn' = 'info') => {
+    setMailLogs(prev => [...prev, { msg, type }]);
+    // Auto-scroll
+    setTimeout(() => {
+      if (logContainerRef.current) {
+        logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+      }
+    }, 50);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1573,6 +1598,7 @@ const AdminDashboard = () => {
     { icon: <Briefcase size={20} />, label: 'Workspaces', onClick: () => setActiveSection('workspaces'), active: activeSection === 'workspaces' },
     { icon: <MessageSquare size={20} />, label: 'View Queries', onClick: () => setActiveSection('queries'), active: activeSection === 'queries' },
     { icon: <Bot size={20} />, label: 'AI CSV Generator', onClick: () => setActiveSection('aiCsv'), active: activeSection === 'aiCsv' },
+    { icon: <Mail size={20} />, label: 'Send Mail', onClick: () => setActiveSection('send-mail'), active: activeSection === 'send-mail' },
 
     { icon: <Database size={20} />, label: 'Backup Files', onClick: () => setActiveSection('backup'), active: activeSection === 'backup' },
   ];
@@ -1644,6 +1670,94 @@ const AdminDashboard = () => {
       </Button>
     </div>
   );
+
+  const handleMailCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n');
+      // Handle empty first line or BOM
+      const headers = lines[0].replace(/^\uFEFF/, '').trim().split(',').map(h => h.trim().toLowerCase());
+
+      if (!headers.includes('email') || !headers.includes('password')) {
+        toast.error("CSV must contain 'email' and 'password' columns");
+        return;
+      }
+
+      const data: any[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        // Handle quotes later if needed, simple split for now as per demo
+        const values = line.split(',').map(v => v.trim());
+        const row: any = {};
+        headers.forEach((h, index) => {
+          row[h] = values[index] || '';
+        });
+        if (row.email && row.password) {
+          data.push(row);
+        }
+      }
+
+      setMailRecipients(data);
+      setMailStats({ total: data.length, sent: 0, errors: 0 });
+      setMailLogs([]);
+      addMailLog(`📂 Loaded ${data.length} valid recipients from CSV`);
+      setCsvFile(file); // reuse this state to show file name potentially
+    } catch (err) {
+      toast.error("Failed to parse CSV");
+      console.error(err);
+    }
+  };
+
+  const handleSendBatchEmails = async () => {
+    if (!mailConfig.gmailUser || !mailConfig.appPassword) {
+      toast.error("Please configure Gmail settings first");
+      return;
+    }
+    if (mailRecipients.length === 0) {
+      toast.error("No recipients loaded");
+      return;
+    }
+
+    setIsSendingMail(true);
+    setMailProgress(0);
+    let sent = 0;
+    let errors = 0;
+
+    addMailLog(`🚀 Starting batch of ${Math.min(mailRecipients.length, 100)} emails...`);
+
+    const limit = Math.min(mailRecipients.length, 100);
+
+    for (let i = 0; i < limit; i++) {
+      const user = mailRecipients[i];
+      setMailProgress(Math.round(((i + 1) / limit) * 100));
+
+      try {
+        // Simulate sending logic (can be replaced with backend call)
+        await new Promise((resolve, reject) => {
+          setTimeout(() => {
+            if (Math.random() > 0.1) resolve(true);
+            else reject(new Error('Email service timeout'));
+          }, 1000 + Math.random() * 1000);
+        });
+
+        sent++;
+        setMailStats(prev => ({ ...prev, sent: prev.sent + 1 }));
+        addMailLog(`✅ Email sent to ${user.email}`, 'success');
+      } catch (err: any) {
+        errors++;
+        setMailStats(prev => ({ ...prev, errors: prev.errors + 1 }));
+        addMailLog(`❌ Failed for ${user.email}: ${err.message}`, 'error');
+      }
+    }
+
+    setIsSendingMail(false);
+    addMailLog(`🎉 Completed! Sent: ${sent}, Errors: ${errors}`, 'success');
+    toast.success("Batch email processing completed");
+  };
 
   return (
     <DashboardLayout sidebarItems={sidebarItems} title="Admin Dashboard" headerContent={headerContent}>
@@ -2414,6 +2528,147 @@ const AdminDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* SEND MAIL SECTION */}
+      {activeSection === 'send-mail' && (
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Mail className="h-6 w-6 text-purple-400" /> Bulk User Import & Email Sender
+          </h2>
+          <p className="text-slate-400">Upload CSV and send login credentials via Gmail SMTP (Simulator).</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Configuration Card */}
+            <Card className="bg-slate-800 border-slate-700 text-white h-fit">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-blue-400"><Settings className="h-5 w-5" /> Gmail Configuration</CardTitle>
+                <CardDescription>
+                  Use an <a href="https://myaccount.google.com/apppasswords" target="_blank" className="text-blue-400 underline">App Password</a>, not your login password.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Gmail Address</Label>
+                  <Input
+                    placeholder="example@gmail.com"
+                    className="bg-slate-900 border-slate-700"
+                    value={mailConfig.gmailUser}
+                    onChange={e => setMailConfig({ ...mailConfig, gmailUser: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>App Password (16 chars)</Label>
+                  <Input
+                    type="password"
+                    placeholder="xxxx xxxx xxxx xxxx"
+                    className="bg-slate-900 border-slate-700"
+                    value={mailConfig.appPassword}
+                    onChange={e => setMailConfig({ ...mailConfig, appPassword: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>From Name</Label>
+                  <Input
+                    placeholder="EduPortal"
+                    className="bg-slate-900 border-slate-700"
+                    value={mailConfig.fromName}
+                    onChange={e => setMailConfig({ ...mailConfig, fromName: e.target.value })}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Upload & Actions Card */}
+            <Card className="bg-slate-800 border-slate-700 text-white h-fit">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-400"><Upload className="h-5 w-5" /> CSV Upload</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Select CSV File</Label>
+                  <Input
+                    type="file"
+                    accept=".csv"
+                    className="bg-slate-900 border-slate-700 file:text-slate-200 file:bg-slate-800"
+                    onChange={handleMailCSVUpload}
+                  />
+                </div>
+                <div className="bg-slate-900 p-3 rounded-md text-xs font-mono text-slate-400">
+                  <p className="mb-1 font-bold">Required Columns:</p>
+                  name,email,password,role,department
+                </div>
+                <Button
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
+                  onClick={handleSendBatchEmails}
+                  disabled={isSendingMail || mailRecipients.length === 0}
+                >
+                  {isSendingMail ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...</>
+                  ) : (
+                    <><Mail className="h-4 w-4 mr-2" /> Process & Send Emails</>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Progress & Logs */}
+          <Card className="bg-slate-800 border-slate-700 text-white">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 decoration-amber-400 text-amber-400"><FileSpreadsheet className="h-5 w-5" /> Progress & Logs</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-slate-900 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold text-slate-200">{mailStats.total}</div>
+                  <div className="text-xs text-slate-500">Total Users</div>
+                </div>
+                <div className="bg-slate-900 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold text-green-500">{mailStats.sent}</div>
+                  <div className="text-xs text-slate-500">Sent</div>
+                </div>
+                <div className="bg-slate-900 p-4 rounded-lg text-center">
+                  <div className="text-2xl font-bold text-red-500">{mailStats.errors}</div>
+                  <div className="text-xs text-slate-500">Errors</div>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              {isSendingMail && (
+                <div className="space-y-1">
+                  <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 transition-all duration-300"
+                      style={{ width: `${mailProgress}%` }}
+                    />
+                  </div>
+                  <div className="text-right text-xs text-slate-400">{mailProgress}%</div>
+                </div>
+              )}
+
+              {/* Logs Window */}
+              <div
+                ref={logContainerRef}
+                className="bg-black/50 border border-slate-700 rounded-md p-4 h-64 overflow-y-auto font-mono text-sm space-y-1"
+              >
+                {mailLogs.length === 0 && <span className="text-slate-600 italic">Waiting for process to start...</span>}
+                {mailLogs.map((log, i) => (
+                  <div key={i} className={`
+                                ${log.type === 'success' ? 'text-green-400' : ''}
+                                ${log.type === 'error' ? 'text-red-400' : ''}
+                                ${log.type === 'warn' ? 'text-yellow-400' : ''}
+                                ${log.type === 'info' ? 'text-blue-300' : ''}
+                            `}>
+                    <span className="text-slate-600 mr-2">[{new Date().toLocaleTimeString()}]</span>
+                    {log.msg}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* BACKUP FILES */}
       {
