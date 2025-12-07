@@ -1002,8 +1002,7 @@ const AdminDashboard = () => {
       const userEmails = Array.from(new Set([...(wsData.teachers || []), ...(wsData.students || [])]));
 
       // 2. Find Users and their related data (Queries, Submissions)
-      const studentsToDelete: any[] = [];
-      const teachersToUpdate: any[] = [];
+      const usersToDelete: any[] = [];
       const queryDocsToDelete: any[] = [];
       const submissionDocsToDelete: any[] = [];
       const workspaceDocsToDelete: any[] = [];
@@ -1026,12 +1025,7 @@ const AdminDashboard = () => {
             userSnap.forEach(d => {
               if (!seenUserIds.has(d.id)) {
                 seenUserIds.add(d.id);
-                const role = d.data().role;
-                if (role === 'student') {
-                  studentsToDelete.push(d);
-                } else if (role === 'teacher' || role === 'admin') {
-                  teachersToUpdate.push(d);
-                }
+                usersToDelete.push(d);
               }
             });
 
@@ -1047,7 +1041,8 @@ const AdminDashboard = () => {
         }
 
         // Find submissions by Student ID
-        const studentIds = studentsToDelete
+        const studentIds = usersToDelete
+          .filter(d => d.data().role === 'student')
           .map(d => d.id);
 
         if (studentIds.length > 0) {
@@ -1115,24 +1110,8 @@ const AdminDashboard = () => {
         if (queryDocsToDelete.length > 0) await deleteInBatches(queryDocsToDelete);
         if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
 
-        if (studentsToDelete.length > 0) {
-          await deleteInBatches(studentsToDelete);
-        }
-
-        if (teachersToUpdate.length > 0) {
-          const teacherChunks = [];
-          for (let i = 0; i < teachersToUpdate.length; i += 400) {
-            teacherChunks.push(teachersToUpdate.slice(i, i + 400));
-          }
-          for (const chunk of teacherChunks) {
-            const batch = writeBatch(db);
-            chunk.forEach((d: any) => {
-              batch.update(d.ref, {
-                assignedWorkspaces: arrayRemove(id)
-              });
-            });
-            await batch.commit();
-          }
+        if (usersToDelete.length > 0) {
+          await deleteInBatches(usersToDelete);
         }
       } catch (e) {
         console.warn('Error deleting some related data:', e);
