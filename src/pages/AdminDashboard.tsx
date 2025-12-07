@@ -872,7 +872,10 @@ const AdminDashboard = () => {
           // Auto-fix for Password Mismatch: Delete from Auth and Retry
           // Auto-fix for Password Mismatch or Existing User issues
           const msg = (err.message || '').toLowerCase();
-          if (msg.includes('password does not match') || msg.includes('email-already-in-use') || msg.includes('already exists')) {
+          if (msg.includes('auth_password_mismatch') || msg.includes('password does not match') || msg.includes('email-already-in-use') || msg.includes('already exists')) {
+            if (!msg.includes('retry failed')) {
+              toast.loading(`Auto-fixing password mismatch for ${user.email}...`);
+            }
             try {
               console.log(`Attempting auto-fix for ${user.email}: cleaning up Auth record...`);
               const notifServiceUrl = 'https://edu-online-notifications.onrender.com/delete-user';

@@ -63,7 +63,7 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                         console.log(`[createUser] Recovered UID via login: ${mainUid}`);
                     } catch (loginError) {
                         console.error(`[createUser] Failed to recover user via login (Wrong password?):`, loginError);
-                        throw new Error(`User ${email} already exists and password does not match.`);
+                        throw new Error(`AUTH_PASSWORD_MISMATCH: User ${email} already exists and password does not match.`);
                     }
                 }
             } else {
