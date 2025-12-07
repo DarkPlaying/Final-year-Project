@@ -126,6 +126,19 @@ const TeacherDashboard = () => {
     setSelectedStudents([]);
   }, [activeSection]);
 
+  // Calculate total students from workspaces
+  useEffect(() => {
+    if (workspaces.length > 0) {
+      const uniqueStudents = new Set<string>();
+      workspaces.forEach(ws => {
+        if (Array.isArray(ws.students)) {
+          ws.students.forEach((s: string) => uniqueStudents.add(s));
+        }
+      });
+      setStats(prev => ({ ...prev, students: uniqueStudents.size }));
+    }
+  }, [workspaces]);
+
   // Exam Form
   const [examTitle, setExamTitle] = useState('');
   const [examDesc, setExamDesc] = useState('');
@@ -1180,12 +1193,12 @@ const TeacherDashboard = () => {
       // Syllabi
       const syllabiSnap = await getDocs(query(collection(db, 'syllabi'), where('owner', '==', email)));
 
-      setStats({
-        students: studentsSnap.size,
+      setStats(prev => ({
+        ...prev,
         exams: examsSnap.size,
         pendingReviews: reviewsSnap.size,
         syllabi: syllabiSnap.size
-      });
+      }));
     } catch (error) {
       console.error('Error loading stats:', error);
     }
@@ -4048,12 +4061,12 @@ const TeacherDashboard = () => {
                 <Button className="bg-indigo-600 hover:bg-indigo-700 text-white flex-1 md:flex-none" onClick={handleSendAnnouncement}>
                   {editingAnnouncement ? (
                     <>
-                      <span className="hidden md:inline">Update Announcement (v2)</span>
+                      <span className="hidden md:inline">Update Announcement</span>
                       <span className="md:hidden">Update</span>
                     </>
                   ) : (
                     <>
-                      <span className="hidden md:inline">+ Create Announcement (v2)</span>
+                      <span className="hidden md:inline">+ Create Announcement</span>
                       <span className="md:hidden">+ Create</span>
                     </>
                   )}
