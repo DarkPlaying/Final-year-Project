@@ -1646,7 +1646,7 @@ const AdminDashboard = () => {
   );
 
   return (
-    <DashboardLayout sidebarItems={sidebarItems} title="Admin Dashboard" headerContent={headerContent}>
+    <DashboardLayout sidebarItems={sidebarItems} title="Admin Dashboard (v1.1)" headerContent={headerContent}>
       {/* OVERVIEW SECTION */}
       {activeSection === 'overview' && (
         <div className="space-y-6">
