@@ -1234,16 +1234,24 @@ const AdminDashboard = () => {
 
       // 4. Execute Deletions in Batches
       try {
+        const currentUserId = localStorage.getItem('userId');
+
+        // Filter out current user to avoid self-deletion and permission lockouts
+        const safeUsersToDelete = usersToDelete.filter(u => u.id !== currentUserId);
+
+        console.log(`Deleting ${submissionDocsToDelete.length} submissions, ${queryDocsToDelete.length} queries, ${safeUsersToDelete.length} users`);
+
         if (submissionDocsToDelete.length > 0) await deleteInBatches(submissionDocsToDelete);
         if (queryDocsToDelete.length > 0) await deleteInBatches(queryDocsToDelete);
         if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
 
-        if (usersToDelete.length > 0) {
-          await deleteInBatches(usersToDelete);
+        if (safeUsersToDelete.length > 0) {
+          await deleteInBatches(safeUsersToDelete);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('Error deleting some related data:', e);
-        toast.warning('Some related data could not be deleted');
+        // Show specific error to help debugging
+        toast.warning(`Delete Error: ${e.message || 'Unknown error'}`);
       }
 
       // 5. Delete Related Data (Attendance, Marks, Reports)
