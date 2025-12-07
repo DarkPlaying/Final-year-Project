@@ -56,7 +56,9 @@ import {
   Search,
   Database,
   CloudUpload,
-  Save
+  Save,
+  Lock,
+  ExternalLink
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 import { db } from '@/lib/firebase';
@@ -2665,6 +2667,46 @@ const AdminDashboard = () => {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* How to Get Gmail App Password */}
+          <Card className="bg-slate-800 border-amber-500/50 text-white">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-amber-400">
+                <Lock className="h-5 w-5" /> How to Get Your Gmail App Password
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-slate-300">
+                Follow these steps to generate the 16-digit "App password" you must paste into the field above.
+              </p>
+              <ol className="list-decimal pl-5 space-y-2 text-slate-400 text-sm">
+                <li>
+                  After 2-Step Verification is ON, open the App Passwords page directly.
+                </li>
+                <li>
+                  Sign in again if asked, choose an app and device (or select <strong>Other (Custom name)</strong> and type "EduPortal SMTP"), then click <strong>Generate</strong>.
+                </li>
+                <li>
+                  Google will show a 16-character app password. Copy it (without spaces) and paste it into the <strong>"App Password (16 chars)"</strong> field above.
+                </li>
+                <li>
+                  Keep this app password safe. If you change your main Google password later, you must return to this page and generate a new app password.
+                </li>
+              </ol>
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  className="bg-slate-900 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                  onClick={() => window.open('https://myaccount.google.com/apppasswords', '_blank')}
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" /> Go to App Passwords Page
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                For more details, see Google's official <a href="https://support.google.com/mail/answer/185833" target="_blank" rel="noreferrer" className="text-blue-400 underline">help article</a>.
+              </p>
             </CardContent>
           </Card>
         </div>
