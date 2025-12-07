@@ -107,7 +107,58 @@ notificationsRef.on('child_added', (userSnapshot) => {
 
 // Create a simple HTTP server to satisfy Render's port requirement
 const port = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
+import { getAuth } from 'firebase-admin/auth';
+
+// ... existing imports ...
+
+// Create a simple HTTP server
+const port = process.env.PORT || 3000;
+const server = http.createServer(async (req, res) => {
+    // Enable CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.end();
+        return;
+    }
+
+    if (req.method === 'POST' && req.url === '/delete-user') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                const { email } = JSON.parse(body);
+                if (!email) throw new Error('Email is required');
+
+                console.log(`[Auth] Attempting to delete user by email: ${email}`);
+                const userRecord = await getAuth().getUserByEmail(email);
+                await getAuth().deleteUser(userRecord.uid);
+
+                console.log(`[Auth] Successfully deleted user ${email} (${userRecord.uid})`);
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: true, message: 'User deleted from Auth' }));
+            } catch (error) {
+                console.error('[Auth] Error deleting user:', error);
+
+                // If user not found, strictly speaking it's a success for us (they are gone)
+                if (error.code === 'auth/user-not-found') {
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ success: true, message: 'User already deleted' }));
+                } else {
+                    res.statusCode = 500;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ success: false, error: error.message }));
+                }
+            }
+        });
+        return;
+    }
+
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/plain');
     res.end('Notification Service is Running\n');
