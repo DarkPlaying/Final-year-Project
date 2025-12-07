@@ -1232,64 +1232,70 @@ const AdminDashboard = () => {
         toast.error(`Error finding data: ${fatalError.message}`);
       }
 
-      // 4. Execute Deletions in Batches
+      // 4. Executing Deletions (Split for robustness)
+
+      // A. Submissions
       try {
-        const currentUserId = localStorage.getItem('userId');
-
-        // Filter out current user to avoid self-deletion and permission lockouts
-        const safeUsersToDelete = usersToDelete.filter(u => u.id !== currentUserId);
-
-        console.log(`Deleting ${submissionDocsToDelete.length} submissions, ${queryDocsToDelete.length} queries, ${safeUsersToDelete.length} users`);
-
-        if (submissionDocsToDelete.length > 0) await deleteInBatches(submissionDocsToDelete);
-        if (queryDocsToDelete.length > 0) await deleteInBatches(queryDocsToDelete);
-        if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
-
-        if (safeUsersToDelete.length > 0) {
-          await deleteInBatches(safeUsersToDelete);
+        if (submissionDocsToDelete.length > 0) {
+          console.log(`Deleting ${submissionDocsToDelete.length} submissions...`);
+          await deleteInBatches(submissionDocsToDelete);
         }
       } catch (e: any) {
-        console.warn('Error deleting some related data:', e);
-        // Show specific error to help debugging
-        toast.warning(`Delete Error: ${e.message || 'Unknown error'}`);
+        console.warn("Error deleting submissions:", e);
+        toast.warning(`Failed to delete submissions: ${e.message}`);
       }
+
+      // B. Queries
+      try {
+        if (queryDocsToDelete.length > 0) await deleteInBatches(queryDocsToDelete);
+      } catch (e) { console.warn("Error deleting queries:", e); }
+
+      // C. Workspace Content
+      try {
+        if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
+      } catch (e) { console.warn("Error deleting workspace content:", e); }
+
+      // D. Users
+      try {
+        const currentUserId = localStorage.getItem('userId');
+        const safeUsersToDelete = usersToDelete.filter(u => u.id !== currentUserId);
+        if (safeUsersToDelete.length > 0) await deleteInBatches(safeUsersToDelete);
+      } catch (e) { console.warn("Error deleting users:", e); }
 
       // 5. Delete Related Data (Attendance, Marks, Reports)
       try {
-        // 5a. Direct deletion by workspaceId
-        // Note: 'marks' usually don't have workspaceId, so we delete them via mark_batches
         const directCollections = ['attendance', 'mark_batches', 'unom_reports'];
         const batchIdsToDelete: string[] = [];
 
         for (const colName of directCollections) {
-          const q = query(collection(db, colName), where('workspaceId', '==', id));
-          const snap = await getDocs(q);
+          try {
+            const q = query(collection(db, colName), where('workspaceId', '==', id));
+            const snap = await getDocs(q);
 
-          if (!snap.empty) {
-            // Capture batch IDs to delete related marks later
-            if (colName === 'mark_batches') {
-              snap.forEach(d => batchIdsToDelete.push(d.id));
+            if (!snap.empty) {
+              if (colName === 'mark_batches') {
+                snap.forEach(d => batchIdsToDelete.push(d.id));
+              }
+              await deleteInBatches(snap.docs, db);
             }
-            await deleteInBatches(snap.docs, db);
-            console.log(`Deleted ${snap.size} docs from ${colName}`);
-          }
+          } catch (e) { console.warn(`Error clearing ${colName}`, e); }
         }
 
         // 5b. Delete Marks linked to deleted batches
         if (batchIdsToDelete.length > 0) {
-          // Firestore 'in' query limit is 10
           const chunks = [];
           for (let i = 0; i < batchIdsToDelete.length; i += 10) {
             chunks.push(batchIdsToDelete.slice(i, i + 10));
           }
 
           for (const chunk of chunks) {
-            const marksQ = query(collection(db, 'marks'), where('batchId', 'in', chunk));
-            const marksSnap = await getDocs(marksQ);
-            if (!marksSnap.empty) {
-              await deleteInBatches(marksSnap.docs, db);
-              console.log(`Deleted ${marksSnap.size} marks linked to deleted batches`);
-            }
+            try {
+              const marksQ = query(collection(db, 'marks'), where('batchId', 'in', chunk));
+              const marksSnap = await getDocs(marksQ);
+              if (!marksSnap.empty) {
+                await deleteInBatches(marksSnap.docs, db);
+              }
+            } catch (e) { console.warn("Error cleaning orphaned marks", e); }
           }
         }
       } catch (e) {
