@@ -105,14 +105,10 @@ notificationsRef.on('child_added', (userSnapshot) => {
     });
 });
 
-// Create a simple HTTP server to satisfy Render's port requirement
+// Create a simple HTTP server
 const port = process.env.PORT || 3000;
 import { getAuth } from 'firebase-admin/auth';
 
-// ... existing imports ...
-
-// Create a simple HTTP server
-const port = process.env.PORT || 3000;
 const server = http.createServer(async (req, res) => {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
