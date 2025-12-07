@@ -87,11 +87,16 @@ service cloud.firestore {
     // - Read: Teachers/Admins OR the student who owns the submission
     // - Create: Students
     // - Update: Teachers (grading) OR Student (resubmitting if allowed)
+    // Submissions:
+    // - Read: Teachers/Admins OR the student who owns the submission
+    // - Create: Students
+    // - Update: Teachers (grading) OR Student (resubmitting if allowed)
     match /submissions/{docId} {
       allow read: if isAdmin() || isTeacher() || (isAuthenticated() && resource.data.studentEmail == getUserData().email);
-      allow create: if isAuthenticated(); // Students create submissions
+      allow create: if isAuthenticated();
+      // Explicitly allow admins to delete, and teachers if needed
+      allow delete: if isAdmin() || isTeacher(); 
       allow update: if isAdmin() || isTeacher() || (isAuthenticated() && resource.data.studentEmail == getUserData().email);
-      allow delete: if isAdmin() || isTeacher();
     }
 
     // Queries:
