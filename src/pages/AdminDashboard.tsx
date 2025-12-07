@@ -1012,73 +1012,141 @@ const AdminDashboard = () => {
         const seenUserIds = new Set();
         const seenQueryIds = new Set();
         const seenSubmissionIds = new Set();
+        const foundUserEmails = new Set<string>();
 
-        // Find users by email
+        // Find users by email (using email_lower for case-insensitive match)
         if (userEmails.length > 0) {
           const emailChunks = [];
-          for (let i = 0; i < userEmails.length; i += 10) {
-            emailChunks.push(userEmails.slice(i, i + 10));
+          // Normalize emails to lowercase for matching against email_lower
+          const lowercasedEmails = userEmails.map(e => e.toLowerCase());
+
+          for (let i = 0; i < lowercasedEmails.length; i += 10) {
+            emailChunks.push(lowercasedEmails.slice(i, i + 10));
           }
 
+          // 2a. Fetch Users (Try-Catch per chunk/method to be robust)
           for (const chunk of emailChunks) {
-            const userQ = query(collection(db, 'users'), where('email', 'in', chunk));
-            const userSnap = await getDocs(userQ);
-            userSnap.forEach(d => {
-              if (!seenUserIds.has(d.id)) {
-                seenUserIds.add(d.id);
-                usersToDelete.push(d);
-              }
-            });
+            // Try by email_lower
+            try {
+              const userQ = query(collection(db, 'users'), where('email_lower', 'in', chunk));
+              const userSnap = await getDocs(userQ);
+              userSnap.forEach(d => {
+                if (!seenUserIds.has(d.id)) {
+                  seenUserIds.add(d.id);
+                  usersToDelete.push(d);
+                  const email = d.data().email;
+                  if (email) foundUserEmails.add(email);
+                }
+              });
+            } catch (e: any) {
+              console.warn("User fetch by email_lower failed (might be missing index or field)", e);
+            }
 
-            const queryQ = query(collection(db, 'queries'), where('userEmail', 'in', chunk));
-            const querySnap = await getDocs(queryQ);
-            querySnap.forEach(d => {
-              if (!seenQueryIds.has(d.id)) {
-                seenQueryIds.add(d.id);
-                queryDocsToDelete.push(d);
-              }
-            });
-
-
-            // Fetch submissions by studentEmail (robustness against deleted user docs)
-            const subEmailQ = query(collection(db, 'submissions'), where('studentEmail', 'in', chunk));
-            const subEmailSnap = await getDocs(subEmailQ);
-            subEmailSnap.forEach(d => {
-              if (!seenSubmissionIds.has(d.id)) {
-                seenSubmissionIds.add(d.id);
-                submissionDocsToDelete.push(d);
-              }
-            });
-
-            // 2.3 Fetch additional user-specific data (Announcements, Exams, Syllabi, Teacher Uploads)
-            const announcementsQ = query(collection(db, 'announcements'), where('teacherEmail', 'in', chunk));
-            const announcementsSnap = await getDocs(announcementsQ);
-            announcementsSnap.forEach(d => workspaceDocsToDelete.push(d));
-
-            const examsQ = query(collection(db, 'exams'), where('teacherEmail', 'in', chunk));
-            const examsSnap = await getDocs(examsQ);
-            examsSnap.forEach(d => workspaceDocsToDelete.push(d));
-
-            const syllabiQ = query(collection(db, 'syllabi'), where('owner', 'in', chunk));
-            const syllabiSnap = await getDocs(syllabiQ);
-            syllabiSnap.forEach(d => workspaceDocsToDelete.push(d));
-
-            const uploadsQ = query(collection(db, 'teacher_uploads'), where('teacherEmail', 'in', chunk));
-            const uploadsSnap = await getDocs(uploadsQ);
-            uploadsSnap.forEach(d => workspaceDocsToDelete.push(d));
+            // Fallback: Query by 'email' field
+            try {
+              const userQDirect = query(collection(db, 'users'), where('email', 'in', chunk));
+              const userSnapDirect = await getDocs(userQDirect);
+              userSnapDirect.forEach(d => {
+                if (!seenUserIds.has(d.id)) {
+                  seenUserIds.add(d.id);
+                  usersToDelete.push(d);
+                  const email = d.data().email;
+                  if (email) foundUserEmails.add(email);
+                }
+              });
+            } catch (e: any) {
+              console.warn("User fetch by email failed", e);
+            }
           }
 
-          // 2.4 Explicitly delete settings/assignment_portal_{email} for each user
-          for (const email of userEmails) {
-            const settingDocRef = doc(db, 'settings', `assignment_portal_${email}`);
-            const settingDoc = await getDoc(settingDocRef);
-            if (settingDoc.exists()) {
-              workspaceDocsToDelete.push(settingDoc);
+          // 2b. Related Data by Email (Queries, Submissions, etc.)
+          for (const chunk of emailChunks) {
+            // Queries
+            try {
+              const queryQ = query(collection(db, 'queries'), where('userEmail', 'in', chunk));
+              const querySnap = await getDocs(queryQ);
+              querySnap.forEach(d => {
+                if (!seenQueryIds.has(d.id)) {
+                  seenQueryIds.add(d.id);
+                  queryDocsToDelete.push(d);
+                }
+              });
+            } catch (e) {
+              console.warn("Query fetch failed", e);
             }
+
+            // Submissions by studentEmail (using workspace list)
+            try {
+              const subEmailQ = query(collection(db, 'submissions'), where('studentEmail', 'in', chunk));
+              const subEmailSnap = await getDocs(subEmailQ);
+              subEmailSnap.forEach(d => {
+                if (!seenSubmissionIds.has(d.id)) {
+                  seenSubmissionIds.add(d.id);
+                  submissionDocsToDelete.push(d);
+                }
+              });
+            } catch (e) {
+              console.warn("Submission fetch by workspace email failed", e);
+            }
+
+            // Other user-specific data
+            try {
+              const announcementsQ = query(collection(db, 'announcements'), where('teacherEmail', 'in', chunk));
+              const announcementsSnap = await getDocs(announcementsQ);
+              announcementsSnap.forEach(d => workspaceDocsToDelete.push(d));
+
+              const examsQ = query(collection(db, 'exams'), where('teacherEmail', 'in', chunk));
+              const examsSnap = await getDocs(examsQ);
+              examsSnap.forEach(d => workspaceDocsToDelete.push(d));
+
+              const syllabiQ = query(collection(db, 'syllabi'), where('owner', 'in', chunk));
+              const syllabiSnap = await getDocs(syllabiQ);
+              syllabiSnap.forEach(d => workspaceDocsToDelete.push(d));
+
+              const uploadsQ = query(collection(db, 'teacher_uploads'), where('teacherEmail', 'in', chunk));
+              const uploadsSnap = await getDocs(uploadsQ);
+              uploadsSnap.forEach(d => workspaceDocsToDelete.push(d));
+            } catch (e) {
+              console.warn("Other related data fetch failed", e);
+            }
+          }
+
+          // 2c. Submissions by Found User Emails (Real emails from DB)
+          // Convert Set to Array
+          const foundEmailsArr = Array.from(foundUserEmails);
+          if (foundEmailsArr.length > 0) {
+            const foundChunks = [];
+            for (let i = 0; i < foundEmailsArr.length; i += 10) foundChunks.push(foundEmailsArr.slice(i, i + 10));
+
+            for (const fChunk of foundChunks) {
+              try {
+                const subFoundQ = query(collection(db, 'submissions'), where('studentEmail', 'in', fChunk));
+                const subFoundSnap = await getDocs(subFoundQ);
+                subFoundSnap.forEach(d => {
+                  if (!seenSubmissionIds.has(d.id)) {
+                    seenSubmissionIds.add(d.id);
+                    submissionDocsToDelete.push(d);
+                  }
+                });
+              } catch (e) {
+                console.warn("Submission fetch by found email failed", e);
+              }
+            }
+          }
+
+          // 2d. Explicitly delete settings for each user
+          for (const email of userEmails) {
+            try {
+              const settingDocRef = doc(db, 'settings', `assignment_portal_${email}`);
+              const settingDoc = await getDoc(settingDocRef);
+              if (settingDoc.exists()) {
+                workspaceDocsToDelete.push(settingDoc);
+              }
+            } catch (e) { }
           }
         }
 
-        // Find submissions by Student ID
+        // 3. Find submissions by Student ID (Robust check)
         const studentIds = usersToDelete
           .filter(d => d.data().role === 'student')
           .map(d => d.id);
@@ -1090,38 +1158,50 @@ const AdminDashboard = () => {
           }
 
           for (const chunk of idChunks) {
-            const subQ1 = query(collection(db, 'submissions'), where('studentId', 'in', chunk));
-            const subSnap1 = await getDocs(subQ1);
-            subSnap1.forEach(d => {
-              if (!seenSubmissionIds.has(d.id)) {
-                seenSubmissionIds.add(d.id);
-                submissionDocsToDelete.push(d);
-              }
-            });
+            try {
+              const subQ1 = query(collection(db, 'submissions'), where('studentId', 'in', chunk));
+              const subSnap1 = await getDocs(subQ1);
+              subSnap1.forEach(d => {
+                if (!seenSubmissionIds.has(d.id)) {
+                  seenSubmissionIds.add(d.id);
+                  submissionDocsToDelete.push(d);
+                }
+              });
+            } catch (e) {
+              console.warn("Submission fetch by ID failed (studentId)", e);
+            }
 
-            // Legacy field checking
-            const subQ2 = query(collection(db, 'submissions'), where('student_id', 'in', chunk));
-            const subSnap2 = await getDocs(subQ2);
-            subSnap2.forEach(d => {
-              if (!seenSubmissionIds.has(d.id)) {
-                seenSubmissionIds.add(d.id);
-                submissionDocsToDelete.push(d);
-              }
-            });
+            try {
+              // Legacy field checking
+              const subQ2 = query(collection(db, 'submissions'), where('student_id', 'in', chunk));
+              const subSnap2 = await getDocs(subQ2);
+              subSnap2.forEach(d => {
+                if (!seenSubmissionIds.has(d.id)) {
+                  seenSubmissionIds.add(d.id);
+                  submissionDocsToDelete.push(d);
+                }
+              });
+            } catch (e) {
+              console.warn("Submission fetch by ID failed (student_id)", e);
+            }
           }
         }
 
-        // Also try finding submissions by workspaceId directly
-        const subQWs = query(collection(db, 'submissions'), where('workspaceId', '==', id));
-        const subSnapWs = await getDocs(subQWs);
-        subSnapWs.forEach(d => {
-          if (!seenSubmissionIds.has(d.id)) {
-            seenSubmissionIds.add(d.id);
-            submissionDocsToDelete.push(d);
-          }
-        });
+        // 4. Also try finding submissions by workspaceId directly
+        try {
+          const subQWs = query(collection(db, 'submissions'), where('workspaceId', '==', id));
+          const subSnapWs = await getDocs(subQWs);
+          subSnapWs.forEach(d => {
+            if (!seenSubmissionIds.has(d.id)) {
+              seenSubmissionIds.add(d.id);
+              submissionDocsToDelete.push(d);
+            }
+          });
+        } catch (e) {
+          console.warn("Submission fetch by workspaceId failed", e);
+        }
 
-        // 3. Find Workspace-related collections
+        // 5. Find Workspace-related collections
         const collectionsToCheck = [
           'announcements',
           'exams',
@@ -1132,19 +1212,24 @@ const AdminDashboard = () => {
         ];
 
         for (const colName of collectionsToCheck) {
-          const q = query(collection(db, colName), where('workspaceId', '==', id));
-          const snap = await getDocs(q);
-          snap.forEach(d => {
-            // Avoid duplicates if already found by user email
-            if (!workspaceDocsToDelete.some(existing => existing.id === d.id)) {
-              workspaceDocsToDelete.push(d);
-            }
-          });
+          try {
+            const q = query(collection(db, colName), where('workspaceId', '==', id));
+            const snap = await getDocs(q);
+            snap.forEach(d => {
+              // Avoid duplicates if already found by user email
+              if (!workspaceDocsToDelete.some(existing => existing.id === d.id)) {
+                workspaceDocsToDelete.push(d);
+              }
+            });
+          } catch (e) {
+            console.warn(`Fetch ${colName} by workspaceId failed`, e);
+          }
         }
 
-      } catch (fetchError) {
-        console.warn('Error fetching related data:', fetchError);
-        toast.warning('Could not find all related data, but deleting workspace...');
+      } catch (fatalError: any) {
+        // This catch block is for any error OUTSIDE the individual fetch blocks (e.g. Set initialization)
+        console.error('Fatal error preparing delete data:', fatalError);
+        toast.error(`Error finding data: ${fatalError.message}`);
       }
 
       // 4. Execute Deletions in Batches
