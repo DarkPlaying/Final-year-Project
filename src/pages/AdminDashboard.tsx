@@ -721,7 +721,22 @@ const AdminDashboard = () => {
         }
       });
 
+
       await batch.commit();
+
+      // Try to delete from Firebase Auth via Notification Service (Backend)
+      try {
+        const notifServiceUrl = 'https://edu-online-notifications.onrender.com/delete-user';
+        await fetch(notifServiceUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: userEmail })
+        });
+        console.log('User deleted from Auth via service');
+      } catch (authErr) {
+        console.warn('Failed to delete user from Auth:', authErr);
+        toast.warning('User deleted from DB, but might remain in Auth (Password issues may occur on re-add)');
+      }
 
 
 
