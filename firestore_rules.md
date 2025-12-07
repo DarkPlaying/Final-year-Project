@@ -117,6 +117,31 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // --- New Features (Attendance, Marks, UNOM) ---
+    
+    // Attendance:
+    match /attendance/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
+    }
+
+    // Marks Management:
+    match /mark_batches/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
+    }
+    match /marks/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
+    }
+
+    // UNOM Reports:
+    match /unom_reports/{docId} {
+      allow read: if isAuthenticated();
+      // Teachers create, Students update (submit marks)
+      allow write: if isAuthenticated(); 
+    }
+
     // Archived Users:
     match /deleted_users/{docId} {
       allow read, write: if isAdmin();
