@@ -869,9 +869,56 @@ const AdminDashboard = () => {
           successCount++;
 
         } catch (err: any) {
-          console.error(`Failed to process user ${user.email}`, err);
-          errorCount++;
-          failedUsers.push(`${user.email}: ${err.message}`);
+          // Auto-fix for Password Mismatch: Delete from Auth and Retry
+          if (err.message && err.message.includes('password does not match')) {
+            try {
+              console.log(`Attempting auto-fix for ${user.email}: cleaning up Auth record...`);
+              const notifServiceUrl = 'https://edu-online-notifications.onrender.com/delete-user';
+              await fetch(notifServiceUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: user.email })
+              });
+
+              // Retry creation after cleanup
+              const hashedPassword = await hashPassword(user.password);
+              const result = await createUserInBothSystems({
+                email: user.email,
+                password: user.password,
+                role: user.role,
+                full_name: user.name,
+                department: user.department,
+                hashedPassword: hashedPassword
+              });
+
+              // Success on retry - Add to batch logic (Duplicate of success block above due to scoping)
+              if (activeWorkspaceId) {
+                const wsRef = doc(db, 'workspaces', activeWorkspaceId);
+                const field = user.role.toLowerCase() === 'teacher' ? 'teachers' : 'students';
+                const emailLower = user.email.toLowerCase();
+                workspaceBatch.update(wsRef, { [field]: arrayUnion(emailLower) });
+                workspaceBatch.update(doc(db, 'users', result.uid), {
+                  assignedWorkspaces: arrayUnion(activeWorkspaceId),
+                  uploadedViaCSV: true
+                });
+                hasWorkspaceUpdates = true;
+              } else {
+                workspaceBatch.update(doc(db, 'users', result.uid), { uploadedViaCSV: true });
+                hasWorkspaceUpdates = true;
+              }
+              uploadedUserIds.push({ id: result.uid, email: user.email, role: user.role });
+              successCount++;
+              console.log(`Auto-fix successful for ${user.email}`);
+              continue; // Move to next user
+            } catch (retryErr: any) {
+              console.error(`Auto-fix failed for ${user.email}`, retryErr);
+              failedUsers.push(`${user.email}: Retry failed - ${retryErr.message}`);
+            }
+          } else {
+            console.error(`Failed to process user ${user.email}`, err);
+            errorCount++;
+            failedUsers.push(`${user.email}: ${err.message}`);
+          }
         }
       }
 
