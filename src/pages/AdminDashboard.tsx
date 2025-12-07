@@ -1037,6 +1037,33 @@ const AdminDashboard = () => {
                 queryDocsToDelete.push(d);
               }
             });
+
+
+            // 2.3 Fetch additional user-specific data (Announcements, Exams, Syllabi, Teacher Uploads)
+            const announcementsQ = query(collection(db, 'announcements'), where('teacherEmail', 'in', chunk));
+            const announcementsSnap = await getDocs(announcementsQ);
+            announcementsSnap.forEach(d => workspaceDocsToDelete.push(d));
+
+            const examsQ = query(collection(db, 'exams'), where('teacherEmail', 'in', chunk));
+            const examsSnap = await getDocs(examsQ);
+            examsSnap.forEach(d => workspaceDocsToDelete.push(d));
+
+            const syllabiQ = query(collection(db, 'syllabi'), where('owner', 'in', chunk));
+            const syllabiSnap = await getDocs(syllabiQ);
+            syllabiSnap.forEach(d => workspaceDocsToDelete.push(d));
+
+            const uploadsQ = query(collection(db, 'teacher_uploads'), where('teacherEmail', 'in', chunk));
+            const uploadsSnap = await getDocs(uploadsQ);
+            uploadsSnap.forEach(d => workspaceDocsToDelete.push(d));
+          }
+
+          // 2.4 Explicitly delete settings/assignment_portal_{email} for each user
+          for (const email of userEmails) {
+            const settingDocRef = doc(db, 'settings', `assignment_portal_${email}`);
+            const settingDoc = await getDoc(settingDocRef);
+            if (settingDoc.exists()) {
+              workspaceDocsToDelete.push(settingDoc);
+            }
           }
         }
 
@@ -1096,7 +1123,12 @@ const AdminDashboard = () => {
         for (const colName of collectionsToCheck) {
           const q = query(collection(db, colName), where('workspaceId', '==', id));
           const snap = await getDocs(q);
-          snap.forEach(d => workspaceDocsToDelete.push(d));
+          snap.forEach(d => {
+            // Avoid duplicates if already found by user email
+            if (!workspaceDocsToDelete.some(existing => existing.id === d.id)) {
+              workspaceDocsToDelete.push(d);
+            }
+          });
         }
 
       } catch (fetchError) {
