@@ -1002,7 +1002,7 @@ const AdminDashboard = () => {
       const userEmails = Array.from(new Set([...(wsData.teachers || []), ...(wsData.students || [])]));
 
       // 2. Find Users and their related data (Queries, Submissions)
-      const usersToUpdate: any[] = [];
+      const userDocsToDelete: any[] = [];
       const queryDocsToDelete: any[] = [];
       const submissionDocsToDelete: any[] = [];
       const workspaceDocsToDelete: any[] = [];
@@ -1025,8 +1025,7 @@ const AdminDashboard = () => {
             userSnap.forEach(d => {
               if (!seenUserIds.has(d.id)) {
                 seenUserIds.add(d.id);
-                // Don't delete users, just update them
-                usersToUpdate.push(d);
+                userDocsToDelete.push(d);
               }
             });
 
@@ -1041,8 +1040,40 @@ const AdminDashboard = () => {
           }
         }
 
-        // 3. Find Workspace-related collections
-        // Only find submissions explicitly linked to this workspace
+        // Find submissions by Student ID
+        const studentIds = userDocsToDelete
+          .filter(d => d.data().role === 'student')
+          .map(d => d.id);
+
+        if (studentIds.length > 0) {
+          const idChunks = [];
+          for (let i = 0; i < studentIds.length; i += 10) {
+            idChunks.push(studentIds.slice(i, i + 10));
+          }
+
+          for (const chunk of idChunks) {
+            const subQ1 = query(collection(db, 'submissions'), where('studentId', 'in', chunk));
+            const subSnap1 = await getDocs(subQ1);
+            subSnap1.forEach(d => {
+              if (!seenSubmissionIds.has(d.id)) {
+                seenSubmissionIds.add(d.id);
+                submissionDocsToDelete.push(d);
+              }
+            });
+
+            // Legacy field checking
+            const subQ2 = query(collection(db, 'submissions'), where('student_id', 'in', chunk));
+            const subSnap2 = await getDocs(subQ2);
+            subSnap2.forEach(d => {
+              if (!seenSubmissionIds.has(d.id)) {
+                seenSubmissionIds.add(d.id);
+                submissionDocsToDelete.push(d);
+              }
+            });
+          }
+        }
+
+        // Also try finding submissions by workspaceId directly
         const subQWs = query(collection(db, 'submissions'), where('workspaceId', '==', id));
         const subSnapWs = await getDocs(subQWs);
         subSnapWs.forEach(d => {
@@ -1079,21 +1110,8 @@ const AdminDashboard = () => {
         if (queryDocsToDelete.length > 0) await deleteInBatches(queryDocsToDelete);
         if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
 
-        if (usersToUpdate.length > 0) {
-          // Update users to remove workspace ID instead of deleting them
-          const userChunks = [];
-          for (let i = 0; i < usersToUpdate.length; i += 400) {
-            userChunks.push(usersToUpdate.slice(i, i + 400));
-          }
-          for (const chunk of userChunks) {
-            const batch = writeBatch(db);
-            chunk.forEach((d: any) => {
-              batch.update(d.ref, {
-                assignedWorkspaces: arrayRemove(id)
-              });
-            });
-            await batch.commit();
-          }
+        if (userDocsToDelete.length > 0) {
+          await deleteInBatches(userDocsToDelete);
         }
       } catch (e) {
         console.warn('Error deleting some related data:', e);
