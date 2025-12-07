@@ -1002,7 +1002,8 @@ const AdminDashboard = () => {
       const userEmails = Array.from(new Set([...(wsData.teachers || []), ...(wsData.students || [])]));
 
       // 2. Find Users and their related data (Queries, Submissions)
-      const userDocsToDelete: any[] = [];
+      const studentsToDelete: any[] = [];
+      const teachersToUpdate: any[] = [];
       const queryDocsToDelete: any[] = [];
       const submissionDocsToDelete: any[] = [];
       const workspaceDocsToDelete: any[] = [];
@@ -1025,7 +1026,12 @@ const AdminDashboard = () => {
             userSnap.forEach(d => {
               if (!seenUserIds.has(d.id)) {
                 seenUserIds.add(d.id);
-                userDocsToDelete.push(d);
+                const role = d.data().role;
+                if (role === 'student') {
+                  studentsToDelete.push(d);
+                } else if (role === 'teacher' || role === 'admin') {
+                  teachersToUpdate.push(d);
+                }
               }
             });
 
@@ -1041,8 +1047,7 @@ const AdminDashboard = () => {
         }
 
         // Find submissions by Student ID
-        const studentIds = userDocsToDelete
-          .filter(d => d.data().role === 'student')
+        const studentIds = studentsToDelete
           .map(d => d.id);
 
         if (studentIds.length > 0) {
@@ -1110,8 +1115,24 @@ const AdminDashboard = () => {
         if (queryDocsToDelete.length > 0) await deleteInBatches(queryDocsToDelete);
         if (workspaceDocsToDelete.length > 0) await deleteInBatches(workspaceDocsToDelete);
 
-        if (userDocsToDelete.length > 0) {
-          await deleteInBatches(userDocsToDelete);
+        if (studentsToDelete.length > 0) {
+          await deleteInBatches(studentsToDelete);
+        }
+
+        if (teachersToUpdate.length > 0) {
+          const teacherChunks = [];
+          for (let i = 0; i < teachersToUpdate.length; i += 400) {
+            teacherChunks.push(teachersToUpdate.slice(i, i + 400));
+          }
+          for (const chunk of teacherChunks) {
+            const batch = writeBatch(db);
+            chunk.forEach((d: any) => {
+              batch.update(d.ref, {
+                assignedWorkspaces: arrayRemove(id)
+              });
+            });
+            await batch.commit();
+          }
         }
       } catch (e) {
         console.warn('Error deleting some related data:', e);
