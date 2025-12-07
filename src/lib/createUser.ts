@@ -62,8 +62,30 @@ export const createUserInBothSystems = async (params: CreateUserParams): Promise
                         mainUid = recoveredCred.user.uid;
                         console.log(`[createUser] Recovered UID via login: ${mainUid}`);
                     } catch (loginError) {
-                        console.error(`[createUser] Failed to recover user via login (Wrong password?):`, loginError);
-                        throw new Error(`AUTH_PASSWORD_MISMATCH: User ${email} already exists and password does not match.`);
+                        console.warn(`[createUser] Password mismatch for ${email}. Attempting auto-cleanup via service...`);
+
+                        // 3. Auto-fix: Call backend to delete the stale user from Auth
+                        try {
+                            const response = await fetch('https://edu-online-notifications.onrender.com/delete-user', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error(`Cleanup failed with status ${response.status}`);
+                            }
+
+                            console.log(`[createUser] Stale user deleted. Retrying creation...`);
+
+                            // 4. Retry Creation
+                            const retryCred = await createUserWithEmailAndPassword(mainAuth, email, password);
+                            mainUid = retryCred.user.uid;
+
+                        } catch (cleanupError: any) {
+                            console.error(`[createUser] Auto-fix failed:`, cleanupError);
+                            throw new Error(`AUTH_PASSWORD_MISMATCH: User ${email} exists, password differs, and auto-fix failed: ${cleanupError.message}`);
+                        }
                     }
                 }
             } else {
