@@ -98,7 +98,10 @@ export const DashboardLayout = ({ children, sidebarItems, title, headerContent }
             {sidebarItems.map((item, index) => (
               <button
                 key={index}
-                onClick={item.onClick}
+                onClick={() => {
+                  item.onClick();
+                  setSidebarOpen(false);
+                }}
                 className={`
                   w-full flex items-center gap-3 px-4 py-3 rounded-lg
                   transition-smooth text-left

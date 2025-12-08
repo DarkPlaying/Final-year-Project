@@ -6,6 +6,13 @@ createRoot(document.getElementById("root")!).render(<App />);
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+        // Validate config presence
+        const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+        if (!apiKey) {
+            console.error('Firebase Config Missing! Notifications will not work.');
+            return;
+        }
+
         // Pass config to SW via URL params
         const configParams = new URLSearchParams({
             apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,7 +23,7 @@ if ('serviceWorker' in navigator) {
             appId: import.meta.env.VITE_FIREBASE_APP_ID
         });
 
-        console.log('Registering SW with params:', configParams.toString());
+        console.log('Registering SW with params...');
 
         // Add timestamp to force update
         navigator.serviceWorker.register(`/firebase-messaging-sw.js?${configParams.toString()}&v=${Date.now()}`)
@@ -24,7 +31,7 @@ if ('serviceWorker' in navigator) {
                 console.log('ServiceWorker registration successful with scope: ', registration.scope);
             })
             .catch(err => {
-                console.log('ServiceWorker registration failed: ', err);
+                console.error('ServiceWorker registration failed: ', err);
             });
     });
 }
