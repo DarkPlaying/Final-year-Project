@@ -401,6 +401,8 @@ const StudentDashboard = () => {
     let unsubRTDB: any;
 
     // Load from cache first (instant UI on refresh)
+    // Load from cache first (instant UI on refresh)
+    const CACHE_TTL = 15; // 15 minutes
     const cachedExams = SessionCache.get(`exams_${userEmail}`);
     const cachedSyllabi = SessionCache.get(`syllabi_${userEmail}`);
     const cachedAnnouncements = SessionCache.get(`announcements_${userEmail}`);
@@ -409,19 +411,30 @@ const StudentDashboard = () => {
     if (cachedExams) {
       setExams(cachedExams);
       console.log('📦 Loaded exams from cache (0 reads)');
+    } else {
+      console.log('❌ Cache Miss: exams');
     }
+
     if (cachedSyllabi) {
       setSyllabi(cachedSyllabi);
       console.log('📦 Loaded syllabi from cache (0 reads)');
+    } else {
+      console.log('❌ Cache Miss: syllabi');
     }
+
     if (cachedAnnouncements) {
       setAnnouncements(cachedAnnouncements);
       console.log('📦 Loaded announcements from cache (0 reads)');
+    } else {
+      console.log('❌ Cache Miss: announcements');
     }
+
     if (cachedAssignments) {
       setAssignments(cachedAssignments);
       setMarks(cachedAssignments.filter((a: any) => a.status === 'graded'));
       console.log('📦 Loaded assignments from cache (0 reads)');
+    } else {
+      console.log('❌ Cache Miss: assignments');
     }
 
     // Exams Listener
@@ -430,7 +443,7 @@ const StudentDashboard = () => {
         const newExams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         newExams.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setExams(newExams);
-        SessionCache.set(`exams_${userEmail}`, newExams, 5);
+        SessionCache.set(`exams_${userEmail}`, newExams, CACHE_TTL);
 
         if (!isInitialLoad.current) {
           snap.docChanges().forEach(change => {
@@ -449,7 +462,7 @@ const StudentDashboard = () => {
         const newSyllabi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         newSyllabi.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setSyllabi(newSyllabi);
-        SessionCache.set(`syllabi_${userEmail}`, newSyllabi, 10);
+        SessionCache.set(`syllabi_${userEmail}`, newSyllabi, CACHE_TTL);
 
         if (!isInitialLoad.current) {
           snap.docChanges().forEach(change => {
@@ -468,7 +481,7 @@ const StudentDashboard = () => {
         const newAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         newAnnouncements.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setAnnouncements(newAnnouncements);
-        SessionCache.set(`announcements_${userEmail}`, newAnnouncements, 5);
+        SessionCache.set(`announcements_${userEmail}`, newAnnouncements, CACHE_TTL);
 
         if (!isInitialLoad.current) {
           snap.docChanges().forEach(change => {
@@ -488,7 +501,7 @@ const StudentDashboard = () => {
         newAssignments.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
         setAssignments(newAssignments);
         setMarks(newAssignments.filter((a: any) => a.status === 'graded'));
-        SessionCache.set(`assignments_${userEmail}`, newAssignments, 3);
+        SessionCache.set(`assignments_${userEmail}`, newAssignments, CACHE_TTL);
 
         if (!isInitialLoad.current) {
           snap.docChanges().forEach(change => {
