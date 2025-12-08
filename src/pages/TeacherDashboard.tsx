@@ -1387,12 +1387,15 @@ const TeacherDashboard = () => {
 
       // 1. Teachers array-contains
       const q1 = query(collection(db, 'workspaces'), where('teachers', 'array-contains', email));
+      console.log('🔥 [READ] Fetching workspaces (teacher)...');
       const s1 = await getDocs(q1);
+      console.log(`🔥 [READ] Fetched ${s1.size} workspaces (teacher)`);
       s1.forEach(d => wsMap.set(d.id, { id: d.id, ...d.data() }));
 
       // 2. Admin checks
       const q2 = query(collection(db, 'workspaces'), where('adminEmail', '==', email));
       const s2 = await getDocs(q2);
+      console.log(`🔥 [READ] Fetched ${s2.size} workspaces (admin)`);
       s2.forEach(d => wsMap.set(d.id, { id: d.id, ...d.data() }));
 
       setWorkspaces(Array.from(wsMap.values()));
@@ -1484,7 +1487,9 @@ const TeacherDashboard = () => {
       where('teacherEmail', 'in', [email, ''])
     );
 
+    console.log('🔥 [SUB] Subscribing to assignments...');
     return onSnapshot(q, (snap) => {
+      console.log(`🔥 [READ] Assignments update: ${snap.docs.length} docs (size: ${snap.size})`);
       let data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
       // Client-side Filter: Keep items newer than 60 days OR items with no timestamp (legacy)

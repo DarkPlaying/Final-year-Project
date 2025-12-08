@@ -813,7 +813,9 @@ const StudentDashboard = () => {
 
       // 1. Find workspaces where this student is a member
       const wsQ = query(collection(db, 'workspaces'), where('students', 'array-contains', email));
+      console.log('🔥 [READ] Fetching workspaces for student...');
       const wsSnap = await getDocs(wsQ);
+      console.log(`🔥 [READ] Fetched ${wsSnap.size} workspaces`);
 
       const teacherEmails = new Set<string>();
       const workspaceIds: string[] = [];
@@ -851,9 +853,11 @@ const StudentDashboard = () => {
         chunks.push(emailList.slice(i, i + 10));
       }
 
+      console.log(`🔥 [READ] Fetching ${emailList.length} teacher profiles in ${chunks.length} chunks...`);
       await Promise.all(chunks.map(async (chunk) => {
         const q = query(collection(db, 'users'), where('email', 'in', chunk));
         const snap = await getDocs(q);
+        console.log(`🔥 [READ] Fetched chunk of ${snap.size} teachers`);
         snap.forEach(d => uniqueTeachers.push({ id: d.id, ...d.data() }));
       }));
 
