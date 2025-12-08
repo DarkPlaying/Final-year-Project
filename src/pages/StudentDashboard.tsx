@@ -1869,6 +1869,11 @@ const StudentDashboard = () => {
     <DashboardLayout
       sidebarItems={sidebarItems}
       title="Student Dashboard"
+      user={{
+        name: userProfile?.name || userEmail.split('@')[0],
+        role: 'student',
+        email: userEmail
+      }}
       headerContent={
         <div className="flex items-center gap-4">
           {/* Search Bar */}
