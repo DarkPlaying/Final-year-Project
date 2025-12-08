@@ -651,6 +651,30 @@ const StudentDashboard = () => {
     }
   };
 
+  // Test notification function
+  const testNotification = () => {
+    if (Notification.permission === 'granted') {
+      // Test browser notification
+      const notif = new Notification('🔔 Test Notification', {
+        body: 'If you see this, notifications are working!',
+        icon: '/report.png',
+        badge: '/report.png'
+      });
+
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+      };
+
+      // Also show toast
+      toast.success("Test notification sent! Check your system notifications.");
+    } else if (Notification.permission === 'default') {
+      toast.error("Please enable notifications first by clicking the 'Enable Notifications' button.");
+    } else {
+      toast.error("Notifications are blocked. Please enable them in your browser settings.");
+    }
+  };
+
   // Real-time listener for foreground notifications (Toast only)
   useEffect(() => {
     if (!userId) return;
@@ -773,6 +797,20 @@ const StudentDashboard = () => {
 
   const loadTeachers = async (email: string) => {
     try {
+      // OPTIMIZATION: Check cache first (massive read reduction)
+      const cacheKey = `student_workspaces_teachers_${email}`;
+      const cached = SessionCache.get(cacheKey);
+
+      if (cached) {
+        console.log('📦 Loaded workspaces & teachers from cache (0 reads)', cached);
+        setMyWorkspaces(cached.workspaceIds);
+        setWorkspaceName(cached.workspaceName);
+        setWorkspaceCategory(cached.workspaceCategory);
+        setTeachers(cached.teachers);
+        setClassTeacherProfile(cached.classTeacherProfile);
+        return; // ✅ Saved 100+ reads!
+      }
+
       // 1. Find workspaces where this student is a member
       const wsQ = query(collection(db, 'workspaces'), where('students', 'array-contains', email));
       const wsSnap = await getDocs(wsQ);
@@ -806,11 +844,6 @@ const StudentDashboard = () => {
       }
 
       // 2. Fetch teacher details
-      // Firestore 'in' query supports max 10 items. If more, we need multiple queries or just store emails.
-      // For now, let's just store the emails as objects if we can't easily fetch all user docs.
-      // Or, fetch all teachers and filter in memory (if not too many users).
-      // Better: fetch all teachers and filter by the set.
-
       const emailList = Array.from(teacherEmails);
       const uniqueTeachers: any[] = [];
       const chunks = [];
@@ -827,17 +860,29 @@ const StudentDashboard = () => {
       setTeachers(uniqueTeachers);
 
       // Set Class Teacher Profile
+      let classTeacher = null;
       if (wsClassTeacherEmail) {
         const found = uniqueTeachers.find((t: any) => t.email === wsClassTeacherEmail);
         if (found) {
-          setClassTeacherProfile(found);
+          classTeacher = found;
         } else {
-          // If not found in teachers list (e.g. might be admin or not loaded), create basic profile
-          setClassTeacherProfile({ email: wsClassTeacherEmail, name: wsClassTeacherEmail });
+          classTeacher = { email: wsClassTeacherEmail, name: wsClassTeacherEmail };
         }
+        setClassTeacherProfile(classTeacher);
       } else {
         setClassTeacherProfile(null);
       }
+
+      // CACHE IT (15 min TTL - workspaces rarely change)
+      SessionCache.set(cacheKey, {
+        workspaceIds,
+        workspaceName: wsName || 'Unknown Batch',
+        workspaceCategory: wsCategory || 'General',
+        teachers: uniqueTeachers,
+        classTeacherProfile: classTeacher
+      }, 15);
+
+      console.log(`✅ Cached workspaces & teachers (${wsSnap.docs.length} workspaces, ${uniqueTeachers.length} teachers)`);
     } catch (error) {
       console.error("Error loading teachers:", error);
     }
@@ -1773,7 +1818,8 @@ const StudentDashboard = () => {
         studentEmail: userEmail,
         studentId: userId,
         status: 'pending',
-        submittedAt: serverTimestamp(),
+        createdAt: serverTimestamp(), // FIX: Changed from submittedAt to match teacher query
+        submittedAt: serverTimestamp(), // Keep for backward compatibility
         teacherEmail: selectedTeacher // Optional
       });
       toast.success('Assignment submitted');
@@ -2850,9 +2896,9 @@ const StudentDashboard = () => {
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDownloadDialog(false)} className="border-slate-600 hover:bg-slate-800 text-white">Cancel</Button>
-            <Button onClick={handleGenerateReport} className="bg-blue-600 hover:bg-blue-700 text-white">Generate PDF</Button>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowDownloadDialog(false)} className="w-full sm:w-auto border-slate-600 hover:bg-slate-800 text-white">Cancel</Button>
+            <Button onClick={handleGenerateReport} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">Generate PDF</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
