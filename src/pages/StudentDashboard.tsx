@@ -1695,6 +1695,23 @@ const StudentDashboard = () => {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return '-';
+    try {
+      if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+        return timestamp.toDate().toLocaleDateString();
+      }
+      if (timestamp.seconds) {
+        return new Date(timestamp.seconds * 1000).toLocaleDateString();
+      }
+      const d = new Date(timestamp);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString();
+      return '-';
+    } catch (e) {
+      return '-';
+    }
+  };
+
   const handleDetailsSubmit = async () => {
     // Validate all required fields
     for (const field of requiredFields) {
@@ -2050,7 +2067,7 @@ const StudentDashboard = () => {
                           <p className="text-xs text-slate-400 mt-1 line-clamp-2">{a.description}</p>
                           <div className="flex items-center gap-2 mt-2">
                             <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">
-                              {a.createdAt?.toDate ? a.createdAt.toDate().toLocaleDateString() : 'Just now'}
+                              {formatDate(a.createdAt)}
                             </span>
                             {a.link && <a href={a.link} target="_blank" rel="noreferrer" className="text-[10px] text-blue-400 hover:underline flex items-center gap-1"><LinkIcon className="h-3 w-3" /> Link</a>}
                           </div>
@@ -2129,7 +2146,7 @@ const StudentDashboard = () => {
                           <BookOpen className="h-6 w-6 text-blue-400" />
                         </div>
                         <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-1 rounded-full border border-slate-700">
-                          {s.createdAt?.toDate().toLocaleDateString()}
+                          {formatDate(s.createdAt)}
                         </span>
                       </div>
                       <CardTitle className="text-lg group-hover:text-blue-400 transition-colors">{s.name}</CardTitle>
@@ -2202,7 +2219,7 @@ const StudentDashboard = () => {
                           {e.type === 'assignment' ? <Upload className="h-6 w-6 text-purple-400" /> : <FileText className="h-6 w-6 text-purple-400" />}
                         </div>
                         <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-1 rounded-full border border-slate-700">
-                          {e.createdAt?.toDate().toLocaleDateString()}
+                          {formatDate(e.createdAt)}
                         </span>
                       </div>
                       <CardTitle className="text-lg group-hover:text-purple-400 transition-colors">{e.title}</CardTitle>
@@ -2373,7 +2390,7 @@ const StudentDashboard = () => {
                             .map(m => (
                               <TableRow key={m.id} className="border-slate-700 hover:bg-slate-800/50">
                                 <TableCell className="font-medium text-slate-200 text-xs md:text-sm p-2 md:p-4 max-w-[120px] md:max-w-none truncate">{m.assignmentTitle || m.title}</TableCell>
-                                <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4">{m.submittedAt?.toDate().toLocaleDateString()}</TableCell>
+                                <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4">{formatDate(m.submittedAt)}</TableCell>
                                 <TableCell className="text-green-400 font-bold text-xs md:text-sm p-2 md:p-4">{m.marks}</TableCell>
                                 <TableCell className="text-slate-400 capitalize text-xs md:text-sm p-2 md:p-4">{m.status}</TableCell>
                               </TableRow>
@@ -2434,7 +2451,7 @@ const StudentDashboard = () => {
                                 <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4 max-w-[100px] md:max-w-none truncate">{m.subject || '-'}</TableCell>
                                 <TableCell className="text-green-400 font-bold text-xs md:text-sm p-2 md:p-4">{m.marks}</TableCell>
                                 <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4">
-                                  {m.publishedAt?.toDate ? m.publishedAt.toDate().toLocaleDateString() : (m.publishedAt ? new Date(m.publishedAt).toLocaleDateString() : '-')}
+                                  {formatDate(m.publishedAt)}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -2490,7 +2507,7 @@ const StudentDashboard = () => {
                       <CardHeader>
                         <CardTitle className="text-lg">{report.title}</CardTitle>
                         <CardDescription className="text-slate-400">
-                          {report.subjects?.filter((s: string) => s).length || 0} Subjects • {report.createdAt?.toDate ? new Date(report.createdAt.toDate()).toLocaleDateString() : 'No Date'}
+                          {report.subjects?.filter((s: string) => s).length || 0} Subjects • {formatDate(report.createdAt)}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="pt-0">
@@ -2762,7 +2779,7 @@ const StudentDashboard = () => {
                               <span className="bg-blue-500/10 text-blue-400 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Notice</span>
                               <span className="text-slate-500 text-xs flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
-                                {a.createdAt?.toDate ? a.createdAt.toDate().toLocaleDateString() : 'Just now'}
+                                {formatDate(a.createdAt)}
                               </span>
                             </div>
                           </div>
