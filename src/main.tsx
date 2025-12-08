@@ -25,13 +25,21 @@ if ('serviceWorker' in navigator) {
 
         console.log('Registering SW with params...');
 
-        // Add timestamp to force update
-        navigator.serviceWorker.register(`/firebase-messaging-sw.js?${configParams.toString()}&v=${Date.now()}`)
-            .then(registration => {
-                console.log('ServiceWorker registration successful with scope: ', registration.scope);
-            })
-            .catch(err => {
-                console.error('ServiceWorker registration failed: ', err);
-            });
+        // Aggressively unregister old SWs to force update
+        navigator.serviceWorker.getRegistrations().then(function (registrations) {
+            for (let registration of registrations) {
+                registration.unregister();
+            }
+
+            // Register new one
+            // Add timestamp to force update
+            navigator.serviceWorker.register(`/firebase-messaging-sw.js?${configParams.toString()}&v=${Date.now()}`)
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch(err => {
+                    console.error('ServiceWorker registration failed: ', err);
+                });
+        });
     });
 }

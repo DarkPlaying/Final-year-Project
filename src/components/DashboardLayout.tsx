@@ -146,7 +146,7 @@ export const DashboardLayout = ({ children, sidebarItems, title, headerContent }
           <div className="mb-4 sm:mb-6">
             <h1 className="text-2xl sm:text-3xl font-bold">{title}</h1>
           </div>
-          <div className="animate-fade-in w-full min-h-full flex flex-col">{children}</div>
+          <div className="w-full min-h-full flex flex-col">{children}</div>
         </main>
 
         {/* Mobile overlay */}

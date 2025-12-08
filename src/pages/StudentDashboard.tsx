@@ -1680,7 +1680,13 @@ const StudentDashboard = () => {
     window.location.replace('/');
   };
 
-  if (!isAuthorized) return null;
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
