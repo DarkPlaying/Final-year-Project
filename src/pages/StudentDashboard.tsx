@@ -72,6 +72,7 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const ASSIGNMENT_DRIVE_FOLDER_ID = '1l7eC3pUZIdlzfp5wp1hfgWZjj_p-m2gc'; // User provided folder
 
 // Session-based cache helper (survives page refresh, clears on tab close)
+// Session-based cache helper (configured to use localStorage for better mobile persistence)
 const SessionCache = {
   set: (key: string, data: any, ttlMinutes: number = 5) => {
     try {
@@ -80,7 +81,7 @@ const SessionCache = {
         timestamp: Date.now(),
         ttl: ttlMinutes * 60 * 1000
       };
-      sessionStorage.setItem(`cache_${key}`, JSON.stringify(item));
+      localStorage.setItem(`cache_${key}`, JSON.stringify(item));
     } catch (e) {
       console.warn('SessionCache set failed:', e);
     }
@@ -88,7 +89,7 @@ const SessionCache = {
 
   get: (key: string) => {
     try {
-      const item = sessionStorage.getItem(`cache_${key}`);
+      const item = localStorage.getItem(`cache_${key}`);
       if (!item) return null;
 
       const parsed = JSON.parse(item);
@@ -96,7 +97,7 @@ const SessionCache = {
 
       // Return null if expired
       if (age > parsed.ttl) {
-        sessionStorage.removeItem(`cache_${key}`);
+        localStorage.removeItem(`cache_${key}`);
         return null;
       }
 
@@ -108,13 +109,13 @@ const SessionCache = {
   },
 
   clear: (key: string) => {
-    sessionStorage.removeItem(`cache_${key}`);
+    localStorage.removeItem(`cache_${key}`);
   },
 
   clearAll: () => {
-    Object.keys(sessionStorage).forEach(key => {
+    Object.keys(localStorage).forEach(key => {
       if (key.startsWith('cache_')) {
-        sessionStorage.removeItem(key);
+        localStorage.removeItem(key);
       }
     });
   }
@@ -389,8 +390,15 @@ const StudentDashboard = () => {
   }, [maintenanceMode]);
 
   // Real-time Listeners & Notifications
+  // Real-time Listeners & Notifications
   useEffect(() => {
     if (!userEmail) return;
+
+    let unsubExams: any;
+    let unsubSyllabi: any;
+    let unsubAnnouncements: any;
+    let unsubAssignments: any;
+    let unsubRTDB: any;
 
     // Load from cache first (instant UI on refresh)
     const cachedExams = SessionCache.get(`exams_${userEmail}`);
@@ -417,159 +425,109 @@ const StudentDashboard = () => {
     }
 
     // Exams Listener
-    const unsubExams = onSnapshot(query(collection(db, 'exams'), where('students', 'array-contains', userEmail)), (snap) => {
-      const newExams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      newExams.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setExams(newExams);
-      SessionCache.set(`exams_${userEmail}`, newExams, 5); // Cache for 5 minutes
+    if (!cachedExams) {
+      unsubExams = onSnapshot(query(collection(db, 'exams'), where('students', 'array-contains', userEmail)), (snap) => {
+        const newExams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        newExams.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setExams(newExams);
+        SessionCache.set(`exams_${userEmail}`, newExams, 5);
 
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const data = change.doc.data();
-            addNotification('exam', `New Exam: ${data.title}`);
-          }
-        });
-      }
-    }, (error) => {
-      console.error("Error fetching exams:", error);
-    });
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const data = change.doc.data();
+              addNotification('exam', `New Exam: ${data.title}`);
+            }
+          });
+        }
+      }, (error) => console.error("Error fetching exams:", error));
+    }
 
     // Syllabi Listener
-    const unsubSyllabi = onSnapshot(query(collection(db, 'syllabi'), where('students', 'array-contains', userEmail)), (snap) => {
-      const newSyllabi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      newSyllabi.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setSyllabi(newSyllabi);
-      SessionCache.set(`syllabi_${userEmail}`, newSyllabi, 10); // Cache for 10 minutes
+    if (!cachedSyllabi) {
+      unsubSyllabi = onSnapshot(query(collection(db, 'syllabi'), where('students', 'array-contains', userEmail)), (snap) => {
+        const newSyllabi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        newSyllabi.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setSyllabi(newSyllabi);
+        SessionCache.set(`syllabi_${userEmail}`, newSyllabi, 10);
 
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const data = change.doc.data();
-            addNotification('syllabus', `New Syllabus: ${data.name}`);
-          }
-        });
-      }
-    }, (error) => {
-      console.error("Error fetching syllabi:", error);
-    });
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const data = change.doc.data();
+              addNotification('syllabus', `New Syllabus: ${data.name}`);
+            }
+          });
+        }
+      }, (error) => console.error("Error fetching syllabi:", error));
+    }
 
     // Announcements Listener
-    const unsubAnnouncements = onSnapshot(query(collection(db, 'announcements'), where('students', 'array-contains', userEmail)), (snap) => {
-      const newAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      newAnnouncements.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setAnnouncements(newAnnouncements);
-      SessionCache.set(`announcements_${userEmail}`, newAnnouncements, 5); // Cache for 5 minutes
+    if (!cachedAnnouncements) {
+      unsubAnnouncements = onSnapshot(query(collection(db, 'announcements'), where('students', 'array-contains', userEmail)), (snap) => {
+        const newAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        newAnnouncements.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setAnnouncements(newAnnouncements);
+        SessionCache.set(`announcements_${userEmail}`, newAnnouncements, 5);
 
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const data = change.doc.data();
-            addNotification('announcement', `Announcement: ${data.title}`);
-          }
-        });
-      }
-    }, (error) => {
-      console.error("Error fetching announcements:", error);
-    });
-
-    // Assignments & Marks Listener
-    const unsubAssignments = onSnapshot(query(collection(db, 'submissions'), where('studentEmail', '==', userEmail)), (snap) => {
-      const newAssignments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      newAssignments.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
-      setAssignments(newAssignments);
-      setMarks(newAssignments.filter((a: any) => a.status === 'graded'));
-      SessionCache.set(`assignments_${userEmail}`, newAssignments, 3); // Cache for 3 minutes
-
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          const data = change.doc.data();
-          if (change.type === 'modified') {
-            if (data.status === 'graded') {
-              addNotification('marks', `Graded: ${data.assignmentTitle} (${data.marks} marks)`);
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const data = change.doc.data();
+              addNotification('announcement', `Announcement: ${data.title}`);
             }
-          }
-        });
-      }
-    });
+          });
+        }
+      }, (error) => console.error("Error fetching announcements:", error));
+    }
 
-    // Set initial load to false after a short delay to avoid spamming on refresh
-    setTimeout(() => {
-      isInitialLoad.current = false;
-    }, 2000);
+    // Assignments Listener
+    if (!cachedAssignments) {
+      unsubAssignments = onSnapshot(query(collection(db, 'submissions'), where('studentEmail', '==', userEmail)), (snap) => {
+        const newAssignments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        newAssignments.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+        setAssignments(newAssignments);
+        setMarks(newAssignments.filter((a: any) => a.status === 'graded'));
+        SessionCache.set(`assignments_${userEmail}`, newAssignments, 3);
 
-    // Realtime Notifications Listener
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            const data = change.doc.data();
+            if (change.type === 'modified') {
+              if (data.status === 'graded') {
+                addNotification('marks', `Graded: ${data.assignmentTitle} (${data.marks} marks)`);
+              }
+            }
+          });
+        }
+      }, (error) => console.error("Error fetching assignments:", error));
+    }
+
+    // RTDB - Legacy/Safety
     const notificationsRef = ref(database, 'notifications');
     const notificationsQuery = rtdbQuery(notificationsRef, limitToLast(1));
+    unsubRTDB = onChildAdded(notificationsQuery, () => { });
 
-    const unsubRTDB = onChildAdded(notificationsQuery, (snapshot) => {
-      // Legacy global notification listener - disabled to prevent duplicates with FCM
-      /*
-      const data = snapshot.val();
-      if (!data) return;
-
-      const now = Date.now();
-      // Check if notification is recent (last 30 seconds) to avoid spam on reload
-      // We use a loose check because serverTimestamp might be slightly different
-      // If timestamp is missing, assume it's new
-      const notifTime = data.timestamp ? (typeof data.timestamp === 'number' ? data.timestamp : now) : now;
-
-      if (now - notifTime < 30000) {
-        if ('Notification' in window) {
-          if (Notification.permission === 'granted') {
-            try {
-              new Notification(data.title || 'New Notification', {
-                body: data.message,
-                icon: '/favicon.ico'
-              });
-            } catch (e) {
-              console.error("Notification error:", e);
-            }
-          } else if (Notification.permission !== 'denied') {
-            Notification.requestPermission().then(permission => {
-              if (permission === 'granted') {
-                try {
-                  new Notification(data.title || 'New Notification', {
-                    body: data.message,
-                    icon: '/favicon.ico'
-                  });
-                } catch (e) {
-                  console.error("Notification error:", e);
-                }
-              }
-            });
-          }
-        }
-
-        addNotification(String(data.type || 'info'), String(data.message || ''));
-      }
-      */
-    });
+    setTimeout(() => { isInitialLoad.current = false; }, 2000);
 
     return () => {
-      unsubExams();
-      unsubSyllabi();
-      unsubAnnouncements();
-      unsubAssignments();
-      unsubRTDB();
+      if (unsubExams) unsubExams();
+      if (unsubSyllabi) unsubSyllabi();
+      if (unsubAnnouncements) unsubAnnouncements();
+      if (unsubAssignments) unsubAssignments();
+      if (unsubRTDB) unsubRTDB();
     };
   }, [userEmail]);
 
-  // FCM Notification Setup
-  // FCM Notification Setup
-  // Notification Permission Check & Setup
+  // Permission Check
   useEffect(() => {
     const checkPermission = async () => {
-      // Update state with current permission
       setNotificationPermission(Notification.permission);
       setIsCheckingPermission(false);
-
       if (Notification.permission === 'granted' && userId) {
-        // Permission already granted, setup FCM
         setupFCM();
       }
     };
-
     checkPermission();
   }, [userId]);
 
@@ -577,7 +535,6 @@ const StudentDashboard = () => {
     try {
       const permission = await Notification.requestPermission();
       setNotificationPermission(permission);
-
       if (permission === 'granted' && userId) {
         setupFCM();
         toast.success("Notifications enabled!");
@@ -596,101 +553,63 @@ const StudentDashboard = () => {
         const token = await getToken(messaging, { vapidKey: VAPID_KEY });
         if (token && userId) {
           console.log("FCM Token:", token);
-          // Save to Firestore (Profile)
           await updateDoc(doc(db, 'users', userId), { fcmToken: token });
-          // Save to RTDB (For Fast Notification Access)
           await update(ref(database, `users/${userId}`), { fcmToken: token });
         }
 
-        // Foreground Notification Listener
         onMessage(messaging, (payload) => {
           console.log('Foreground Message received:', payload);
           const { title, body, icon, type } = payload.data || {};
-
-          // Show Toast
           toast(title || 'New Notification', {
             description: body,
             action: {
               label: 'View',
               onClick: () => {
-                if (type === 'exam' || type === 'assignment') setActiveSection('exams');
-                else if (type === 'marks') setActiveSection('marks');
-                else if (type === 'unom') setActiveSection('submitUnom');
-                else if (type === 'syllabus') setActiveSection('syllabus');
-                else if (type === 'announcement') setActiveSection('announcements');
-                else setActiveSection('notifications');
+                const map: any = { 'exam': 'exams', 'assignment': 'exams', 'marks': 'marks', 'unom': 'submitUnom', 'syllabus': 'syllabus', 'announcement': 'announcements' };
+                setActiveSection(map[type] || 'notifications');
               }
             }
           });
 
-          // Show browser notification only if tab is hidden or user prefers it
-          // Adding onclick handler to ensure navigation works
           if (Notification.permission === 'granted' && document.visibilityState !== 'visible') {
-            const notif = new Notification(title || 'New Notification', {
-              body: body,
-              icon: icon || '/report.png'
-            });
-
+            const notif = new Notification(title || 'New Notification', { body: body, icon: icon || '/report.png' });
             notif.onclick = (event) => {
               event.preventDefault();
               window.focus();
-              if (type === 'exam' || type === 'assignment') setActiveSection('exams');
-              else if (type === 'marks') setActiveSection('marks');
-              else if (type === 'unom') setActiveSection('submitUnom');
-              else if (type === 'syllabus') setActiveSection('syllabus');
-              else if (type === 'announcement') setActiveSection('announcements');
-              else setActiveSection('notifications');
+              const map: any = { 'exam': 'exams', 'assignment': 'exams', 'marks': 'marks', 'unom': 'submitUnom', 'syllabus': 'syllabus', 'announcement': 'announcements' };
+              setActiveSection(map[type] || 'notifications');
               notif.close();
             };
           }
         });
-
       } catch (err) {
         console.error("Error getting FCM token:", err);
       }
     }
   };
 
-  // Test notification function
   const testNotification = () => {
     if (Notification.permission === 'granted') {
-      // Test browser notification
-      const notif = new Notification('🔔 Test Notification', {
-        body: 'If you see this, notifications are working!',
-        icon: '/report.png',
-        badge: '/report.png'
-      });
-
-      notif.onclick = () => {
-        window.focus();
-        notif.close();
-      };
-
-      // Also show toast
-      toast.success("Test notification sent! Check your system notifications.");
-    } else if (Notification.permission === 'default') {
-      toast.error("Please enable notifications first by clicking the 'Enable Notifications' button.");
+      const notif = new Notification('🔔 Test Notification', { body: 'If you see this, notifications are working!', icon: '/report.png' });
+      notif.onclick = () => { window.focus(); notif.close(); };
+      toast.success("Test notification sent!");
     } else {
-      toast.error("Notifications are blocked. Please enable them in your browser settings.");
+      toast.error("Notifications are not enabled.");
     }
   };
 
   // Real-time listener for foreground notifications (Toast only)
   useEffect(() => {
     if (!userId) return;
-
-    const loadTime = Date.now(); // Capture time when component mounts
+    const loadTime = Date.now();
     const notifRef = ref(database, `notifications/${userId}`);
-
     const unsub = onChildAdded(notifRef, (snapshot) => {
       const data = snapshot.val();
-      // Only show notifications that arrive AFTER the page has loaded
       if (data && data.timestamp > loadTime) {
         toast.info(data.title, { description: data.body });
         addNotification('system', `${data.title}: ${data.body}`);
       }
     });
-
     return () => unsub();
   }, [userId]);
 
@@ -701,7 +620,6 @@ const StudentDashboard = () => {
     const q = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
     const unsub = onSnapshot(q, (snap) => {
       const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Sort by timestamp if available, otherwise by title
       newMarks.sort((a: any, b: any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
       setExamMarks(newMarks);
     });
@@ -1666,15 +1584,15 @@ const StudentDashboard = () => {
         toast.error('Google API not loaded yet. Please refresh the page.');
       }
     }
-    toast.loading("Refreshing dashboard...");
-    setTimeout(() => toast.dismiss(), 1000);
-    setTimeout(() => toast.success("Dashboard refreshed"), 1100);
   };
 
   const handleGlobalRefresh = () => {
     toast.loading("Refreshing dashboard...");
-    setTimeout(() => toast.dismiss(), 1000);
-    setTimeout(() => toast.success("Dashboard refreshed"), 1100);
+    SessionCache.clearAll();
+    setTimeout(() => {
+      toast.dismiss();
+      window.location.reload();
+    }, 500);
   };
 
   const uploadFileToDrive = async (file: File, folderId: string): Promise<string> => {

@@ -65,7 +65,7 @@ const SessionCache = {
         timestamp: Date.now(),
         ttl: ttlMinutes * 60 * 1000
       };
-      sessionStorage.setItem(`cache_${key}`, JSON.stringify(item));
+      localStorage.setItem(`cache_${key}`, JSON.stringify(item));
     } catch (e) {
       console.warn('SessionCache set failed:', e);
     }
@@ -73,7 +73,7 @@ const SessionCache = {
 
   get: (key: string) => {
     try {
-      const item = sessionStorage.getItem(`cache_${key}`);
+      const item = localStorage.getItem(`cache_${key}`);
       if (!item) return null;
 
       const parsed = JSON.parse(item);
@@ -81,7 +81,7 @@ const SessionCache = {
 
       // Return null if expired
       if (age > parsed.ttl) {
-        sessionStorage.removeItem(`cache_${key}`);
+        localStorage.removeItem(`cache_${key}`);
         return null;
       }
 
@@ -93,13 +93,13 @@ const SessionCache = {
   },
 
   clear: (key: string) => {
-    sessionStorage.removeItem(`cache_${key}`);
+    localStorage.removeItem(`cache_${key}`);
   },
 
   clearAll: () => {
-    Object.keys(sessionStorage).forEach(key => {
+    Object.keys(localStorage).forEach(key => {
       if (key.startsWith('cache_')) {
-        sessionStorage.removeItem(key);
+        localStorage.removeItem(key);
       }
     });
   }
@@ -492,12 +492,11 @@ const TeacherDashboard = () => {
   const handleGlobalRefresh = () => {
     if (userEmail) {
       toast.loading("Refreshing dashboard...");
-      loadDashboardData(userEmail);
-      loadWorkspaces(userEmail, userId);
-      // Re-triggering subscriptions isn't strictly necessary as they are real-time, 
-      // but we can simulate a refresh by just showing the toast or re-fetching static data.
-      setTimeout(() => toast.dismiss(), 1000);
-      setTimeout(() => toast.success("Dashboard refreshed"), 1100);
+      SessionCache.clearAll();
+      setTimeout(() => {
+        toast.dismiss();
+        window.location.reload();
+      }, 500);
     }
   };
 
@@ -1423,7 +1422,8 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`exams_${email}`);
     if (cached) {
       setExams(cached);
-      console.log('📦 Loaded exams from cache (0 reads)');
+      console.log('📦 Loaded exams from cache (0 reads) - Skipping subscription');
+      return () => { };
     }
 
     const q = query(collection(db, 'exams'), where('teacherEmail', '==', email));
@@ -1441,7 +1441,8 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`syllabi_${email}`);
     if (cached) {
       setSyllabi(cached);
-      console.log('📦 Loaded syllabi from cache (0 reads)');
+      console.log('📦 Loaded syllabi from cache (0 reads) - Skipping subscription');
+      return () => { };
     }
 
     const q = query(collection(db, 'syllabi'), where('owner', '==', email));
@@ -1456,6 +1457,13 @@ const TeacherDashboard = () => {
   };
 
   const subscribeQueries = (email: string) => {
+    const cached = SessionCache.get(`queries_${email}`);
+    if (cached) {
+      setQueries(cached);
+      console.log('📦 Loaded queries from cache (0 reads) - Skipping subscription');
+      return () => { };
+    }
+
     // OPTIMIZATION: Load only 5 most recent queries
     const q = query(collection(db, 'queries'), limit(5));
     return onSnapshot(q, (snap) => {
@@ -1472,7 +1480,8 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`assignments_${email}`);
     if (cached) {
       setAssignments(cached);
-      console.log('📦 Loaded assignments from cache (0 reads)');
+      console.log('📦 Loaded assignments from cache (0 reads) - Skipping subscription');
+      return () => { };
     }
 
     // OPTIMIZATION: Only fetch recent submissions (last 60 days) by default
@@ -1518,7 +1527,8 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`announcements_${email}`);
     if (cached) {
       setAnnouncements(cached);
-      console.log('📦 Loaded announcements from cache (0 reads)');
+      console.log('📦 Loaded announcements from cache (0 reads) - Skipping subscription');
+      return () => { };
     }
 
     const q = query(collection(db, 'announcements'), where('teacherEmail', '==', email));

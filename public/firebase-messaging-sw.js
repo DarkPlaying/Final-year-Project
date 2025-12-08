@@ -2,6 +2,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js'
 importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-compat.js');
 
 // Retrieve config params from the script URL
+console.log('SW Script URL:', self.location.href);
 const params = new URLSearchParams(self.location.search);
 const apiKey = params.get('apiKey');
 const authDomain = params.get('authDomain');

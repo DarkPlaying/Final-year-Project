@@ -16,7 +16,10 @@ if ('serviceWorker' in navigator) {
             appId: import.meta.env.VITE_FIREBASE_APP_ID
         });
 
-        navigator.serviceWorker.register(`/firebase-messaging-sw.js?${configParams.toString()}`)
+        console.log('Registering SW with params:', configParams.toString());
+
+        // Add timestamp to force update
+        navigator.serviceWorker.register(`/firebase-messaging-sw.js?${configParams.toString()}&v=${Date.now()}`)
             .then(registration => {
                 console.log('ServiceWorker registration successful with scope: ', registration.scope);
             })
