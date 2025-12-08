@@ -32,8 +32,9 @@ export const usePresence = () => {
                 // 2. When this device disconnects, remove ONLY this connection
                 onDisconnect(con).remove();
 
-                // 3. When this device disconnects, update the last_changed timestamp
+                // 3. When this device disconnects, update the last_changed timestamp and state
                 onDisconnect(lastChangedRef).set(serverTimestamp());
+                onDisconnect(ref(database, `/status/${user.id}/state`)).set('offline');
 
                 // 4. Set this device as connected with initial timestamps
                 set(con, {
@@ -69,6 +70,12 @@ export const usePresence = () => {
                 heartbeatRef.current = null;
             }
             if (connectionRef.current) {
+                // Update state to offline and last_changed timestamp on unmount
+                const updates: any = {};
+                updates[`/status/${user.id}/state`] = 'offline';
+                updates[`/status/${user.id}/last_changed`] = serverTimestamp();
+
+                update(ref(database), updates).catch(console.error);
                 remove(connectionRef.current).catch((err) => console.error("Error removing connection on unmount:", err));
                 connectionRef.current = null;
             }
