@@ -22,6 +22,7 @@ interface DashboardLayoutProps {
   }[];
   headerContent?: React.ReactNode;
   title: string;
+  user?: { name: string; role: string; email?: string };
 }
 
 /**
@@ -29,11 +30,12 @@ interface DashboardLayoutProps {
  * Provides consistent layout for all dashboard pages with sidebar navigation
  * Features: responsive sidebar, user menu, logout functionality
  */
-export const DashboardLayout = ({ children, sidebarItems, title, headerContent }: DashboardLayoutProps) => {
+export const DashboardLayout = ({ children, sidebarItems, title, headerContent, user: propUser }: DashboardLayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const navigate = useNavigate();
-  const user = getCurrentUser();
+  const currentUser = getCurrentUser();
+  const user = propUser || currentUser;
 
   useEffect(() => {
     const handler = (e: any) => {

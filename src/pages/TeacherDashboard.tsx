@@ -142,6 +142,14 @@ const EXAM_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID;
 const SYLLABUS_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID; // Using same folder for now as per snippet
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
+const safeDate = (date: any): Date => {
+  if (!date) return new Date(0);
+  if (date.toDate) return date.toDate(); // Firestore Timestamp
+  if (typeof date.seconds === 'number') return new Date(date.seconds * 1000); // Serialized Timestamp
+  return new Date(date); // JS Date or string
+};
+
+
 const TeacherDashboard = () => {
   const [activeSection, setActiveSection] = useState('overview');
   const [userEmail, setUserEmail] = useState('');
@@ -690,13 +698,13 @@ const TeacherDashboard = () => {
         (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
 
       let matchesDate = true;
-      if (filterFrom && a.createdAt?.toDate) {
-        matchesDate = matchesDate && a.createdAt.toDate() >= filterFrom;
+      if (filterFrom && a.createdAt) {
+        matchesDate = matchesDate && safeDate(a.createdAt) >= filterFrom;
       }
-      if (filterTo && a.createdAt?.toDate) {
+      if (filterTo && a.createdAt) {
         const endDate = new Date(filterTo);
         endDate.setDate(endDate.getDate() + 1);
-        matchesDate = matchesDate && a.createdAt.toDate() < endDate;
+        matchesDate = matchesDate && safeDate(a.createdAt) < endDate;
       }
 
       return matchesSearch && matchesDate;
@@ -1261,6 +1269,14 @@ const TeacherDashboard = () => {
   // --- Data Loading ---
   const loadDashboardData = async (email: string) => {
     try {
+      const cacheKey = `dashboardStats_${email}`;
+      const cached = SessionCache.get(cacheKey);
+      if (cached) {
+        setStats(cached);
+        console.log('📦 Loaded stats from cache');
+        return;
+      }
+
       // Exams
       const examsCount = await getCountFromServer(query(collection(db, 'exams'), where('teacherEmail', '==', email)));
 
@@ -1270,12 +1286,15 @@ const TeacherDashboard = () => {
       // Syllabi
       const syllabiCount = await getCountFromServer(query(collection(db, 'syllabi'), where('owner', '==', email)));
 
-      setStats(prev => ({
-        ...prev,
+      const newStats = {
+        students: stats.students, // Preserve student count as it's calc'd from workspaces
         exams: examsCount.data().count,
         pendingReviews: reviewsCount.data().count,
         syllabi: syllabiCount.data().count
-      }));
+      };
+
+      setStats(prev => ({ ...prev, ...newStats }));
+      SessionCache.set(cacheKey, newStats, 15); // Cache for 15 mins
     } catch (error) {
       console.error('Error loading stats:', error);
     }
@@ -1382,6 +1401,14 @@ const TeacherDashboard = () => {
 
   const loadWorkspaces = async (email: string, uid: string) => {
     try {
+      const cacheKey = `workspaces_${email}`;
+      const cached = SessionCache.get(cacheKey);
+      if (cached) {
+        setWorkspaces(cached);
+        console.log('📦 Loaded workspaces from cache');
+        return;
+      }
+
       const wsMap = new Map();
 
       // 1. Teachers array-contains
@@ -1397,7 +1424,9 @@ const TeacherDashboard = () => {
       console.log(`🔥 [READ] Fetched ${s2.size} workspaces (admin)`);
       s2.forEach(d => wsMap.set(d.id, { id: d.id, ...d.data() }));
 
-      setWorkspaces(Array.from(wsMap.values()));
+      const wsList = Array.from(wsMap.values());
+      setWorkspaces(wsList);
+      SessionCache.set(cacheKey, wsList, 30); // 30 min cache
     } catch (error) {
       console.error('Error loading workspaces:', error);
     }
@@ -1903,6 +1932,15 @@ const TeacherDashboard = () => {
 
   const handleFetchStudentMarks = async (studentEmail: string) => {
     try {
+      const cacheKey = `student_marks_${studentEmail}`;
+      const cached = SessionCache.get(cacheKey);
+      if (cached) {
+        setStudentMarksData(cached);
+        setSelectedStudentMarks({ email: studentEmail });
+        console.log('📦 Loaded marks from cache (0 reads)');
+        return;
+      }
+
       // Fetch assignments
       const submissionsQuery = query(
         collection(db, 'submissions'),
@@ -1925,6 +1963,7 @@ const TeacherDashboard = () => {
 
       setStudentMarksData(submissions);
       setSelectedStudentMarks({ email: studentEmail });
+      SessionCache.set(cacheKey, submissions, 15); // Cache for 15 mins
     } catch (error) {
       console.error(error);
       toast.error('Failed to fetch marks');
@@ -1935,6 +1974,35 @@ const TeacherDashboard = () => {
     if (!workspaceId || !date) return;
 
     try {
+      const cacheKey = `attendance_${workspaceId}_${date}`;
+      const cached = SessionCache.get(cacheKey);
+
+      const workspace = workspaces.find(w => w.id === workspaceId);
+      const allStudents = workspace?.students || [];
+
+      // Helper to update state
+      const updateState = (presentSet: Set<string>) => {
+        const list = allStudents.map((email: string) => ({
+          email,
+          status: presentSet.has(email) ? 'present' : 'absent'
+        }));
+
+        if (isViewMode) {
+          setViewAttendanceList(list);
+          if (presentSet.size === 0 && list.length === 0) toast.info('No attendance record found for this date');
+        } else {
+          setAttendanceList(list);
+        }
+      };
+
+      if (cached) {
+        console.log('📦 Loaded attendance from cache (0 reads)');
+        // Reconstruct Set from cached array of present emails
+        const presentSet = new Set<string>(cached);
+        updateState(presentSet);
+        return;
+      }
+
       // Check if attendance record exists
       // Fetch specific date record
       const q = query(
@@ -1947,41 +2015,24 @@ const TeacherDashboard = () => {
       // We expect 0 or 1 record
       const targetDoc = snap.empty ? null : snap.docs[0];
 
-      const workspace = workspaces.find(w => w.id === workspaceId);
-      const allStudents = workspace?.students || [];
-
       if (targetDoc) {
         // Record exists
         const data = targetDoc.data();
         const presentSet = new Set<string>();
+        const presentEmails: string[] = []; // for cache
         (data.presentStudents || []).forEach((s: any) => {
           const email = typeof s === 'string' ? s : s.email;
-          if (email) presentSet.add(email);
+          if (email) {
+            presentSet.add(email);
+            presentEmails.push(email);
+          }
         });
 
-        const list = allStudents.map((email: string) => ({
-          email,
-          status: presentSet.has(email) ? 'present' : 'absent'
-        }));
-
-        if (isViewMode) {
-          setViewAttendanceList(list);
-        } else {
-          setAttendanceList(list);
-        }
+        updateState(presentSet);
+        SessionCache.set(cacheKey, presentEmails, 15);
       } else {
-        // No record, default to all absent (or present)
-        const list = allStudents.map((email: string) => ({
-          email,
-          status: 'absent'
-        }));
-
-        if (isViewMode) {
-          setViewAttendanceList([]); // Or show "No record found"
-          toast.info('No attendance record found for this date');
-        } else {
-          setAttendanceList(list);
-        }
+        // No record
+        updateState(new Set());
       }
     } catch (error: any) {
       console.error("Attendance fetch error:", error);
@@ -2487,14 +2538,13 @@ const TeacherDashboard = () => {
         limit(20)
       );
       const snap = await getDocs(q);
-      console.log(`Fetched ${snap.size} batches for ${userEmail}`);
 
       const batches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       // Sort in memory
       batches.sort((a: any, b: any) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
-        return dateB - dateA;
+        const dateA = safeDate(a.createdAt);
+        const dateB = safeDate(b.createdAt);
+        return dateB.getTime() - dateA.getTime();
       });
 
       setMarkBatches(batches);
@@ -2822,6 +2872,14 @@ const TeacherDashboard = () => {
         return;
       }
 
+      const cacheKey = `unomReports_teacher_${userEmail}`;
+      const cached = SessionCache.get(cacheKey);
+      if (cached) {
+        setUnomReports(cached);
+        console.log('📦 Loaded UNOM reports from cache');
+        return;
+      }
+
       const workspaceIds = workspaces.map(w => w.id);
       const allReports: any[] = [];
 
@@ -2846,15 +2904,16 @@ const TeacherDashboard = () => {
       const uniqueReports = Array.from(new Map(allReports.map(item => [item.id, item])).values());
 
       uniqueReports.sort((a: any, b: any) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
-        return dateB - dateA;
+        const dateA = safeDate(a.createdAt);
+        const dateB = safeDate(b.createdAt);
+        return dateB.getTime() - dateA.getTime();
       });
       setUnomReports(uniqueReports);
+      SessionCache.set(cacheKey, uniqueReports, 10);
     } catch (error) {
       console.error("Error fetching UNOM reports:", error);
     }
-  }, [workspaces]);
+  }, [workspaces, userEmail]);
 
   useEffect(() => {
     if (activeSection === 'unom' && workspaces.length > 0) {
@@ -3868,6 +3927,7 @@ const TeacherDashboard = () => {
     <DashboardLayout
       sidebarItems={sidebarItems}
       title="Teacher Dashboard"
+      user={{ name: userEmail.split('@')[0], role: 'teacher', email: userEmail }}
       headerContent={
         <div className="flex items-center gap-2 md:gap-4">
           <Button
@@ -4044,9 +4104,9 @@ const TeacherDashboard = () => {
                     <div className="space-y-4">
                       {assignments
                         .sort((a, b) => {
-                          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                          return dateB - dateA;
+                          const dateA = safeDate(a.createdAt);
+                          const dateB = safeDate(b.createdAt);
+                          return dateB.getTime() - dateA.getTime();
                         })
                         .slice(0, 3)
                         .map((assignment, i) => (
@@ -4087,9 +4147,9 @@ const TeacherDashboard = () => {
                     <div className="space-y-4">
                       {exams
                         .sort((a, b) => {
-                          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                          return dateB - dateA;
+                          const dateA = safeDate(a.createdAt);
+                          const dateB = safeDate(b.createdAt);
+                          return dateB.getTime() - dateA.getTime();
                         })
                         .slice(0, 3)
                         .map((exam, i) => (
@@ -4175,9 +4235,9 @@ const TeacherDashboard = () => {
                     <div className="space-y-4">
                       {announcements
                         .sort((a, b) => {
-                          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                          return dateB - dateA;
+                          const dateA = safeDate(a.createdAt);
+                          const dateB = safeDate(b.createdAt);
+                          return dateB.getTime() - dateA.getTime();
                         })
                         .slice(0, 3)
                         .map((ann, i) => (
@@ -4573,7 +4633,7 @@ const TeacherDashboard = () => {
                           <div>
                             <h4 className="font-medium text-white">{a.title}</h4>
                             <p className="text-sm text-slate-400">{a.description}</p>
-                            <p className="text-xs text-slate-500 mt-1">Sent: {a.createdAt?.toDate().toLocaleString()}</p>
+                            <p className="text-xs text-slate-500 mt-1">Sent: {safeDate(a.createdAt).toLocaleString()}</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -4754,7 +4814,7 @@ const TeacherDashboard = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {syllabi
                       .filter(s =>
-                        s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
+                        (s.name || '').toLowerCase().includes(syllabusSearch.toLowerCase()) &&
                         (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
                       )
                       .slice((syllabusPage - 1) * 9, syllabusPage * 9)
@@ -4767,7 +4827,7 @@ const TeacherDashboard = () => {
                                 <BookOpen className="h-6 w-6 text-green-400" />
                               </div>
                               <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-1 rounded-full border border-slate-700">
-                                {s.createdAt?.toDate().toLocaleDateString()}
+                                {safeDate(s.createdAt).toLocaleDateString()}
                               </span>
                             </div>
                             <CardTitle className="text-lg group-hover:text-green-400 transition-colors">{s.name}</CardTitle>
@@ -4871,7 +4931,7 @@ const TeacherDashboard = () => {
                       .map(q => (
                         <div key={q.id} className="p-4 bg-slate-900 rounded-lg border border-slate-700">
                           <div className="flex justify-between items-start mb-2">
-                            <span className="text-xs text-slate-500">{q.createdAt?.toDate().toLocaleString()}</span>
+                            <span className="text-xs text-slate-500">{safeDate(q.createdAt).toLocaleString()}</span>
                             <span className={`text-xs px-2 py-1 rounded-full ${q.status === 'solved' || q.status === 'answered' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
                               {q.status}
                             </span>
@@ -5266,12 +5326,12 @@ const TeacherDashboard = () => {
                         if (onlineSort === 'default') return 0;
 
                         const getLastActive = (email: string) => {
-                          const entry = Object.values(studentPresence).find((p: any) => p.email === email);
+                          const uid = studentIdMap.get(email);
+                          const entry = uid ? studentPresence[uid] : null;
                           if (!entry) return 0;
-                          if (entry.connections) {
-                            const times = Object.values(entry.connections).map((c: any) => c.lastActive || c.connectedAt || 0);
-                            return Math.max(...times, 0) || Date.now(); // If online, prioritize
-                          }
+
+                          // Handle new detailed presence structure if available, or fallback
+                          if (entry.state === 'online') return Date.now();
                           return entry.last_changed || 0;
                         };
 
@@ -5289,8 +5349,9 @@ const TeacherDashboard = () => {
                                 <UserCheck className="h-5 w-5" />
                               </div>
                               {(() => {
-                                const presenceEntry = Object.values(studentPresence).find((p: any) => p.email === email);
-                                const isOnline = presenceEntry?.connections && Object.keys(presenceEntry.connections).length > 0;
+                                const uid = studentIdMap.get(email);
+                                const presenceEntry = uid ? studentPresence[uid] : null;
+                                const isOnline = presenceEntry?.state === 'online' || (presenceEntry?.connections && Object.keys(presenceEntry.connections).length > 0);
                                 return (
                                   <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-slate-900 ${isOnline ? 'bg-green-500' : 'bg-slate-500'}`} title={isOnline ? 'Online' : 'Offline'} />
                                 );
@@ -5300,15 +5361,9 @@ const TeacherDashboard = () => {
                               <div className="flex items-center gap-2">
                                 <p className="font-medium text-white truncate">#{idx + 1} {studentMap.get(email) || email}</p>
                                 {(() => {
-                                  const presenceEntry = Object.values(studentPresence).find((p: any) => p.email === email);
-                                  const isOnline = presenceEntry?.connections
-                                    ? Object.values(presenceEntry.connections).some((c: any) => {
-                                      const now = Date.now();
-                                      if (c.lastActive) return now - c.lastActive < 120000;
-                                      if (c.connectedAt) return now - c.connectedAt < 3600000;
-                                      return false;
-                                    })
-                                    : false;
+                                  const uid = studentIdMap.get(email);
+                                  const presenceEntry = uid ? studentPresence[uid] : null;
+                                  const isOnline = presenceEntry?.state === 'online' || (presenceEntry?.connections && Object.keys(presenceEntry.connections).length > 0);
 
                                   if (!isOnline && typeof presenceEntry?.last_changed === 'number') {
                                     return (
@@ -6442,7 +6497,7 @@ const TeacherDashboard = () => {
                   <div key={idx} className="grid grid-cols-12 gap-4 p-3 border-b border-slate-800 hover:bg-slate-800/30 text-sm">
                     <div className="col-span-8 truncate text-white">{item.title}</div>
                     <div className="col-span-2 text-center text-slate-300">{item.marks}</div>
-                    <div className="col-span-2 text-right text-slate-500">{item.date?.toDate ? item.date.toDate().toLocaleDateString() : 'N/A'}</div>
+                    <div className="col-span-2 text-right text-slate-500">{safeDate(item.date).toLocaleDateString()}</div>
                   </div>
                 ))
               )}
