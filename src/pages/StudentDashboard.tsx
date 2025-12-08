@@ -320,18 +320,35 @@ const StudentDashboard = () => {
     });
 
     // Listen for Compulsory Update Announcements
-    const unsubCompulsoryAnnouncements = onSnapshot(query(collection(db, 'announcements'), where('students', 'array-contains', email), where('type', '==', 'compulsory_update_request')), (snap) => {
-      if (snap.empty) return;
+    // Check for Compulsory Update Announcements (Cached)
+    const checkCompulsory = async () => {
+      if (!email) return;
+      const CACHE_KEY = `compulsory_check_${email}`;
+      const cached = SessionCache.get(CACHE_KEY);
 
-      // Sort by createdAt desc to get the latest request
-      const announcements = snap.docs.map(d => d.data());
-      announcements.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      let announcements = [];
+      if (cached) {
+        announcements = cached;
+        console.log('📦 Loaded compulsory checks from cache (0 reads)');
+      } else {
+        const q = query(collection(db, 'announcements'), where('students', 'array-contains', email), where('type', '==', 'compulsory_update_request'));
+        const snap = await getDocs(q);
+        announcements = snap.docs.map(d => d.data());
+        SessionCache.set(CACHE_KEY, announcements, 15); // Cache for 15 mins
+      }
+
+      if (announcements.length === 0) return;
+
+      // Sort by createdAt desc
+      announcements.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
       const latestAnnouncement = announcements[0];
       if (latestAnnouncement) {
         checkCompulsoryUpdate(latestAnnouncement);
       }
-    });
+    };
+
+    checkCompulsory();
 
     const checkCompulsoryUpdate = async (announcementData: any) => {
       if (!uid) return;
@@ -363,7 +380,7 @@ const StudentDashboard = () => {
       clearInterval(timer);
       unsubMaintenance();
       unsubSession();
-      unsubCompulsoryAnnouncements();
+      // unsubCompulsoryAnnouncements removed (converted to one-time check)
     };
   }, []);
 
@@ -565,9 +582,15 @@ const StudentDashboard = () => {
       try {
         const token = await getToken(messaging, { vapidKey: VAPID_KEY });
         if (token && userId) {
-          console.log("FCM Token:", token);
-          await updateDoc(doc(db, 'users', userId), { fcmToken: token });
-          await update(ref(database, `users/${userId}`), { fcmToken: token });
+          const storedToken = localStorage.getItem('fcm_token');
+          if (token !== storedToken) {
+            console.log("FCM Token changed, updating DB...");
+            await updateDoc(doc(db, 'users', userId), { fcmToken: token });
+            await update(ref(database, `users/${userId}`), { fcmToken: token });
+            localStorage.setItem('fcm_token', token);
+          } else {
+            console.log("FCM Token unchanged, skipping DB write");
+          }
         }
 
         onMessage(messaging, (payload) => {
