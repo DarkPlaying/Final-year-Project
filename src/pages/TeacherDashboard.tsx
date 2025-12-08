@@ -1214,7 +1214,11 @@ const TeacherDashboard = () => {
       return;
     }
     try {
-      await remove(ref(database, `/status/${uid}/connections`));
+      await update(ref(database, `/status/${uid}`), {
+        connections: null,
+        state: 'offline',
+        last_changed: Date.now()
+      });
       toast.success("Presence reset");
     } catch (e) {
       console.error(e);
@@ -1247,6 +1251,8 @@ const TeacherDashboard = () => {
         if (uid) {
           // Set connections path to null to delete it
           updates[`/status/${uid}/connections`] = null;
+          updates[`/status/${uid}/state`] = 'offline';
+          updates[`/status/${uid}/last_changed`] = Date.now();
           count++;
         }
       });
@@ -5365,14 +5371,18 @@ const TeacherDashboard = () => {
                                   const presenceEntry = uid ? studentPresence[uid] : null;
                                   const isOnline = presenceEntry?.state === 'online' || (presenceEntry?.connections && Object.keys(presenceEntry.connections).length > 0);
 
-                                  if (!isOnline && typeof presenceEntry?.last_changed === 'number') {
+                                  if (isOnline) {
+                                    return <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded ml-1">Online</span>;
+                                  }
+
+                                  if (typeof presenceEntry?.last_changed === 'number') {
                                     return (
-                                      <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded-full border border-slate-700">
+                                      <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded-full border border-slate-700 ml-1">
                                         Last seen: {new Date(presenceEntry.last_changed).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                       </span>
                                     );
                                   }
-                                  return null;
+                                  return <span className="text-[10px] text-slate-600 ml-1">Offline</span>;
                                 })()}
                               </div>
                               <p className="text-xs text-slate-500 truncate">{email}</p>
