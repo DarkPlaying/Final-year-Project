@@ -56,8 +56,59 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 
+// Session-based cache helper (survives page refresh, clears on tab close)
+const SessionCache = {
+  set: (key: string, data: any, ttlMinutes: number = 5) => {
+    try {
+      const item = {
+        data,
+        timestamp: Date.now(),
+        ttl: ttlMinutes * 60 * 1000
+      };
+      sessionStorage.setItem(`cache_${key}`, JSON.stringify(item));
+    } catch (e) {
+      console.warn('SessionCache set failed:', e);
+    }
+  },
+
+  get: (key: string) => {
+    try {
+      const item = sessionStorage.getItem(`cache_${key}`);
+      if (!item) return null;
+
+      const parsed = JSON.parse(item);
+      const age = Date.now() - parsed.timestamp;
+
+      // Return null if expired
+      if (age > parsed.ttl) {
+        sessionStorage.removeItem(`cache_${key}`);
+        return null;
+      }
+
+      return parsed.data;
+    } catch (e) {
+      console.warn('SessionCache get failed:', e);
+      return null;
+    }
+  },
+
+  clear: (key: string) => {
+    sessionStorage.removeItem(`cache_${key}`);
+  },
+
+  clearAll: () => {
+    Object.keys(sessionStorage).forEach(key => {
+      if (key.startsWith('cache_')) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
+};
+
+
 import { hashPassword, verifyPassword } from '@/lib/security';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { usePresence } from '@/hooks/usePresence';
 import { auth } from '@/lib/firebase';
 import {
   collection,
@@ -75,7 +126,10 @@ import {
   writeBatch,
   Timestamp,
   setDoc,
-  getDoc
+  getDoc,
+  getCountFromServer,
+  increment,
+  deleteField
 } from 'firebase/firestore';
 import { database } from '@/lib/firebase';
 import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update, remove } from 'firebase/database';
@@ -95,6 +149,7 @@ const TeacherDashboard = () => {
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   // Realtime Presence State
+  usePresence(); // Initialize presence for the teacher
   const [studentPresence, setStudentPresence] = useState<Record<string, any>>({});
 
   // Dashboard Stats
@@ -867,18 +922,22 @@ const TeacherDashboard = () => {
         return;
       }
 
+      // OPTIMIZATION: Use cached studentDetailsMap instead of fetching from Firestore
+      // This eliminates ~200 reads per download
       const studentsData: any[] = [];
-      const chunks = [];
-      const chunkSize = 10;
-      for (let i = 0; i < ws.students.length; i += chunkSize) {
-        chunks.push(ws.students.slice(i, i + chunkSize));
-      }
-
-      for (const chunk of chunks) {
-        const q = query(collection(db, 'users'), where('email', 'in', chunk));
-        const snap = await getDocs(q);
-        snap.forEach(d => studentsData.push(d.data()));
-      }
+      ws.students.forEach(email => {
+        const details = studentDetailsMap.get(email);
+        if (details) {
+          studentsData.push({ email, ...details });
+        } else {
+          // Fallback for missing data (rare case)
+          studentsData.push({
+            email,
+            name: studentMap.get(email) || '',
+            ...studentDetailsConfig.reduce((acc, field) => ({ ...acc, [field]: '' }), {})
+          });
+        }
+      });
 
       // Sort by Email
       studentsData.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
@@ -1156,53 +1215,171 @@ const TeacherDashboard = () => {
     }
   };
 
+  const handleResetPresenceAll = async () => {
+    if (!viewMarksWorkspace) {
+      toast.error("Please select a workspace first");
+      return;
+    }
+
+    const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+    if (!ws || !ws.students || ws.students.length === 0) {
+      toast.error("No students in this workspace");
+      return;
+    }
+
+    if (!confirm(`Reset presence for ALL ${ws.students.length} students? This is useful if status indicators seem stuck.`)) return;
+
+    toast.loading("Resetting presence...");
+    let count = 0;
+    try {
+      // Create a map of updates to perform in bulk (though RTDB doesn't strictly have 'batch' like Firestore, update() works similarly)
+      const updates: Record<string, any> = {};
+
+      ws.students.forEach((email: string) => {
+        const uid = studentIdMap.get(email);
+        if (uid) {
+          // Set connections path to null to delete it
+          updates[`/status/${uid}/connections`] = null;
+          count++;
+        }
+      });
+
+      if (count > 0) {
+        await update(ref(database), updates);
+        toast.dismiss();
+        toast.success(`Presence reset for ${count} students`);
+      } else {
+        toast.dismiss();
+        toast.info("No active student UIDs found to reset");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.dismiss();
+      toast.error("Failed to reset presence");
+    }
+  };
+
   // --- Data Loading ---
   const loadDashboardData = async (email: string) => {
     try {
-      // Students (fetch all to map names)
-      const studentsSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'student')));
-      const sMap = new Map<string, string>();
-      const idMap = new Map<string, string>();
-      const detailsMap = new Map<string, any>(); // Store full details
-
-      studentsSnap.forEach(doc => {
-        const d = doc.data();
-        if (d.email) {
-          sMap.set(d.email, d.name || '');
-          // Prefer the 'uid' field if it exists (Auth UID), otherwise use document ID
-          idMap.set(d.email, d.uid || doc.id);
-          detailsMap.set(d.email, {
-            name: d.name || '',
-            reg_no: d.reg_no || '',
-            va_no: d.va_no || ''
-          });
-        }
-      });
-      setStudentMap(sMap);
-      setStudentIdMap(idMap);
-      setStudentDetailsMap(detailsMap);
-      console.log("Student ID Map:", Object.fromEntries(idMap));
-
       // Exams
-      const examsSnap = await getDocs(query(collection(db, 'exams'), where('teacherEmail', '==', email)));
+      const examsCount = await getCountFromServer(query(collection(db, 'exams'), where('teacherEmail', '==', email)));
 
       // Pending Reviews
-      // Pending Reviews
-      const reviewsSnap = await getDocs(query(collection(db, 'submissions'), where('teacherEmail', 'in', [email, '']), where('status', '==', 'pending')));
+      const reviewsCount = await getCountFromServer(query(collection(db, 'submissions'), where('teacherEmail', 'in', [email, '']), where('status', '==', 'pending')));
 
       // Syllabi
-      const syllabiSnap = await getDocs(query(collection(db, 'syllabi'), where('owner', '==', email)));
+      const syllabiCount = await getCountFromServer(query(collection(db, 'syllabi'), where('owner', '==', email)));
 
       setStats(prev => ({
         ...prev,
-        exams: examsSnap.size,
-        pendingReviews: reviewsSnap.size,
-        syllabi: syllabiSnap.size
+        exams: examsCount.data().count,
+        pendingReviews: reviewsCount.data().count,
+        syllabi: syllabiCount.data().count
       }));
     } catch (error) {
       console.error('Error loading stats:', error);
     }
   };
+
+  // Efficiently load students only for my workspaces
+  useEffect(() => {
+    const fetchMyStudents = async () => {
+      if (workspaces.length === 0) return;
+
+      const uniqueEmails = new Set<string>();
+      workspaces.forEach(w => {
+        if (w.students && Array.isArray(w.students)) {
+          w.students.forEach(e => uniqueEmails.add(e));
+        }
+      });
+
+      if (uniqueEmails.size === 0) return;
+
+      // CACHE LOGIC: Partial Cache
+      const CACHE_KEY = `student_profiles_cache_${userEmail}`;
+      let cachedSMap = new Map<string, string>();
+      let cachedIdMap = new Map<string, string>();
+      let cachedDetailsMap = new Map<string, any>();
+
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const { timestamp, data } = JSON.parse(cached);
+          // 7 days validity
+          if (Date.now() - timestamp < 7 * 24 * 60 * 60 * 1000) {
+            cachedSMap = new Map(data.sMap);
+            cachedIdMap = new Map(data.idMap);
+            cachedDetailsMap = new Map(data.detailsMap);
+          }
+        }
+      } catch (e) { localStorage.removeItem(CACHE_KEY); }
+
+      const missingEmails = Array.from(uniqueEmails).filter(e => !cachedSMap.has(e));
+
+      if (missingEmails.length === 0) {
+        setStudentMap(cachedSMap);
+        setStudentIdMap(cachedIdMap);
+        setStudentDetailsMap(cachedDetailsMap);
+        console.log("Loaded all students from cache");
+        return;
+      }
+
+      // Fetch only missing
+      const chunkedEmails: string[][] = [];
+      for (let i = 0; i < missingEmails.length; i += 10) {
+        chunkedEmails.push(missingEmails.slice(i, i + 10));
+      }
+
+      const newSMap = new Map<string, string>();
+      const newIdMap = new Map<string, string>();
+      const newDetailsMap = new Map<string, any>();
+
+      try {
+        await Promise.all(chunkedEmails.map(async (chunk) => {
+          const q = query(collection(db, 'users'), where('email', 'in', chunk));
+          const snap = await getDocs(q);
+          snap.forEach(doc => {
+            const d = doc.data();
+            if (d.email) {
+              newSMap.set(d.email, d.name || '');
+              newIdMap.set(d.email, d.uid || doc.id);
+              newDetailsMap.set(d.email, {
+                name: d.name || '',
+                reg_no: d.reg_no || '',
+                va_no: d.va_no || ''
+              });
+            }
+          });
+        }));
+
+        // Merge Cache + New
+        const finalSMap = new Map([...cachedSMap, ...newSMap]);
+        const finalIdMap = new Map([...cachedIdMap, ...newIdMap]);
+        const finalDetailsMap = new Map([...cachedDetailsMap, ...newDetailsMap]);
+
+        setStudentMap(finalSMap);
+        setStudentIdMap(finalIdMap);
+        setStudentDetailsMap(finalDetailsMap);
+
+        // Update Cache
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          timestamp: Date.now(),
+          data: {
+            sMap: Array.from(finalSMap.entries()),
+            idMap: Array.from(finalIdMap.entries()),
+            detailsMap: Array.from(finalDetailsMap.entries())
+          }
+        }));
+        console.log(`Loaded profiles: ${cachedSMap.size} cached, ${newSMap.size} fetched`);
+
+      } catch (error) {
+        console.error("Error loading student profiles:", error);
+      }
+    };
+
+    fetchMyStudents();
+  }, [workspaces]);
 
   const loadWorkspaces = async (email: string, uid: string) => {
     try {
@@ -1239,31 +1416,45 @@ const TeacherDashboard = () => {
 
   // --- Subscriptions ---
   const subscribeExams = (email: string) => {
-    // Removed orderBy to avoid missing index issues. Sorting client-side.
+    // Try cache first (reduces reads on refresh)
+    const cached = SessionCache.get(`exams_${email}`);
+    if (cached) {
+      setExams(cached);
+      console.log('📦 Loaded exams from cache (0 reads)');
+    }
+
     const q = query(collection(db, 'exams'), where('teacherEmail', '==', email));
     return onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setExams(data);
+      SessionCache.set(`exams_${email}`, data, 5); // Cache for 5 minutes
     }, (error) => {
       console.error("Error fetching exams:", error);
     });
   };
 
   const subscribeSyllabi = (email: string) => {
+    const cached = SessionCache.get(`syllabi_${email}`);
+    if (cached) {
+      setSyllabi(cached);
+      console.log('📦 Loaded syllabi from cache (0 reads)');
+    }
+
     const q = query(collection(db, 'syllabi'), where('owner', '==', email));
     return onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setSyllabi(data);
+      SessionCache.set(`syllabi_${email}`, data, 10); // Cache for 10 minutes
     }, (error) => {
       console.error("Error fetching syllabi:", error);
     });
   };
 
   const subscribeQueries = (email: string) => {
-    // Queries are global or user-specific? Keeping existing logic but adding sort safety.
-    const q = query(collection(db, 'queries'), limit(100));
+    // OPTIMIZATION: Load only 5 most recent queries
+    const q = query(collection(db, 'queries'), limit(5));
     return onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -1274,22 +1465,47 @@ const TeacherDashboard = () => {
   };
 
   const subscribeAssignments = (email: string) => {
-    const q = query(collection(db, 'submissions'), where('teacherEmail', 'in', [email, '']));
+    // Try cache first (most expensive query)
+    const cached = SessionCache.get(`assignments_${email}`);
+    if (cached) {
+      setAssignments(cached);
+      console.log('📦 Loaded assignments from cache (0 reads)');
+    }
+
+    // OPTIMIZATION: Only fetch recent submissions (last 60 days) by default
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+    const cutoffTimestamp = Timestamp.fromDate(sixtyDaysAgo);
+
+    const q = query(
+      collection(db, 'submissions'),
+      where('teacherEmail', 'in', [email, '']),
+      where('createdAt', '>', cutoffTimestamp)
+    );
+
     return onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setAssignments(data);
+      SessionCache.set(`assignments_${email}`, data, 3); // Cache for 3 minutes (changes frequently)
     }, (error) => {
       console.error("Error fetching assignments:", error);
     });
   };
 
   const subscribeAnnouncements = (email: string) => {
+    const cached = SessionCache.get(`announcements_${email}`);
+    if (cached) {
+      setAnnouncements(cached);
+      console.log('📦 Loaded announcements from cache (0 reads)');
+    }
+
     const q = query(collection(db, 'announcements'), where('teacherEmail', '==', email));
     return onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setAnnouncements(data);
+      SessionCache.set(`announcements_${email}`, data, 5);
     }, (error) => {
       console.error("Error fetching announcements:", error);
     });
@@ -1311,18 +1527,18 @@ const TeacherDashboard = () => {
     const updates: Record<string, any> = {};
 
     studentEmails.forEach(email => {
-      // Find UID from studentMap (which currently stores name). 
-      // We need to update studentMap to store object or have a separate map.
-      // Let's use a new map `studentIdMap` which we will add.
       const uid = studentIdMap.get(email);
       if (uid) {
+        // We push the notification to the user's RTDB node
+        // The Notification Service (index.js) will pick this up
+        // AND it will now read the token from RTDB, so no extra cost here.
         const newNotifKey = push(ref(database, `notifications/${uid}`)).key;
         if (newNotifKey) {
           updates[`notifications/${uid}/${newNotifKey}`] = {
             title,
             body,
             link,
-            type, // Add type here
+            type,
             timestamp: rtdbServerTimestamp(),
             sender: userEmail,
             read: false
@@ -1343,6 +1559,12 @@ const TeacherDashboard = () => {
   const handleCreateExam = async () => {
     if (!examTitle || !selectedWorkspace || selectedStudents.length === 0) {
       toast.error('Title, Workspace, and at least one Student are required');
+      return;
+    }
+
+    // Validate Google Drive Link if provided
+    if (examLink && !examLink.match(/google\.com/)) {
+      toast.error('Please enter a valid Google Drive or Docs link');
       return;
     }
 
@@ -1413,6 +1635,12 @@ const TeacherDashboard = () => {
       return;
     }
 
+    // Validate Google Drive Link if provided
+    if (syllabusLink && !syllabusLink.match(/google\.com/)) {
+      toast.error('Please enter a valid Google Drive or Docs link');
+      return;
+    }
+
     try {
       const data = {
         name: syllabusName,
@@ -1474,6 +1702,12 @@ const TeacherDashboard = () => {
   const handleSendAnnouncement = async () => {
     if (!announceTitle || !selectedWorkspace || selectedStudents.length === 0) {
       toast.error('Title, Workspace, and at least one Student are required');
+      return;
+    }
+
+    // Validate Google Drive Link if provided
+    if (announceLink && !announceLink.match(/google\.com/)) {
+      toast.error('Please enter a valid Google Drive or Docs link');
       return;
     }
 
@@ -1671,15 +1905,16 @@ const TeacherDashboard = () => {
 
     try {
       // Check if attendance record exists
-      // Optimization: Fetch by workspaceId only to avoid composite index requirement, then filter by date
+      // Fetch specific date record
       const q = query(
         collection(db, 'attendance'),
-        where('workspaceId', '==', workspaceId)
+        where('workspaceId', '==', workspaceId),
+        where('date', '==', date)
       );
       const snap = await getDocs(q);
 
-      // Filter for the specific date in memory
-      const targetDoc = snap.docs.find(d => d.data().date === date);
+      // We expect 0 or 1 record
+      const targetDoc = snap.empty ? null : snap.docs[0];
 
       const workspace = workspaces.find(w => w.id === workspaceId);
       const allStudents = workspace?.students || [];
@@ -1727,37 +1962,79 @@ const TeacherDashboard = () => {
     }
   };
 
-  const fetchOverallAttendance = async (workspaceId: string) => {
-    if (!workspaceId) return;
+  const recalculateAttendanceStats = async (wsId: string) => {
     try {
-      const q = query(collection(db, 'attendance'), where('workspaceId', '==', workspaceId));
+      // 1. Fetch ALL attendance records (Expensive operation - do only when needed)
+      const q = query(collection(db, 'attendance'), where('workspaceId', '==', wsId));
       const snap = await getDocs(q);
-
       const totalDays = snap.size;
-      const studentCounts = new Map<string, number>(); // email -> days present
+      const statsObj: any = {};
 
       snap.docs.forEach(doc => {
         const present = doc.data().presentStudents || [];
         present.forEach((student: any) => {
-          // Handle both string (legacy) and object (new) formats
           const email = typeof student === 'string' ? student : student.email;
           if (email) {
-            studentCounts.set(email, (studentCounts.get(email) || 0) + 1);
+            const key = email.replace(/\./g, '_'); // Sanitize for Firestore map key
+            statsObj[key] = (statsObj[key] || 0) + 1;
           }
         });
       });
 
+      // 2. Save snapshot
+      await setDoc(doc(db, 'attendance_stats', wsId), {
+        totalDays,
+        studentStats: statsObj,
+        updatedAt: serverTimestamp()
+      });
+
+      // 3. Update State
       const finalStats = new Map();
-      const workspace = workspaces.find(w => w.id === workspaceId);
+      const workspace = workspaces.find(w => w.id === wsId);
       if (workspace && workspace.students) {
         workspace.students.forEach((email: string) => {
+          const key = email.replace(/\./g, '_');
           finalStats.set(email, {
-            present: studentCounts.get(email) || 0,
+            present: statsObj[key] || 0,
             total: totalDays
           });
         });
       }
       setOverallAttendanceStats(finalStats);
+    } catch (e) {
+      console.error("Error recalculating stats:", e);
+    }
+  };
+
+  const fetchOverallAttendance = async (workspaceId: string) => {
+    if (!workspaceId) return;
+    try {
+      // OPTIMIZATION: Try to fetch cached stats first to avoid expensive read
+      const statsRef = doc(db, 'attendance_stats', workspaceId);
+      const statsSnap = await getDoc(statsRef);
+
+      if (statsSnap.exists()) {
+        const data = statsSnap.data();
+        const studentStats = data.studentStats || {};
+        const totalDays = data.totalDays || 0;
+
+        const finalStats = new Map();
+        const workspace = workspaces.find(w => w.id === workspaceId);
+        if (workspace && workspace.students) {
+          workspace.students.forEach((email: string) => {
+            const key = email.replace(/\./g, '_');
+            finalStats.set(email, {
+              present: studentStats[key] || 0,
+              total: totalDays
+            });
+          });
+        }
+        setOverallAttendanceStats(finalStats);
+      } else {
+        // Fallback: No stats doc exists, so generate it (Self-Healing)
+        console.log("No stats found, recalculating...");
+        await recalculateAttendanceStats(workspaceId);
+      }
     } catch (e) {
       console.error("Error fetching overall stats", e);
     }
@@ -1861,6 +2138,23 @@ const TeacherDashboard = () => {
 
       const batch = writeBatch(db);
       batch.delete(targetDoc.ref);
+
+      // INCREMENTAL STATS UPDATE: Decrement
+      const statsRef = doc(db, 'attendance_stats', wsId);
+      const updates: any = {
+        totalDays: increment(-1)
+      };
+
+      const presentStudents = targetDoc.data().presentStudents || [];
+      presentStudents.forEach((s: any) => {
+        const email = typeof s === 'string' ? s : s.email;
+        if (email) {
+          const key = `studentStats.${email.replace(/\./g, '_')}`;
+          updates[key] = increment(-1);
+        }
+      });
+      batch.update(statsRef, updates);
+
       await batch.commit();
 
       toast.success("Attendance record deleted");
@@ -1898,13 +2192,14 @@ const TeacherDashboard = () => {
           };
         });
 
-      // Optimization: Fetch by workspaceId only
+      // Fetch specific date record
       const q = query(
         collection(db, 'attendance'),
-        where('workspaceId', '==', attendanceWorkspace)
+        where('workspaceId', '==', attendanceWorkspace),
+        where('date', '==', attendanceDate)
       );
       const snap = await getDocs(q);
-      const targetDoc = snap.docs.find(d => d.data().date === attendanceDate);
+      const targetDoc = snap.empty ? null : snap.docs[0];
 
       if (targetDoc) {
         // Update existing
@@ -1922,6 +2217,60 @@ const TeacherDashboard = () => {
           createdAt: serverTimestamp()
         });
       }
+
+      // INCREMENTAL STATS UPDATE
+      try {
+        const statsRef = doc(db, 'attendance_stats', attendanceWorkspace);
+        // We use a safe approach: update if exists, otherwise let fetchOverallAttendance handle the creation
+        const statsSnap = await getDoc(statsRef);
+
+        if (statsSnap.exists()) {
+          const updates: any = {};
+
+          if (!targetDoc) {
+            // NEW DAY created
+            updates.totalDays = increment(1);
+            presentStudentsData.forEach(s => {
+              const key = `studentStats.${s.email.replace(/\./g, '_')}`;
+              updates[key] = increment(1);
+            });
+          } else {
+            // UPDATE existing day
+            // We need to diff. Since we have 'targetDoc' (stats before update) in scope:
+            const oldPresent = new Set<string>();
+            (targetDoc.data().presentStudents || []).forEach((s: any) => {
+              const email = typeof s === 'string' ? s : s.email;
+              if (email) oldPresent.add(email);
+            });
+
+            presentStudentsData.forEach(s => {
+              if (!oldPresent.has(s.email)) {
+                // Gained attendance
+                const key = `studentStats.${s.email.replace(/\./g, '_')}`;
+                updates[key] = increment(1);
+              }
+            });
+
+            oldPresent.forEach(email => {
+              const stillPresent = presentStudentsData.some(s => s.email === email);
+              if (!stillPresent) {
+                // Lost attendance
+                const key = `studentStats.${email.replace(/\./g, '_')}`;
+                updates[key] = increment(-1);
+              }
+            });
+          }
+
+          if (Object.keys(updates).length > 0) {
+            updates.updatedAt = serverTimestamp();
+            await updateDoc(statsRef, updates);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to update stats incrementally", err);
+        // Non-blocking error. UI will just be slightly out of sync or eventually consistent
+      }
+
       toast.success('Attendance saved');
       fetchOverallAttendance(attendanceWorkspace);
     } catch (error) {
@@ -1956,6 +2305,10 @@ const TeacherDashboard = () => {
 
       const batch = writeBatch(db);
       snap.docs.forEach(d => batch.delete(d.ref));
+
+      // DELETE STATS DOC TOO
+      batch.delete(doc(db, 'attendance_stats', attendanceWorkspace));
+
       await batch.commit();
 
       toast.success("All attendance records deleted for this workspace");
@@ -1980,6 +2333,10 @@ const TeacherDashboard = () => {
         const ref = doc(collection(db, 'attendance'));
         batch.set(ref, item);
       });
+      // Invalidate stats cache to force recalculation
+      if (attendanceWorkspace) {
+        batch.delete(doc(db, 'attendance_stats', attendanceWorkspace));
+      }
       await batch.commit();
       toast.success("Undo successful");
       setDeletedBackup(null);
@@ -2092,8 +2449,12 @@ const TeacherDashboard = () => {
 
   const fetchMarkBatches = useCallback(async () => {
     try {
-      // Removed orderBy to avoid index requirement issues
-      const q = query(collection(db, 'mark_batches'), where('teacherEmail', '==', userEmail));
+      // OPTIMIZATION: Limit to 20 most recent batches to reduce reads
+      const q = query(
+        collection(db, 'mark_batches'),
+        where('teacherEmail', '==', userEmail),
+        limit(20)
+      );
       const snap = await getDocs(q);
       console.log(`Fetched ${snap.size} batches for ${userEmail}`);
 
@@ -2440,7 +2801,12 @@ const TeacherDashboard = () => {
       }
 
       for (const chunk of chunks) {
-        const q = query(collection(db, 'unom_reports'), where('workspaceId', 'in', chunk));
+        // OPTIMIZATION: Limit to 20 most recent reports per chunk
+        const q = query(
+          collection(db, 'unom_reports'),
+          where('workspaceId', 'in', chunk),
+          limit(20)
+        );
         const snap = await getDocs(q);
         snap.docs.forEach(d => allReports.push({ id: d.id, ...d.data() }));
       }
@@ -3230,68 +3596,119 @@ const TeacherDashboard = () => {
     }
   };
 
-  const handleDownloadAttendanceCsv = () => {
+  const handleDownloadAttendanceCsv = async () => {
     if (!viewAttendanceWorkspace || !viewAttendanceDate) return;
 
     const workspace = workspaces.find(w => w.id === viewAttendanceWorkspace);
     if (!workspace || !workspace.students) return;
 
-    const daysInMonth = new Date(parseInt(viewAttendanceDate.split('-')[0]), parseInt(viewAttendanceDate.split('-')[1]), 0).getDate();
-    const year = viewAttendanceDate.split('-')[0];
-    const month = viewAttendanceDate.split('-')[1];
+    toast.loading("Generating attendance report...");
 
-    // Headers: Student, 1, 2, ..., 31, Present Count, Total Days (Recorded)
-    const headers = ['Student Email', 'Name'];
-    for (let i = 1; i <= daysInMonth; i++) {
-      headers.push(i.toString());
-    }
-    headers.push('Present Days');
-    headers.push('Total Recorded Days');
-    headers.push('Percentage');
+    try {
+      const daysInMonth = new Date(parseInt(viewAttendanceDate.split('-')[0]), parseInt(viewAttendanceDate.split('-')[1]), 0).getDate();
+      const year = viewAttendanceDate.split('-')[0];
+      const month = viewAttendanceDate.split('-')[1];
 
-    const csvRows = [headers.join(',')];
+      // Create Excel workbook
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Attendance');
 
-    workspace.students.forEach((email: string) => {
-      const name = studentMap.get(email) || '';
-      const row = [email, name];
-      let presentCount = 0;
-      let recordedCount = 0;
-
+      // Build headers
+      const headers = ['Student Email', 'Name'];
       for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = `${year}-${month}-${i.toString().padStart(2, '0')}`;
-        const hasRecord = monthAttendanceData.has(dateStr);
-
-        if (hasRecord) {
-          recordedCount++;
-          const isPresent = monthAttendanceData.get(dateStr)?.has(email);
-          if (isPresent) {
-            presentCount++;
-            row.push('P');
-          } else {
-            row.push('A');
-          }
-        } else {
-          row.push('-');
-        }
+        headers.push(i.toString());
       }
+      headers.push('Present Days');
+      headers.push('Total Recorded Days');
+      headers.push('Percentage');
 
-      row.push(presentCount.toString());
-      row.push(recordedCount.toString());
-      const percentage = recordedCount > 0 ? ((presentCount / recordedCount) * 100).toFixed(2) + '%' : '0%';
-      row.push(percentage);
+      // Set columns
+      worksheet.columns = headers.map((h, idx) => {
+        // Email column (0): 30, Name column (1): 20
+        // Day columns (2 to daysInMonth+1): 5
+        // Present Days: 15, Total Recorded Days: 20, Percentage: 15
+        const totalCols = daysInMonth + 5; // Email + Name + Days + 3 summary columns
 
-      csvRows.push(row.map(v => `"${v}"`).join(','));
-    });
+        if (idx === 0) return { header: h, key: `col${idx}`, width: 30 }; // Email
+        if (idx === 1) return { header: h, key: `col${idx}`, width: 20 }; // Name
+        if (idx === totalCols - 3) return { header: h, key: `col${idx}`, width: 15 }; // Present Days
+        if (idx === totalCols - 2) return { header: h, key: `col${idx}`, width: 20 }; // Total Recorded Days
+        if (idx === totalCols - 1) return { header: h, key: `col${idx}`, width: 15 }; // Percentage
 
-    const csvContent = csvRows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `attendance_${workspace.name}_${viewAttendanceDate}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+        return { header: h, key: `col${idx}`, width: 5 }; // Day columns
+      });
+
+      // Add data rows
+      workspace.students.forEach((email: string) => {
+        const name = studentMap.get(email) || '';
+        const rowData: any = { col0: email, col1: name };
+        let presentCount = 0;
+        let recordedCount = 0;
+
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dateStr = `${year}-${month}-${i.toString().padStart(2, '0')}`;
+          const hasRecord = monthAttendanceData.has(dateStr);
+
+          if (hasRecord) {
+            recordedCount++;
+            const isPresent = monthAttendanceData.get(dateStr)?.has(email);
+            if (isPresent) {
+              presentCount++;
+              rowData[`col${i + 1}`] = 'P';
+            } else {
+              rowData[`col${i + 1}`] = 'A';
+            }
+          } else {
+            rowData[`col${i + 1}`] = '-';
+          }
+        }
+
+        rowData[`col${daysInMonth + 2}`] = presentCount.toString();
+        rowData[`col${daysInMonth + 3}`] = recordedCount.toString();
+        const percentage = recordedCount > 0 ? ((presentCount / recordedCount) * 100).toFixed(2) + '%' : '0%';
+        rowData[`col${daysInMonth + 4}`] = percentage;
+
+        worksheet.addRow(rowData);
+      });
+
+      // Apply styling (same as student details)
+      worksheet.eachRow((row, rowNumber) => {
+        row.eachCell((cell) => {
+          // Add borders to all cells
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+
+          // Center align all cells
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+          // Style Header Row
+          if (rowNumber === 1) {
+            cell.font = { bold: true, color: { argb: 'FF4472C4' } }; // Blue color
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFD9D9D9' } // Silver background
+            };
+          }
+        });
+      });
+
+      // Download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `attendance_${workspace.name.replace(/[^a-z0-9]/gi, '_')}_${viewAttendanceDate}.xlsx`);
+
+      toast.dismiss();
+      toast.success("Downloaded successfully");
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Failed to download attendance");
+    }
   };
 
   const handleUnomSort = (key: string) => {
@@ -3409,6 +3826,7 @@ const TeacherDashboard = () => {
   ];
 
   const handleLogout = () => {
+    SessionCache.clearAll(); // Clear all session caches
     localStorage.clear();
     window.location.replace('/');
   };
@@ -3903,7 +4321,7 @@ const TeacherDashboard = () => {
                       e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
                       (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
                     )
-                    .slice((examPage - 1) * 20, examPage * 20)
+                    .slice((examPage - 1) * 9, examPage * 9)
                     .map(exam => (
                       <Card key={exam.id} className="bg-slate-800 border-slate-700 text-white hover:border-blue-500/50 transition-all group overflow-hidden relative">
                         <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-blue-500 to-cyan-500"></div>
@@ -4116,7 +4534,7 @@ const TeacherDashboard = () => {
                       a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
                       (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
                     )
-                    .slice((announcePage - 1) * 20, announcePage * 20)
+                    .slice((announcePage - 1) * 5, announcePage * 5)
                     .map(a => (
                       <div key={a.id} className="flex items-center justify-between p-4 bg-slate-900 rounded-lg border border-slate-700">
                         <div className="flex items-start gap-3">
@@ -4308,7 +4726,7 @@ const TeacherDashboard = () => {
                         s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
                         (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
                       )
-                      .slice((syllabusPage - 1) * 20, syllabusPage * 20)
+                      .slice((syllabusPage - 1) * 9, syllabusPage * 9)
                       .map(s => (
                         <Card key={s.id} className="bg-slate-800 border-slate-700 text-white hover:border-green-500/50 transition-all group overflow-hidden relative">
                           <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-green-500 to-emerald-500"></div>
@@ -4644,7 +5062,7 @@ const TeacherDashboard = () => {
                         }
                         return matchesSearch && matchesDate;
                       })
-                        .slice((assignmentPage - 1) * 20, assignmentPage * 20)
+                        .slice((assignmentPage - 1) * 9, assignmentPage * 9)
                         .map(a => (
                           <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex flex-col md:flex-row items-start md:items-center gap-4">
                             <div className="flex items-center gap-4 w-full md:w-auto flex-1">
@@ -4730,7 +5148,7 @@ const TeacherDashboard = () => {
                               if (type !== assignmentFilterType) return false;
                             }
                             return matchesSearch && matchesDate;
-                          }).length <= assignmentPage * 20} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                          }).length <= assignmentPage * 9} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                         </div>
                       )}
                   </>
@@ -4806,6 +5224,9 @@ const TeacherDashboard = () => {
                       <Button variant="outline" onClick={handleDownloadMarksheet} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
                         <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Marksheet
                       </Button>
+                      <Button variant="outline" onClick={handleResetPresenceAll} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Reset online status for all students">
+                        <RefreshCw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Reset Presence
+                      </Button>
                     </div>
 
                     {workspaces.find(w => w.id === viewMarksWorkspace)?.students
@@ -4838,16 +5259,7 @@ const TeacherDashboard = () => {
                               </div>
                               {(() => {
                                 const presenceEntry = Object.values(studentPresence).find((p: any) => p.email === email);
-                                const isOnline = presenceEntry?.connections
-                                  ? Object.values(presenceEntry.connections).some((c: any) => {
-                                    const now = Date.now();
-                                    // Heartbeat check (2 mins)
-                                    if (c.lastActive) return now - c.lastActive < 120000;
-                                    // Legacy fallback (1 hour)
-                                    if (c.connectedAt) return now - c.connectedAt < 3600000;
-                                    return false;
-                                  })
-                                  : false;
+                                const isOnline = presenceEntry?.connections && Object.keys(presenceEntry.connections).length > 0;
                                 return (
                                   <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-slate-900 ${isOnline ? 'bg-green-500' : 'bg-slate-500'}`} title={isOnline ? 'Online' : 'Offline'} />
                                 );

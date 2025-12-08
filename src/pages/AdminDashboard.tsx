@@ -84,13 +84,15 @@ import {
   limit,
   onSnapshot,
   setDoc,
-  getFirestore
+  getFirestore,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
+import { usePresence } from '@/hooks/usePresence';
 
 interface Profile {
   id: string;
@@ -138,6 +140,8 @@ const AdminDashboard = () => {
     { action: 'System Startup', time: new Date().toLocaleTimeString(), type: 'info' },
     { action: 'Dashboard Loaded', time: new Date().toLocaleTimeString(), type: 'success' }
   ]);
+
+  usePresence(); // Initialize presence for admin
 
   const logOperation = (action: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     const newOp = { action, time: new Date().toLocaleTimeString(), type };
@@ -512,38 +516,27 @@ const AdminDashboard = () => {
 
   const loadStats = async () => {
     try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const workspacesSnap = await getDocs(collection(db, 'workspaces'));
+      const usersRef = collection(db, 'users');
+      const workspacesRef = collection(db, 'workspaces');
 
-      let studentCount = 0;
-      let teacherCount = 0;
-      const growth: any = {};
-
-      usersSnap.forEach(doc => {
-        const data = doc.data();
-        if (data.role === 'student') studentCount++;
-        if (data.role === 'teacher') teacherCount++;
-
-        // Process growth data
-        if (data.createdAt) {
-          const date = data.createdAt.toDate().toISOString().split('T')[0];
-          growth[date] = (growth[date] || 0) + 1;
-        }
-      });
+      // Use efficient count queries
+      const [usersCount, studentsCount, teachersCount, workspacesCount] = await Promise.all([
+        getCountFromServer(usersRef),
+        getCountFromServer(query(usersRef, where('role', '==', 'student'))),
+        getCountFromServer(query(usersRef, where('role', '==', 'teacher'))),
+        getCountFromServer(workspacesRef)
+      ]);
 
       setStats({
-        users: usersSnap.size,
-        students: studentCount,
-        teachers: teacherCount,
-        workspaces: workspacesSnap.size
+        users: usersCount.data().count,
+        students: studentsCount.data().count,
+        teachers: teachersCount.data().count,
+        workspaces: workspacesCount.data().count
       });
 
-      // Format growth data for chart
-      const chartData = Object.keys(growth).sort().slice(-30).map(date => ({
-        date,
-        users: growth[date]
-      }));
-      setUserGrowthData(chartData);
+      // Growth chart data requires full read or a separate "stats" document. 
+      // Disabling full read for performance. Ideally, maintain a 'daily_stats' collection.
+      setUserGrowthData([]);
 
     } catch (error) {
       console.error('Error loading stats:', error);
