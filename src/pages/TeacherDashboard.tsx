@@ -1475,17 +1475,33 @@ const TeacherDashboard = () => {
     // OPTIMIZATION: Only fetch recent submissions (last 60 days) by default
     const sixtyDaysAgo = new Date();
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    const cutoffTimestamp = Timestamp.fromDate(sixtyDaysAgo);
+    // const cutoffTimestamp = Timestamp.fromDate(sixtyDaysAgo); // Removed for now to allow old items
 
+    // Query mostly by teacher email first.
+    // We remove the 'createdAt' filter to capture old items that only have 'submittedAt'
     const q = query(
       collection(db, 'submissions'),
-      where('teacherEmail', 'in', [email, '']),
-      where('createdAt', '>', cutoffTimestamp)
+      where('teacherEmail', 'in', [email, ''])
     );
 
     return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      let data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Client-side Filter: Keep items newer than 60 days OR items with no timestamp (legacy)
+      // Check both createdAt and submittedAt
+      data = data.filter((d: any) => {
+        const timestamp = d.createdAt || d.submittedAt;
+        if (!timestamp) return true; // Keep if no date found (safety)
+        return timestamp.seconds > (sixtyDaysAgo.getTime() / 1000);
+      });
+
+      // Sort by whatever date is available
+      data.sort((a: any, b: any) => {
+        const dateA = a.createdAt?.seconds || a.submittedAt?.seconds || 0;
+        const dateB = b.createdAt?.seconds || b.submittedAt?.seconds || 0;
+        return dateB - dateA;
+      });
+
       setAssignments(data);
       SessionCache.set(`assignments_${email}`, data, 3); // Cache for 3 minutes (changes frequently)
     }, (error) => {
