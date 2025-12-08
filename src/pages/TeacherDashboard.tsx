@@ -1505,6 +1505,7 @@ const TeacherDashboard = () => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setQueries(data);
+      SessionCache.set(`queries_${email}`, data, 5); // Cache for 5 minutes
     }, (error) => {
       console.error("Error fetching queries:", error);
     });
