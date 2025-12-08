@@ -456,7 +456,13 @@ const StudentDashboard = () => {
 
     // Exams Listener
     if (!cachedExams) {
-      unsubExams = onSnapshot(query(collection(db, 'exams'), where('students', 'array-contains', userEmail)), (snap) => {
+      // OPTIMIZATION: Limit to latest 20 exams
+      const latestExamsQuery = query(
+        collection(db, 'exams'),
+        where('students', 'array-contains', userEmail),
+        limit(20)
+      );
+      unsubExams = onSnapshot(latestExamsQuery, (snap) => {
         const newExams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         newExams.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setExams(newExams);
@@ -475,7 +481,13 @@ const StudentDashboard = () => {
 
     // Syllabi Listener
     if (!cachedSyllabi) {
-      unsubSyllabi = onSnapshot(query(collection(db, 'syllabi'), where('students', 'array-contains', userEmail)), (snap) => {
+      // OPTIMIZATION: Limit to latest 20 syllabi
+      const latestSyllabiQuery = query(
+        collection(db, 'syllabi'),
+        where('students', 'array-contains', userEmail),
+        limit(20)
+      );
+      unsubSyllabi = onSnapshot(latestSyllabiQuery, (snap) => {
         const newSyllabi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         newSyllabi.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setSyllabi(newSyllabi);
@@ -494,7 +506,13 @@ const StudentDashboard = () => {
 
     // Announcements Listener
     if (!cachedAnnouncements) {
-      unsubAnnouncements = onSnapshot(query(collection(db, 'announcements'), where('students', 'array-contains', userEmail)), (snap) => {
+      // OPTIMIZATION: Limit to latest 20 announcements
+      const latestAnnouncementsQuery = query(
+        collection(db, 'announcements'),
+        where('students', 'array-contains', userEmail),
+        limit(20)
+      );
+      unsubAnnouncements = onSnapshot(latestAnnouncementsQuery, (snap) => {
         const newAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         newAnnouncements.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setAnnouncements(newAnnouncements);
@@ -513,7 +531,13 @@ const StudentDashboard = () => {
 
     // Assignments Listener
     if (!cachedAssignments) {
-      unsubAssignments = onSnapshot(query(collection(db, 'submissions'), where('studentEmail', '==', userEmail)), (snap) => {
+      // OPTIMIZATION: Limit to latest 30 assignments
+      const latestAssignmentsQuery = query(
+        collection(db, 'submissions'),
+        where('studentEmail', '==', userEmail),
+        limit(30)
+      );
+      unsubAssignments = onSnapshot(latestAssignmentsQuery, (snap) => {
         const newAssignments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         newAssignments.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
         setAssignments(newAssignments);
