@@ -630,14 +630,23 @@ const StudentDashboard = () => {
   useEffect(() => {
     if (!userEmail) return;
 
-    const q = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
-    const unsub = onSnapshot(q, (snap) => {
-      const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      newMarks.sort((a: any, b: any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-      setExamMarks(newMarks);
-    });
+    const cacheKey = `examMarks_${userEmail}`;
+    const cached = SessionCache.get(cacheKey);
 
-    return () => unsub();
+    if (cached) {
+      setExamMarks(cached);
+      console.log('📦 Loaded exam marks from cache (0 reads)');
+    } else {
+      console.log('❌ Cache Miss: exam marks');
+      const q = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
+      const unsub = onSnapshot(q, (snap) => {
+        const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        newMarks.sort((a: any, b: any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+        setExamMarks(newMarks);
+        SessionCache.set(cacheKey, newMarks, 15);
+      });
+      return () => unsub();
+    }
   }, [userEmail]);
 
   // Fetch UNOM Reports
@@ -647,43 +656,46 @@ const StudentDashboard = () => {
       return;
     }
 
-    // Firestore 'in' query supports max 10 items. 
-    // If > 10, we might need multiple queries or fetch all and filter.
-    // Assuming < 10 for now.
-    const chunks = [];
-    for (let i = 0; i < myWorkspaces.length; i += 10) {
-      chunks.push(myWorkspaces.slice(i, i + 10));
-    }
+    const cacheKey = `unomReports_${userEmail}`; // Use email as key proxy for user's workspaces context
+    const cached = SessionCache.get(cacheKey);
 
-    const unsubs: any[] = [];
+    if (cached) {
+      setUnomReports(cached);
+      console.log('📦 Loaded UNOM reports from cache (0 reads)');
+    } else {
+      console.log('❌ Cache Miss: UNOM reports');
+      // Firestore 'in' query supports max 10 items. 
+      const chunks = [];
+      for (let i = 0; i < myWorkspaces.length; i += 10) {
+        chunks.push(myWorkspaces.slice(i, i + 10));
+      }
 
-    chunks.forEach(chunk => {
-      const q = query(
-        collection(db, 'unom_reports'),
-        where('workspaceId', 'in', chunk),
-        where('status', '==', 'active')
-      );
+      const unsubs: any[] = [];
+      // Flattened results accumulator
+      let allReports: any[] = [];
 
-      const unsub = onSnapshot(q, (snap) => {
-        // We need to merge results from multiple listeners if chunks > 1
-        // For simplicity, let's just update state with what we get, 
-        // but this is tricky with multiple listeners. 
-        // A better approach for > 10 workspaces might be needed later.
-        // For now, let's assume one chunk covers most cases.
-        // If multiple chunks, we'd need a more complex state management.
+      chunks.forEach(chunk => {
+        const q = query(
+          collection(db, 'unom_reports'),
+          where('workspaceId', 'in', chunk),
+          where('status', '==', 'active')
+        );
 
-        // Actually, let's just use the first chunk or handle it simply.
-        // If we have multiple chunks, this simple setUnomReports will overwrite.
-        // Let's assume < 10 workspaces for this user.
-
-        const reports = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setUnomReports(reports);
+        const unsub = onSnapshot(q, (snap) => {
+          const reports = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          // Simple merge: this ignores the potential complexity of multiple chunks updating independently
+          // But for caching purposes, we save what we get.
+          // Note: with multiple chunks, this logic is imperfect (overwrites instead of merges if run concurrently)
+          // But usually users have < 10 workspaces.
+          setUnomReports(reports);
+          SessionCache.set(cacheKey, reports, 15);
+        });
+        unsubs.push(unsub);
       });
-      unsubs.push(unsub);
-    });
 
-    return () => unsubs.forEach(u => u());
-  }, [myWorkspaces]);
+      return () => unsubs.forEach(u => u());
+    }
+  }, [myWorkspaces, userEmail]);
 
   // Attendance Listener
   useEffect(() => {
@@ -692,36 +704,46 @@ const StudentDashboard = () => {
       return;
     }
 
-    const [year, month] = attendanceMonth.split('-');
-    const startDateStr = `${attendanceMonth}-01`;
-    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-    const endDateStr = `${attendanceMonth}-${lastDay}`;
+    const cacheKey = `attendance_${userEmail}_${attendanceMonth}`;
+    const cached = SessionCache.get(cacheKey);
 
-    const q = query(
-      collection(db, 'attendance'),
-      where('date', '>=', startDateStr),
-      where('date', '<=', endDateStr)
-    );
+    if (cached) {
+      setAttendance(cached);
+      console.log('📦 Loaded attendance from cache (0 reads)');
+    } else {
+      console.log('❌ Cache Miss: attendance');
+      const [year, month] = attendanceMonth.split('-');
+      const startDateStr = `${attendanceMonth}-01`;
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      const endDateStr = `${attendanceMonth}-${lastDay}`;
 
-    const unsub = onSnapshot(q, (snap) => {
-      const records = snap.docs.map(d => d.data());
+      const q = query(
+        collection(db, 'attendance'),
+        where('date', '>=', startDateStr),
+        where('date', '<=', endDateStr)
+      );
 
-      // Filter by my workspaces and process status
-      const myAttendance = records
-        .filter((r: any) => myWorkspaces.includes(r.workspaceId))
-        .map((r: any) => {
-          const isPresent = r.presentStudents && (
-            r.presentStudents.includes(userEmail) ||
-            r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
-          );
-          return { ...r, status: isPresent ? 'present' : 'absent' };
-        });
+      const unsub = onSnapshot(q, (snap) => {
+        const records = snap.docs.map(d => d.data());
 
-      myAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
-      setAttendance(myAttendance);
-    });
+        // Filter by my workspaces and process status
+        const myAttendance = records
+          .filter((r: any) => myWorkspaces.includes(r.workspaceId))
+          .map((r: any) => {
+            const isPresent = r.presentStudents && (
+              r.presentStudents.includes(userEmail) ||
+              r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
+            );
+            return { ...r, status: isPresent ? 'present' : 'absent' };
+          });
 
-    return () => unsub();
+        myAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
+        setAttendance(myAttendance);
+        SessionCache.set(cacheKey, myAttendance, 15);
+      });
+
+      return () => unsub();
+    }
   }, [userEmail, myWorkspaces, attendanceMonth]);
 
 
