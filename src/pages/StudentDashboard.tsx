@@ -2306,7 +2306,7 @@ const StudentDashboard = () => {
             )}
             {syllabi.length === limitSyllabi && (
               <div className="flex justify-center mt-4">
-                <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitSyllabi(prev => prev + 5)}>
+                <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitSyllabi(prev => prev + 9)}>
                   Load More Syllabi ({limitSyllabi} currently loaded)
                 </Button>
               </div>
@@ -2391,7 +2391,7 @@ const StudentDashboard = () => {
             )}
             {exams.length === limitExams && (
               <div className="flex justify-center mt-4">
-                <Button variant="ghost" size="sm" className="text-purple-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitExams(prev => prev + 5)}>
+                <Button variant="ghost" size="sm" className="text-purple-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitExams(prev => prev + 9)}>
                   Load More Tests ({limitExams} currently loaded)
                 </Button>
               </div>

@@ -1776,7 +1776,15 @@ const TeacherDashboard = () => {
         toast.success('Syllabus updated');
         setEditingSyllabus(null);
       } else {
-        await addDoc(collection(db, 'syllabi'), data);
+        const docRef = await addDoc(collection(db, 'syllabi'), data);
+
+        setSyllabi(prev => {
+          const newSyllabus = { ...data, id: docRef.id, createdAt: Timestamp.now() };
+          const updated = [newSyllabus, ...prev];
+          return updated.slice(0, limitSyllabi);
+        });
+        setTotalSyllabi(prev => prev + 1);
+        setStats(prev => ({ ...prev, syllabus: (prev.syllabus || 0) + 1 }));
 
         // Notify
         await addDoc(collection(db, 'teacher_uploads'), {
@@ -1789,7 +1797,6 @@ const TeacherDashboard = () => {
           timestamp: serverTimestamp()
         });
 
-        // Send Push Notification
         // Send Push Notification
         await sendNotificationToStudents(selectedStudents, "New Syllabus", `New Syllabus Uploaded: ${syllabusName}`, syllabusLink, 'syllabus');
 
@@ -1849,7 +1856,15 @@ const TeacherDashboard = () => {
         setEditingAnnouncement(null);
         setAnnounceDueDate('');
       } else {
-        await addDoc(collection(db, 'announcements'), data);
+        const docRef = await addDoc(collection(db, 'announcements'), data);
+
+        setAnnouncements(prev => {
+          const newAnnounce = { ...data, id: docRef.id, createdAt: Timestamp.now() };
+          const updated = [newAnnounce, ...prev];
+          return updated.slice(0, limitAnnouncements);
+        });
+        setTotalAnnouncements(prev => prev + 1);
+        setStats(prev => ({ ...prev, announcements: (prev.announcements || 0) + 1 }));
 
         // Notify via teacher_uploads for student visibility
         await addDoc(collection(db, 'teacher_uploads'), {
