@@ -1702,7 +1702,7 @@ const TeacherDashboard = () => {
 
         // Send Push Notification
         const notifTitle = examType === 'assignment' ? "New Assignment" : "New Test";
-        const notifBody = `${notifTitle}: ${examTitle}`;
+        const notifBody = `${notifTitle}: ${examTitle}${examDueDate ? ` (Due: ${new Date(examDueDate).toLocaleDateString()})` : ''}`;
         await sendNotificationToStudents(selectedStudents, notifTitle, notifBody, examLink, examType);
 
         toast.success(`${examType === 'assignment' ? 'Assignment' : 'Test'} created`);
@@ -4202,11 +4202,12 @@ const TeacherDashboard = () => {
                                   const d = exam.startTime || exam.createdAt || exam.date;
                                   return d ? (d.toDate ? d.toDate().toLocaleDateString() : new Date(d).toLocaleDateString()) : 'N/A';
                                 })()}
-                                <span className="w-1 h-1 rounded-full bg-slate-600" />
-                                <Clock className="h-3 w-3" /> {(() => {
-                                  const d = exam.startTime || exam.createdAt || exam.date;
-                                  return d ? (d.toDate ? d.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : 'N/A';
-                                })()}
+                                {exam.dueDate && (
+                                  <>
+                                    <span className="w-1 h-1 rounded-full bg-slate-600" />
+                                    <span className="text-orange-400">Due: {new Date(exam.dueDate.seconds * 1000).toLocaleDateString()}</span>
+                                  </>
+                                )}
                               </div>
                             </div>
                             <div className={`px-2 py-1 rounded text-xs font-medium ${(() => {

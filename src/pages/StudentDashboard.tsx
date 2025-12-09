@@ -2226,6 +2226,7 @@ const StudentDashboard = () => {
                           <div>
                             <h4 className="font-medium text-white text-sm">{exam.title}</h4>
                             <p className="text-xs text-slate-400">{exam.description || 'No description'}</p>
+                            {exam.dueDate && <p className="text-[10px] text-orange-400 mt-1">Due: {new Date(exam.dueDate.seconds * 1000).toLocaleDateString()}</p>}
                           </div>
                           <Button size="sm" variant="outline" className="h-7 text-xs border-slate-600 hover:bg-slate-700" onClick={() => {
                             if (exam.driveLink) window.open(exam.driveLink, '_blank');
@@ -2362,6 +2363,11 @@ const StudentDashboard = () => {
                       </div>
                       <CardTitle className="text-lg group-hover:text-purple-400 transition-colors">{e.title}</CardTitle>
                       <CardDescription className="text-slate-400 line-clamp-2">{e.description}</CardDescription>
+                      {e.dueDate && (
+                        <div className="mt-2 text-xs text-orange-400">
+                          Due: {new Date(e.dueDate.seconds * 1000).toLocaleDateString()}
+                        </div>
+                      )}
                     </CardHeader>
                     <CardContent>
                       <div className="pt-4 mt-2 border-t border-slate-700/50 flex justify-end">
