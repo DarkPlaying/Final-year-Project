@@ -1686,7 +1686,15 @@ const TeacherDashboard = () => {
         setEditingExam(null);
         setExamDueDate('');
       } else {
-        await addDoc(collection(db, 'exams'), examData);
+        const docRef = await addDoc(collection(db, 'exams'), examData);
+
+        setExams(prev => {
+          const newExam = { ...examData, id: docRef.id, createdAt: Timestamp.now() };
+          const updated = [newExam, ...prev];
+          return updated.slice(0, limitExams);
+        });
+        setTotalExams(prev => prev + 1);
+        setStats(prev => ({ ...prev, exams: prev.exams + 1 }));
 
         // Notify via teacher_uploads
         await addDoc(collection(db, 'teacher_uploads'), {
