@@ -430,14 +430,9 @@ const StudentDashboard = () => {
     if (cached && cached.length >= limitExams) {
       setExams(cached.slice(0, limitExams));
       console.log(`📦 Loaded exams from cache (${limitExams}/${cached.length} items)`);
-      return;
+      console.log(`📦 Loaded exams from cache (${limitExams}/${cached.length} items)`);
+      // Fallthrough to fetch count
     }
-
-    const q = query(
-      collection(db, 'exams'),
-      where('students', 'array-contains', userEmail),
-      limit(limitExams)
-    );
 
     // Aggregation: Get Total Count
     const countQ = query(
@@ -445,6 +440,16 @@ const StudentDashboard = () => {
       where('students', 'array-contains', userEmail)
     );
     getCountFromServer(countQ).then(snap => setTotalExams(snap.data().count)).catch(console.error);
+
+    if (cached && cached.length >= limitExams) return;
+
+    const q = query(
+      collection(db, 'exams'),
+      where('students', 'array-contains', userEmail),
+      limit(limitExams)
+    );
+
+
 
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -470,14 +475,7 @@ const StudentDashboard = () => {
     const cached = SessionCache.get(`syllabi_${userEmail}`);
     if (cached && cached.length >= limitSyllabi) {
       setSyllabi(cached.slice(0, limitSyllabi));
-      return;
     }
-
-    const q = query(
-      collection(db, 'syllabi'),
-      where('students', 'array-contains', userEmail),
-      limit(limitSyllabi)
-    );
 
     // Aggregation: Get Total Count
     const countQ = query(
@@ -485,6 +483,16 @@ const StudentDashboard = () => {
       where('students', 'array-contains', userEmail)
     );
     getCountFromServer(countQ).then(snap => setTotalSyllabi(snap.data().count)).catch(console.error);
+
+    if (cached && cached.length >= limitSyllabi) return;
+
+    const q = query(
+      collection(db, 'syllabi'),
+      where('students', 'array-contains', userEmail),
+      limit(limitSyllabi)
+    );
+
+
 
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -510,14 +518,7 @@ const StudentDashboard = () => {
     const cached = SessionCache.get(`announcements_${userEmail}`);
     if (cached && cached.length >= limitAnnouncements) {
       setAnnouncements(cached.slice(0, limitAnnouncements));
-      return;
     }
-
-    const q = query(
-      collection(db, 'announcements'),
-      where('students', 'array-contains', userEmail),
-      limit(limitAnnouncements)
-    );
 
     // Aggregation: Get Total Count
     const countQ = query(
@@ -525,6 +526,16 @@ const StudentDashboard = () => {
       where('students', 'array-contains', userEmail)
     );
     getCountFromServer(countQ).then(snap => setTotalAnnouncements(snap.data().count)).catch(console.error);
+
+    if (cached && cached.length >= limitAnnouncements) return;
+
+    const q = query(
+      collection(db, 'announcements'),
+      where('students', 'array-contains', userEmail),
+      limit(limitAnnouncements)
+    );
+
+
 
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -553,14 +564,7 @@ const StudentDashboard = () => {
       const slice = cached.slice(0, limitAssignments);
       setAssignments(slice);
       setMarks(slice.filter((a: any) => a.status === 'graded'));
-      return;
     }
-
-    const q = query(
-      collection(db, 'submissions'),
-      where('studentEmail', '==', userEmail),
-      limit(limitAssignments)
-    );
 
     // Aggregation: Get Total Count
     const countQ = query(
@@ -568,6 +572,16 @@ const StudentDashboard = () => {
       where('studentEmail', '==', userEmail)
     );
     getCountFromServer(countQ).then(snap => setTotalAssignments(snap.data().count)).catch(console.error);
+
+    if (cached && cached.length >= limitAssignments) return;
+
+    const q = query(
+      collection(db, 'submissions'),
+      where('studentEmail', '==', userEmail),
+      limit(limitAssignments)
+    );
+
+
 
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
