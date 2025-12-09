@@ -1479,7 +1479,7 @@ const TeacherDashboard = () => {
       if (uniqueEmails.size === 0) return;
 
       // CACHE LOGIC: Partial Cache
-      const CACHE_KEY = `student_profiles_cache_${userEmail}`;
+      const CACHE_KEY = `student_profiles_cache_v2_${userEmail}`; // v2 to force refresh
       let cachedSMap = new Map<string, string>();
       let cachedIdMap = new Map<string, string>();
       let cachedDetailsMap = new Map<string, any>();
@@ -1528,9 +1528,18 @@ const TeacherDashboard = () => {
               newIdMap.set(d.email, d.uid || doc.id);
               newDetailsMap.set(d.email, {
                 name: d.name || '',
-                reg_no: d.reg_no || '',
                 va_no: d.va_no || ''
               });
+              // Normalize lowercase for robust lookup
+              if (d.email.toLowerCase() !== d.email) {
+                newSMap.set(d.email.toLowerCase(), d.name || '');
+                newIdMap.set(d.email.toLowerCase(), d.uid || doc.id);
+                newDetailsMap.set(d.email.toLowerCase(), {
+                  name: d.name || '',
+                  reg_no: d.reg_no || '',
+                  va_no: d.va_no || ''
+                });
+              }
             }
           });
         }));
@@ -4620,7 +4629,7 @@ const TeacherDashboard = () => {
                     {workspaceStudents.map(email => (
                       <div key={email} className="flex items-center justify-between py-1 px-2 hover:bg-slate-800 rounded">
                         <span className="text-sm text-slate-300">
-                          {studentMap.get(email) ? `${studentMap.get(email)} (${email})` : email}
+                          {(studentMap.get(email) || studentMap.get(email.toLowerCase())) ? `${(studentMap.get(email) || studentMap.get(email.toLowerCase()))} (${email})` : email}
                         </span>
                         <input
                           type="checkbox"
