@@ -180,10 +180,11 @@ const TeacherDashboard = () => {
   const [studentDetailsMap, setStudentDetailsMap] = useState<Map<string, any>>(new Map()); // email -> {name, reg_no, va_no}
 
   // Limits & Pagination
-  const [limitExams, setLimitExams] = useState(5);
-  const [limitSyllabi, setLimitSyllabi] = useState(5);
-  const [limitAssignments, setLimitAssignments] = useState(5);
-  const [limitAnnouncements, setLimitAnnouncements] = useState(5);
+  const [limitExams, setLimitExams] = useState(10);
+  const [limitSyllabi, setLimitSyllabi] = useState(10);
+  const [limitAssignments, setLimitAssignments] = useState(10);
+  const [limitAnnouncements, setLimitAnnouncements] = useState(10);
+  const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);
 
   const [totalExams, setTotalExams] = useState(0);
@@ -5428,13 +5429,18 @@ const TeacherDashboard = () => {
                           </div>
                         </div>
                       ))}
-                    {workspaces.find(w => w.id === viewMarksWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase())).length > 20 && (
-                      <div className="flex items-center justify-center gap-2 mt-6">
-                        <Button variant="outline" size="sm" onClick={() => setMarksPage(p => Math.max(1, p - 1))} disabled={marksPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                        <span className="text-sm text-slate-400">Page {marksPage}</span>
-                        <Button variant="outline" size="sm" onClick={() => setMarksPage(p => p + 1)} disabled={marksPage * 20 >= (workspaces.find(w => w.id === viewMarksWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase())).length || 0)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                      </div>
-                    )}
+                    {(() => {
+                      const filteredStudents = workspaces.find(w => w.id === viewMarksWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase())) || [];
+                      if (filteredStudents.length > limitViewMarks) {
+                        return (
+                          <div className="flex justify-center mt-6">
+                            <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitViewMarks(prev => prev + 10)}>
+                              Load More Students ({limitViewMarks} displayed)
+                            </Button>
+                          </div>
+                        );
+                      }
+                    })()}
                     {(!workspaces.find(w => w.id === viewMarksWorkspace)?.students?.length) && (
                       <p className="text-center text-slate-500 py-4">No students in this workspace.</p>
                     )}
