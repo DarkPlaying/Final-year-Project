@@ -1417,7 +1417,6 @@ const TeacherDashboard = () => {
       const syllabiCount = await getCountFromServer(query(collection(db, 'syllabi'), where('owner', '==', email)));
 
       const newStats = {
-        students: stats.students, // Preserve student count as it's calc'd from workspaces
         exams: examsCount.data().count,
         pendingReviews: reviewsCount.data().count,
         syllabi: syllabiCount.data().count
