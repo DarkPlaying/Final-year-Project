@@ -439,6 +439,7 @@ const StudentDashboard = () => {
     const q = query(
       collection(db, 'exams'),
       where('students', 'array-contains', userEmail),
+      orderBy('createdAt', 'desc'),
       limit(limitExams)
     );
 
@@ -482,6 +483,7 @@ const StudentDashboard = () => {
     const q = query(
       collection(db, 'syllabi'),
       where('students', 'array-contains', userEmail),
+      orderBy('createdAt', 'desc'),
       limit(limitSyllabi)
     );
 
@@ -525,6 +527,7 @@ const StudentDashboard = () => {
     const q = query(
       collection(db, 'announcements'),
       where('students', 'array-contains', userEmail),
+      orderBy('createdAt', 'desc'),
       limit(limitAnnouncements)
     );
 
