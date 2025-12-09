@@ -178,6 +178,8 @@ const StudentDashboard = () => {
   // Total Counts State
   const [totalExams, setTotalExams] = useState(0);
   const [totalSyllabi, setTotalSyllabi] = useState(0);
+  const [limitExamMarks, setLimitExamMarks] = useState(5);
+  const [totalExamMarks, setTotalExamMarks] = useState(0);
   const [totalAnnouncements, setTotalAnnouncements] = useState(0);
   const [totalAssignments, setTotalAssignments] = useState(0);
   const [marksPage, setMarksPage] = useState(1);
@@ -721,21 +723,34 @@ const StudentDashboard = () => {
     const cacheKey = `examMarks_${userEmail}`;
     const cached = SessionCache.get(cacheKey);
 
-    if (cached) {
-      setExamMarks(cached);
-      console.log('📦 Loaded exam marks from cache (0 reads)');
-    } else {
-      console.log('❌ Cache Miss: exam marks');
-      const q = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
-      const unsub = onSnapshot(q, (snap) => {
-        const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        newMarks.sort((a: any, b: any) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-        setExamMarks(newMarks);
-        SessionCache.set(cacheKey, newMarks, 15);
-      });
-      return () => unsub();
+    if (cached && cached.length >= limitExamMarks) {
+      setExamMarks(cached.slice(0, limitExamMarks));
+      console.log('📦 Loaded exam marks from cache');
     }
-  }, [userEmail]);
+
+    // Aggregation: Get Total Count
+    const countQ = query(
+      collection(db, 'marks'),
+      where('studentEmail', '==', userEmail)
+    );
+    getCountFromServer(countQ).then(snap => setTotalExamMarks(snap.data().count)).catch(console.error);
+
+    if (cached && cached.length >= limitExamMarks) return;
+
+    const q = query(
+      collection(db, 'marks'),
+      where('studentEmail', '==', userEmail),
+      limit(limitExamMarks)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      newMarks.sort((a: any, b: any) => (b.publishedAt?.seconds || 0) - (a.publishedAt?.seconds || 0));
+      setExamMarks(newMarks);
+      SessionCache.set(cacheKey, newMarks, 15);
+    });
+    return () => unsub();
+  }, [userEmail, limitExamMarks]);
 
   // Fetch UNOM Reports
   useEffect(() => {
@@ -2536,6 +2551,17 @@ const StudentDashboard = () => {
                               </TableCell>
                             </TableRow>
                           )}
+                          {assignments.length === limitAssignments && (
+                            <TableRow>
+                              <TableCell colSpan={4}>
+                                <div className="flex justify-center py-4">
+                                  <Button variant="ghost" size="sm" className="text-green-400 hover:text-white hover:bg-slate-800 border border-slate-700" onClick={() => setLimitAssignments(prev => prev + 5)}>
+                                    Load More Marks ({limitAssignments} submissions scanned)
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
                         </>
                       )}
                     </TableBody>
@@ -2592,6 +2618,17 @@ const StudentDashboard = () => {
                                   <Button variant="outline" size="sm" onClick={() => setExamMarksPage(p => Math.max(1, p - 1))} disabled={examMarksPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
                                   <span className="text-sm text-slate-400">Page {examMarksPage} of {Math.ceil(examMarks.length / 10)}</span>
                                   <Button variant="outline" size="sm" onClick={() => setExamMarksPage(p => Math.min(Math.ceil(examMarks.length / 10), p + 1))} disabled={examMarksPage === Math.ceil(examMarks.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          {examMarks.length === limitExamMarks && (
+                            <TableRow>
+                              <TableCell colSpan={4}>
+                                <div className="flex justify-center py-4">
+                                  <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700" onClick={() => setLimitExamMarks(prev => prev + 5)}>
+                                    Load More Exam Marks ({limitExamMarks} loaded)
+                                  </Button>
                                 </div>
                               </TableCell>
                             </TableRow>
