@@ -4594,7 +4594,7 @@ const TeacherDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Due Date (Optional)</Label>
-                <Input type="date" className="bg-slate-900 border-slate-700" value={announceDueDate} onChange={e => setAnnounceDueDate(e.target.value)} />
+                <Input type="date" className="bg-slate-900 border-slate-700 [color-scheme:dark]" value={announceDueDate} onChange={e => setAnnounceDueDate(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Select Workspace</Label>

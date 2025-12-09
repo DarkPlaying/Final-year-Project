@@ -2364,8 +2364,8 @@ const StudentDashboard = () => {
                       <CardTitle className="text-lg group-hover:text-purple-400 transition-colors">{e.title}</CardTitle>
                       <CardDescription className="text-slate-400 line-clamp-2">{e.description}</CardDescription>
                       {e.dueDate && (
-                        <div className="mt-2 text-xs text-orange-400">
-                          Due: {new Date(e.dueDate.seconds * 1000).toLocaleDateString()}
+                        <div className="mt-2 text-xs text-orange-400 font-medium bg-orange-400/10 px-2 py-1 rounded inline-block">
+                          Due: {e.dueDate.seconds ? new Date(e.dueDate.seconds * 1000).toLocaleDateString() : (e.dueDate.toDate ? e.dueDate.toDate().toLocaleDateString() : new Date(e.dueDate).toLocaleDateString())}
                         </div>
                       )}
                     </CardHeader>
