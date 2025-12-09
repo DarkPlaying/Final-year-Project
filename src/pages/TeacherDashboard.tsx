@@ -180,10 +180,10 @@ const TeacherDashboard = () => {
   const [studentDetailsMap, setStudentDetailsMap] = useState<Map<string, any>>(new Map()); // email -> {name, reg_no, va_no}
 
   // Limits & Pagination
-  const [limitExams, setLimitExams] = useState(10);
-  const [limitSyllabi, setLimitSyllabi] = useState(10);
+  const [limitExams, setLimitExams] = useState(5);
+  const [limitSyllabi, setLimitSyllabi] = useState(5);
   const [limitAssignments, setLimitAssignments] = useState(10);
-  const [limitAnnouncements, setLimitAnnouncements] = useState(10);
+  const [limitAnnouncements, setLimitAnnouncements] = useState(5);
   const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);
 
