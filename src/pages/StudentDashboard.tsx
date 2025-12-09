@@ -333,19 +333,10 @@ const StudentDashboard = () => {
     // Check for Compulsory Update Announcements (Cached)
     const checkCompulsory = async () => {
       if (!email) return;
-      const CACHE_KEY = `compulsory_check_${email}`;
-      const cached = SessionCache.get(CACHE_KEY);
-
       let announcements = [];
-      if (cached) {
-        announcements = cached;
-        console.log('📦 Loaded compulsory checks from cache (0 reads)');
-      } else {
-        const q = query(collection(db, 'announcements'), where('students', 'array-contains', email), where('type', '==', 'compulsory_update_request'));
-        const snap = await getDocs(q);
-        announcements = snap.docs.map(d => d.data());
-        SessionCache.set(CACHE_KEY, announcements, 15); // Cache for 15 mins
-      }
+      const q = query(collection(db, 'announcements'), where('students', 'array-contains', email), where('type', '==', 'compulsory_update_request'));
+      const snap = await getDocs(q);
+      announcements = snap.docs.map(d => d.data());
 
       if (announcements.length === 0) return;
 

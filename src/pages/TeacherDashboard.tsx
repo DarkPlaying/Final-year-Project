@@ -490,7 +490,7 @@ const TeacherDashboard = () => {
     const countQ = query(collection(db, 'exams'), where('teacherEmail', '==', userEmail));
     getCountFromServer(countQ).then(snap => setTotalExams(snap.data().count)).catch(console.error);
 
-    const q = query(collection(db, 'exams'), where('teacherEmail', '==', userEmail), limit(limitExams));
+    const q = query(collection(db, 'exams'), where('teacherEmail', '==', userEmail), orderBy('createdAt', 'desc'), limit(limitExams));
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -512,7 +512,7 @@ const TeacherDashboard = () => {
     const countQ = query(collection(db, 'syllabi'), where('owner', '==', userEmail));
     getCountFromServer(countQ).then(snap => setTotalSyllabi(snap.data().count)).catch(console.error);
 
-    const q = query(collection(db, 'syllabi'), where('owner', '==', userEmail), limit(limitSyllabi));
+    const q = query(collection(db, 'syllabi'), where('owner', '==', userEmail), orderBy('createdAt', 'desc'), limit(limitSyllabi));
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -534,7 +534,7 @@ const TeacherDashboard = () => {
     const countQ = query(collection(db, 'announcements'), where('teacherEmail', '==', userEmail));
     getCountFromServer(countQ).then(snap => setTotalAnnouncements(snap.data().count)).catch(console.error);
 
-    const q = query(collection(db, 'announcements'), where('teacherEmail', '==', userEmail), limit(limitAnnouncements));
+    const q = query(collection(db, 'announcements'), where('teacherEmail', '==', userEmail), orderBy('createdAt', 'desc'), limit(limitAnnouncements));
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
