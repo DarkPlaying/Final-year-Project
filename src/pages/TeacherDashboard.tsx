@@ -4382,7 +4382,7 @@ const TeacherDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Due Date (Optional - Auto-delete after this date)</Label>
-                <Input type="date" className="bg-slate-900 border-slate-700 w-full" value={examDueDate} onChange={e => setExamDueDate(e.target.value)} />
+                <Input type="date" className="bg-slate-900 border-slate-700 w-full [color-scheme:dark]" value={examDueDate} onChange={e => setExamDueDate(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Select Workspace</Label>
