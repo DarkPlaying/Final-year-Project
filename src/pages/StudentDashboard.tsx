@@ -456,11 +456,11 @@ const StudentDashboard = () => {
 
     // Exams Listener
     if (!cachedExams) {
-      // OPTIMIZATION: Limit to latest 20 exams
+      // OPTIMIZATION: Limit to latest 5 exams
       const latestExamsQuery = query(
         collection(db, 'exams'),
         where('students', 'array-contains', userEmail),
-        limit(20)
+        limit(5)
       );
       unsubExams = onSnapshot(latestExamsQuery, (snap) => {
         const newExams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -481,11 +481,11 @@ const StudentDashboard = () => {
 
     // Syllabi Listener
     if (!cachedSyllabi) {
-      // OPTIMIZATION: Limit to latest 20 syllabi
+      // OPTIMIZATION: Limit to latest 5 syllabi
       const latestSyllabiQuery = query(
         collection(db, 'syllabi'),
         where('students', 'array-contains', userEmail),
-        limit(20)
+        limit(5)
       );
       unsubSyllabi = onSnapshot(latestSyllabiQuery, (snap) => {
         const newSyllabi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -506,11 +506,11 @@ const StudentDashboard = () => {
 
     // Announcements Listener
     if (!cachedAnnouncements) {
-      // OPTIMIZATION: Limit to latest 20 announcements
+      // OPTIMIZATION: Limit to latest 5 announcements
       const latestAnnouncementsQuery = query(
         collection(db, 'announcements'),
         where('students', 'array-contains', userEmail),
-        limit(20)
+        limit(5)
       );
       unsubAnnouncements = onSnapshot(latestAnnouncementsQuery, (snap) => {
         const newAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -531,11 +531,11 @@ const StudentDashboard = () => {
 
     // Assignments Listener
     if (!cachedAssignments) {
-      // OPTIMIZATION: Limit to latest 30 assignments
+      // OPTIMIZATION: Limit to latest 5 assignments
       const latestAssignmentsQuery = query(
         collection(db, 'submissions'),
         where('studentEmail', '==', userEmail),
-        limit(30)
+        limit(5)
       );
       unsubAssignments = onSnapshot(latestAssignmentsQuery, (snap) => {
         const newAssignments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
