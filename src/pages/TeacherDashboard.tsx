@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
+﻿﻿import { useState, useEffect, useRef, useCallback } from 'react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { DashboardLayout } from '@/components/DashboardLayout';
@@ -165,7 +165,8 @@ const TeacherDashboard = () => {
     students: 0,
     exams: 0,
     pendingReviews: 0,
-    syllabi: 0
+    syllabus: 0,
+    announcements: 0
   });
 
   // Data States
@@ -1844,7 +1845,7 @@ const TeacherDashboard = () => {
         link: announceLink,
         workspaceId: selectedWorkspace,
         students: selectedStudents,
-        students: selectedStudents,
+
         teacherEmail: userEmail,
         createdAt: serverTimestamp(),
         dueDate: announceDueDate ? Timestamp.fromDate(new Date(announceDueDate)) : null
@@ -4382,7 +4383,7 @@ const TeacherDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Due Date (Optional - Auto-delete after this date)</Label>
-                <Input type="date" className="bg-slate-900 border-slate-700 w-full [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={examDueDate} onChange={e => setExamDueDate(e.target.value)} />
+                <Input type="date" className="bg-slate-900 border-slate-700 w-full [color-scheme:dark]" value={examDueDate} onChange={e => setExamDueDate(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Select Workspace</Label>
@@ -4609,7 +4610,7 @@ const TeacherDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Due Date (Optional)</Label>
-                <Input type="date" className="bg-slate-900 border-slate-700 [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]" value={announceDueDate} onChange={e => setAnnounceDueDate(e.target.value)} />
+                <Input type="date" className="bg-slate-900 border-slate-700 [color-scheme:dark]" value={announceDueDate} onChange={e => setAnnounceDueDate(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Select Workspace</Label>
@@ -6729,4 +6730,3 @@ const TeacherDashboard = () => {
 };
 
 export default TeacherDashboard;
-
