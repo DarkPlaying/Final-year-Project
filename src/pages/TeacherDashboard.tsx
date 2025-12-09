@@ -221,6 +221,7 @@ const TeacherDashboard = () => {
   const [examDesc, setExamDesc] = useState('');
   const [examLink, setExamLink] = useState('');
   const [examType, setExamType] = useState('exam');
+  const [examDueDate, setExamDueDate] = useState<string>('');
   const [editingExam, setEditingExam] = useState<any>(null);
 
   // Syllabus Form
@@ -1429,6 +1430,39 @@ const TeacherDashboard = () => {
     }
   };
 
+  // CHECK EXPIRED EXAMS ON LOAD
+  useEffect(() => {
+    const checkExpiredExams = async () => {
+      const now = new Date();
+      // Only check if user is logged in
+      if (!userEmail) return;
+
+      try {
+        // Find exams created by this teacher where dueDate < now
+        const q = query(
+          collection(db, 'exams'),
+          where('teacherEmail', '==', userEmail),
+          where('dueDate', '<', Timestamp.fromDate(now))
+        );
+        const expiredSnap = await getDocs(q);
+
+        if (!expiredSnap.empty) {
+          console.log(`Found ${expiredSnap.size} expired exams. Deleting...`);
+          const batch = writeBatch(db);
+          expiredSnap.docs.forEach(doc => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+          toast.info(`Removed ${expiredSnap.size} expired tests/assignments`);
+        }
+      } catch (err) {
+        console.error("Error cleaning up expired exams:", err);
+      }
+    };
+
+    checkExpiredExams();
+  }, [userEmail]);
+
   // Efficiently load students only for my workspaces
   useEffect(() => {
     const fetchMyStudents = async () => {
@@ -1642,13 +1676,15 @@ const TeacherDashboard = () => {
         workspaceId: selectedWorkspace,
         students: selectedStudents,
         teacherEmail: userEmail,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        dueDate: examDueDate ? Timestamp.fromDate(new Date(examDueDate)) : null
       };
 
       if (editingExam) {
         await updateDoc(doc(db, 'exams', editingExam.id), examData);
         toast.success('Exam updated');
         setEditingExam(null);
+        setExamDueDate('');
       } else {
         await addDoc(collection(db, 'exams'), examData);
 
@@ -4307,6 +4343,10 @@ const TeacherDashboard = () => {
                 </div>
               </div>
               <div className="space-y-2">
+                <Label>Due Date (Optional - Auto-delete after this date)</Label>
+                <Input type="date" className="bg-slate-900 border-slate-700 w-full" value={examDueDate} onChange={e => setExamDueDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
                 <Label>Select Workspace</Label>
                 <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); setSelectedStudents([]); }}>
                   <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue placeholder="-- Select workspace --" /></SelectTrigger>
@@ -4364,7 +4404,7 @@ const TeacherDashboard = () => {
                 }}>
                   {editingExam ? 'Update Exam' : '+ Create Exam'}
                 </Button>
-                {editingExam && <Button variant="ghost" onClick={() => { setEditingExam(null); setExamTitle(''); setExamDesc(''); setExamLink(''); }}>Cancel</Button>}
+                {editingExam && <Button variant="ghost" onClick={() => { setEditingExam(null); setExamTitle(''); setExamDesc(''); setExamLink(''); setExamDueDate(''); }}>Cancel</Button>}
               </div>
             </CardContent>
           </Card>
@@ -4452,12 +4492,18 @@ const TeacherDashboard = () => {
                               setSelectedWorkspace(exam.workspaceId);
                               loadWorkspaceStudents(exam.workspaceId);
                               setSelectedStudents(exam.students || []);
+                              setExamDueDate(exam.dueDate ? new Date(exam.dueDate.seconds * 1000).toISOString().split('T')[0] : '');
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}>Edit</Button>
                             <Button size="sm" variant="destructive" className="px-3" onClick={() => handleDeleteExam(exam.id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
+                          {exam.dueDate && (
+                            <div className="mt-2 text-xs text-orange-400 text-center">
+                              Due: {new Date(exam.dueDate.seconds * 1000).toLocaleDateString()}
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     ))}
