@@ -180,7 +180,7 @@ const TeacherDashboard = () => {
   const [studentDetailsMap, setStudentDetailsMap] = useState<Map<string, any>>(new Map()); // email -> {name, reg_no, va_no}
 
   // Limits & Pagination
-  const [limitExams, setLimitExams] = useState(5);
+  const [limitExams, setLimitExams] = useState(9); // Default 9 per page as per request
   const [limitSyllabi, setLimitSyllabi] = useState(5);
   const [limitAssignments, setLimitAssignments] = useState(10);
   const [limitAnnouncements, setLimitAnnouncements] = useState(5);
@@ -4162,7 +4162,7 @@ const TeacherDashboard = () => {
                           <div key={i} className="flex items-center justify-between border-b border-slate-700 pb-3 last:border-0 last:pb-0">
                             <div>
                               <p className="font-medium text-slate-200">{assignment.title}</p>
-                              <p className="text-xs text-slate-400">Due: {assignment.dueDate ? (assignment.dueDate.toDate ? assignment.dueDate.toDate().toLocaleDateString() : new Date(assignment.dueDate).toLocaleDateString()) : 'No Date'}</p>
+                              <p className="text-xs text-slate-400">Submitted: {assignment.submittedAt ? (assignment.submittedAt.toDate ? assignment.submittedAt.toDate().toLocaleDateString() : new Date(assignment.submittedAt).toLocaleDateString()) : (assignment.createdAt ? (assignment.createdAt.toDate ? assignment.createdAt.toDate().toLocaleDateString() : new Date(assignment.createdAt).toLocaleDateString()) : 'N/A')}</p>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs px-2 py-1 rounded-full bg-slate-700 text-slate-300">
@@ -4520,25 +4520,25 @@ const TeacherDashboard = () => {
                 {exams.filter(e =>
                   e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
                   (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
-                ).length > 20 && (
+                ).length > 9 && (
                     <div className="flex items-center justify-center gap-2 mt-6">
                       <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.max(1, p - 1))} disabled={examPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
                       <span className="text-sm text-slate-400">Page {examPage} of {Math.ceil(exams.filter(e =>
                         e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
                         (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
-                      ).length / 20)}</span>
+                      ).length / 9)}</span>
                       <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.min(Math.ceil(exams.filter(e =>
                         e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
                         (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
-                      ).length / 20), p + 1))} disabled={examPage === Math.ceil(exams.filter(e =>
+                      ).length / 9), p + 1))} disabled={examPage === Math.ceil(exams.filter(e =>
                         e.title.toLowerCase().includes(examSearch.toLowerCase()) &&
                         (examFilterWorkspace === 'all' || e.workspaceId === examFilterWorkspace)
-                      ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                      ).length / 9)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                     </div>
                   )}
                 {exams.length === limitExams && (
                   <div className="flex justify-center mt-4">
-                    <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitExams(prev => prev + 5)}>
+                    <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitExams(prev => prev + 9)}>
                       Load More Tests ({limitExams} currently loaded)
                     </Button>
                   </div>
