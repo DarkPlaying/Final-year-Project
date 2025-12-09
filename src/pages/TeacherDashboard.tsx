@@ -181,9 +181,9 @@ const TeacherDashboard = () => {
 
   // Limits & Pagination
   const [limitExams, setLimitExams] = useState(9); // Default 9 per page as per request
-  const [limitSyllabi, setLimitSyllabi] = useState(5);
+  const [limitSyllabi, setLimitSyllabi] = useState(9); // Default 9
   const [limitAssignments, setLimitAssignments] = useState(10);
-  const [limitAnnouncements, setLimitAnnouncements] = useState(5);
+  const [limitAnnouncements, setLimitAnnouncements] = useState(9); // Default 9
   const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);
 
@@ -234,6 +234,7 @@ const TeacherDashboard = () => {
   const [announceTitle, setAnnounceTitle] = useState('');
   const [announceDesc, setAnnounceDesc] = useState('');
   const [announceLink, setAnnounceLink] = useState('');
+  const [announceDueDate, setAnnounceDueDate] = useState<string>('');
   const [editingAnnouncement, setEditingAnnouncement] = useState<any>(null);
 
   // Query Form
@@ -1827,14 +1828,17 @@ const TeacherDashboard = () => {
         link: announceLink,
         workspaceId: selectedWorkspace,
         students: selectedStudents,
+        students: selectedStudents,
         teacherEmail: userEmail,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        dueDate: announceDueDate ? Timestamp.fromDate(new Date(announceDueDate)) : null
       };
 
       if (editingAnnouncement) {
         await updateDoc(doc(db, 'announcements', editingAnnouncement.id), data);
         toast.success('Announcement updated');
         setEditingAnnouncement(null);
+        setAnnounceDueDate('');
       } else {
         await addDoc(collection(db, 'announcements'), data);
 
@@ -1851,7 +1855,7 @@ const TeacherDashboard = () => {
 
         // Send Push Notification
         // Send Push Notification
-        await sendNotificationToStudents(selectedStudents, "New Announcement", `New Announcement: ${announceTitle}`, announceLink, 'announcement');
+        await sendNotificationToStudents(selectedStudents, "New Announcement", `New Announcement: ${announceTitle}${announceDueDate ? ` (Due: ${new Date(announceDueDate).toLocaleDateString()})` : ''}`, announceLink, 'announcement');
 
         toast.success('Announcement sent');
       }
@@ -1859,6 +1863,7 @@ const TeacherDashboard = () => {
       setAnnounceTitle('');
       setAnnounceDesc('');
       setAnnounceLink('');
+      setAnnounceDueDate('');
       setSelectedStudents([]);
     } catch (error) {
       console.error(error);
@@ -4579,6 +4584,10 @@ const TeacherDashboard = () => {
                 </div>
               </div>
               <div className="space-y-2">
+                <Label>Due Date (Optional)</Label>
+                <Input type="date" className="bg-slate-900 border-slate-700" value={announceDueDate} onChange={e => setAnnounceDueDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
                 <Label>Select Workspace</Label>
                 <Select value={selectedWorkspace} onValueChange={(v) => { setSelectedWorkspace(v); loadWorkspaceStudents(v); setSelectedStudents([]); }}>
                   <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue placeholder="-- Select workspace --" /></SelectTrigger>
@@ -4647,7 +4656,7 @@ const TeacherDashboard = () => {
                     </>
                   )}
                 </Button>
-                {editingAnnouncement && <Button variant="ghost" onClick={() => { setEditingAnnouncement(null); setAnnounceTitle(''); setAnnounceDesc(''); setAnnounceLink(''); }}>Cancel</Button>}
+                {editingAnnouncement && <Button variant="ghost" onClick={() => { setEditingAnnouncement(null); setAnnounceTitle(''); setAnnounceDesc(''); setAnnounceLink(''); setAnnounceDueDate(''); }}>Cancel</Button>}
               </div>
             </CardContent>
           </Card>
@@ -4692,7 +4701,7 @@ const TeacherDashboard = () => {
                       a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
                       (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
                     )
-                    .slice((announcePage - 1) * 5, announcePage * 5)
+                    .slice((announcePage - 1) * 9, announcePage * 9)
                     .map(a => (
                       <div key={a.id} className="flex items-center justify-between p-4 bg-slate-900 rounded-lg border border-slate-700">
                         <div className="flex items-start gap-3">
@@ -4700,7 +4709,12 @@ const TeacherDashboard = () => {
                           <div>
                             <h4 className="font-medium text-white">{a.title}</h4>
                             <p className="text-sm text-slate-400">{a.description}</p>
-                            <p className="text-xs text-slate-500 mt-1">Sent: {safeDate(a.createdAt).toLocaleString()}</p>
+                            <div className="flex gap-2 items-center mt-1">
+                              <p className="text-xs text-slate-500">Sent: {safeDate(a.createdAt).toLocaleString()}</p>
+                              {a.dueDate && (
+                                <p className="text-xs text-orange-400">Due: {new Date(a.dueDate.seconds * 1000).toLocaleDateString()}</p>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -4710,6 +4724,7 @@ const TeacherDashboard = () => {
                             setAnnounceTitle(a.title);
                             setAnnounceDesc(a.description);
                             setAnnounceLink(a.link);
+                            setAnnounceDueDate(a.dueDate ? new Date(a.dueDate.seconds * 1000).toISOString().split('T')[0] : '');
                             setSelectedWorkspace(a.workspaceId);
                             loadWorkspaceStudents(a.workspaceId);
                             setSelectedStudents(a.students || []);
@@ -4724,25 +4739,25 @@ const TeacherDashboard = () => {
               {announcements.filter(a =>
                 a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
                 (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
-              ).length > 20 && (
+              ).length > 9 && (
                   <div className="flex items-center justify-center gap-2 mt-6">
                     <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.max(1, p - 1))} disabled={announcePage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
                     <span className="text-sm text-slate-400">Page {announcePage} of {Math.ceil(announcements.filter(a =>
                       a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
                       (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
-                    ).length / 20)}</span>
+                    ).length / 9)}</span>
                     <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.min(Math.ceil(announcements.filter(a =>
                       a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
                       (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
-                    ).length / 20), p + 1))} disabled={announcePage === Math.ceil(announcements.filter(a =>
+                    ).length / 9), p + 1))} disabled={announcePage === Math.ceil(announcements.filter(a =>
                       a.title.toLowerCase().includes(announceSearch.toLowerCase()) &&
                       (announceFilterWorkspace === 'all' || a.workspaceId === announceFilterWorkspace)
-                    ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                    ).length / 9)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                   </div>
                 )}
               {announcements.length === limitAnnouncements && (
                 <div className="flex justify-center mt-4 border-t border-slate-700/50 pt-4">
-                  <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAnnouncements(prev => prev + 5)}>
+                  <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAnnouncements(prev => prev + 9)}>
                     Load More Announcements ({limitAnnouncements} currently loaded)
                   </Button>
                 </div>
@@ -4935,26 +4950,26 @@ const TeacherDashboard = () => {
                   {syllabi.filter(s =>
                     s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
                     (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
-                  ).length > 20 && (
+                  ).length > 9 && (
                       <div className="flex items-center justify-center gap-2 mt-6">
                         <Button variant="outline" size="sm" onClick={() => setSyllabusPage(p => Math.max(1, p - 1))} disabled={syllabusPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
                         <span className="text-sm text-slate-400">Page {syllabusPage} of {Math.ceil(syllabi.filter(s =>
                           s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
                           (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
-                        ).length / 20)}</span>
+                        ).length / 9)}</span>
                         <Button variant="outline" size="sm" onClick={() => setSyllabusPage(p => Math.min(Math.ceil(syllabi.filter(s =>
                           s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
                           (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
-                        ).length / 20), p + 1))} disabled={syllabusPage === Math.ceil(syllabi.filter(s =>
+                        ).length / 9), p + 1))} disabled={syllabusPage === Math.ceil(syllabi.filter(s =>
                           s.name.toLowerCase().includes(syllabusSearch.toLowerCase()) &&
                           (syllabusFilterWorkspace === 'all' || s.workspaceId === syllabusFilterWorkspace)
-                        ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                        ).length / 9)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                       </div>
                     )}
                   {syllabi.length === limitSyllabi && (
-                    <div className="flex justify-center mt-4">
-                      <Button variant="ghost" size="sm" className="text-green-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitSyllabi(prev => prev + 5)}>
-                        Load More Syllabi ({limitSyllabi} currently loaded)
+                    <div className="flex justify-center mt-4 border-t border-slate-700/50 pt-4">
+                      <Button variant="ghost" size="sm" className="text-green-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitSyllabi(prev => prev + 9)}>
+                        Load More Syllabus ({limitSyllabi} currently loaded)
                       </Button>
                     </div>
                   )}
