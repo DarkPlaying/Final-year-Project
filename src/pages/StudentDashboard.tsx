@@ -57,7 +57,9 @@ import {
   orderBy,
   onSnapshot,
   runTransaction,
-  limit
+  limit,
+  getCountFromServer,
+  Timestamp
 } from 'firebase/firestore';
 import { usePresence } from '@/hooks/usePresence';
 import { getAuth, signInAnonymously } from 'firebase/auth';
@@ -173,6 +175,11 @@ const StudentDashboard = () => {
   const [limitSyllabi, setLimitSyllabi] = useState(5);
   const [limitAnnouncements, setLimitAnnouncements] = useState(5);
   const [limitAssignments, setLimitAssignments] = useState(5);
+  // Total Counts State
+  const [totalExams, setTotalExams] = useState(0);
+  const [totalSyllabi, setTotalSyllabi] = useState(0);
+  const [totalAnnouncements, setTotalAnnouncements] = useState(0);
+  const [totalAssignments, setTotalAssignments] = useState(0);
   const [marksPage, setMarksPage] = useState(1);
   const [examMarksPage, setExamMarksPage] = useState(1);
   const [selectedUnomId, setSelectedUnomId] = useState<string | null>(null);
@@ -432,6 +439,13 @@ const StudentDashboard = () => {
       limit(limitExams)
     );
 
+    // Aggregation: Get Total Count
+    const countQ = query(
+      collection(db, 'exams'),
+      where('students', 'array-contains', userEmail)
+    );
+    getCountFromServer(countQ).then(snap => setTotalExams(snap.data().count)).catch(console.error);
+
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -465,6 +479,13 @@ const StudentDashboard = () => {
       limit(limitSyllabi)
     );
 
+    // Aggregation: Get Total Count
+    const countQ = query(
+      collection(db, 'syllabi'),
+      where('students', 'array-contains', userEmail)
+    );
+    getCountFromServer(countQ).then(snap => setTotalSyllabi(snap.data().count)).catch(console.error);
+
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -497,6 +518,13 @@ const StudentDashboard = () => {
       where('students', 'array-contains', userEmail),
       limit(limitAnnouncements)
     );
+
+    // Aggregation: Get Total Count
+    const countQ = query(
+      collection(db, 'announcements'),
+      where('students', 'array-contains', userEmail)
+    );
+    getCountFromServer(countQ).then(snap => setTotalAnnouncements(snap.data().count)).catch(console.error);
 
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -533,6 +561,13 @@ const StudentDashboard = () => {
       where('studentEmail', '==', userEmail),
       limit(limitAssignments)
     );
+
+    // Aggregation: Get Total Count
+    const countQ = query(
+      collection(db, 'submissions'),
+      where('studentEmail', '==', userEmail)
+    );
+    getCountFromServer(countQ).then(snap => setTotalAssignments(snap.data().count)).catch(console.error);
 
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -2067,7 +2102,7 @@ const StudentDashboard = () => {
                 <CardContent className="p-6 flex items-center justify-between">
                   <div>
                     <p className="text-blue-200 text-sm font-medium">Active Tests</p>
-                    <h3 className="text-4xl font-bold mt-2">{exams.length}</h3>
+                    <h3 className="text-4xl font-bold mt-2">{totalExams}</h3>
                     <p className="text-xs text-blue-300/70 mt-1">Upcoming tests</p>
                   </div>
                   <div className="p-3 bg-blue-500/20 rounded-full">
@@ -2079,8 +2114,9 @@ const StudentDashboard = () => {
                 <CardContent className="p-6 flex items-center justify-between">
                   <div>
                     <p className="text-purple-200 text-sm font-medium">Assignments</p>
-                    <h3 className="text-4xl font-bold mt-2">{assignments.filter(a => a.status === 'pending').length}</h3>
-                    <p className="text-xs text-purple-300/70 mt-1">Pending submission</p>
+                    {/* Note: Total includes all submissions, pending logic would require a separate count or just showing total */}
+                    <h3 className="text-4xl font-bold mt-2">{totalAssignments}</h3>
+                    <p className="text-xs text-purple-300/70 mt-1">Total Submissions</p>
                   </div>
                   <div className="p-3 bg-purple-500/20 rounded-full">
                     <Upload className="h-8 w-8 text-purple-400" />
@@ -2091,7 +2127,7 @@ const StudentDashboard = () => {
                 <CardContent className="p-6 flex items-center justify-between">
                   <div>
                     <p className="text-green-200 text-sm font-medium">Syllabus</p>
-                    <h3 className="text-4xl font-bold mt-2">{syllabi.length}</h3>
+                    <h3 className="text-4xl font-bold mt-2">{totalSyllabi}</h3>
                     <p className="text-xs text-green-300/70 mt-1">Materials available</p>
                   </div>
                   <div className="p-3 bg-green-500/20 rounded-full">
@@ -2103,7 +2139,7 @@ const StudentDashboard = () => {
                 <CardContent className="p-6 flex items-center justify-between">
                   <div>
                     <p className="text-orange-200 text-sm font-medium">Announcements</p>
-                    <h3 className="text-4xl font-bold mt-2">{announcements.length}</h3>
+                    <h3 className="text-4xl font-bold mt-2">{totalAnnouncements}</h3>
                     <p className="text-xs text-orange-300/70 mt-1">Recent updates</p>
                   </div>
                   <div className="p-3 bg-orange-500/20 rounded-full">
