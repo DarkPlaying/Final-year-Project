@@ -181,10 +181,11 @@ const TeacherDashboard = () => {
   const [studentDetailsMap, setStudentDetailsMap] = useState<Map<string, any>>(new Map()); // email -> {name, reg_no, va_no}
 
   // Limits & Pagination
-  const [limitExams, setLimitExams] = useState(9); // Default 9 per page as per request
-  const [limitSyllabi, setLimitSyllabi] = useState(9); // Default 9
-  const [limitAssignments, setLimitAssignments] = useState(10);
-  const [limitAnnouncements, setLimitAnnouncements] = useState(9); // Default 9
+  // Limits & Pagination
+  const [limitExams, setLimitExams] = useState(5);
+  const [limitSyllabi, setLimitSyllabi] = useState(5);
+  const [limitAssignments, setLimitAssignments] = useState(5);
+  const [limitAnnouncements, setLimitAnnouncements] = useState(5);
   const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);
 
@@ -484,6 +485,10 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`exams_${userEmail}`);
     if (cached && cached.length >= limitExams) {
       setExams(cached.slice(0, limitExams));
+      // Aggregation still needed for pagination context
+      const countQ = query(collection(db, 'exams'), where('teacherEmail', '==', userEmail));
+      getCountFromServer(countQ).then(snap => setTotalExams(snap.data().count)).catch(console.error);
+      return; // Stop here if cached
     }
 
     // Aggregation
@@ -506,6 +511,9 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`syllabi_${userEmail}`);
     if (cached && cached.length >= limitSyllabi) {
       setSyllabi(cached.slice(0, limitSyllabi));
+      const countQ = query(collection(db, 'syllabi'), where('owner', '==', userEmail));
+      getCountFromServer(countQ).then(snap => setTotalSyllabi(snap.data().count)).catch(console.error);
+      return; // Stop here if cached
     }
 
     // Aggregation
@@ -528,6 +536,9 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`announcements_${userEmail}`);
     if (cached && cached.length >= limitAnnouncements) {
       setAnnouncements(cached.slice(0, limitAnnouncements));
+      const countQ = query(collection(db, 'announcements'), where('teacherEmail', '==', userEmail));
+      getCountFromServer(countQ).then(snap => setTotalAnnouncements(snap.data().count)).catch(console.error);
+      return; // Stop here if cached
     }
 
     // Aggregation
@@ -550,6 +561,9 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`assignments_${userEmail}`);
     if (cached && cached.length >= limitAssignments) {
       setAssignments(cached.slice(0, limitAssignments));
+      const countQ = query(collection(db, 'submissions'), where('teacherEmail', 'in', [userEmail, '']));
+      getCountFromServer(countQ).then(snap => setTotalAssignments(snap.data().count)).catch(console.error);
+      return; // Stop here if cached
     }
 
     // Aggregation (Total Submissions)
@@ -579,6 +593,9 @@ const TeacherDashboard = () => {
     const cached = SessionCache.get(`queries_${userEmail}`);
     if (cached && cached.length >= limitQueries) {
       setQueries(cached.slice(0, limitQueries));
+      const countQ = query(collection(db, 'queries'));
+      getCountFromServer(countQ).then(snap => setTotalQueries(snap.data().count)).catch(console.error);
+      return; // Stop here if cached
     }
 
     // Aggregation
