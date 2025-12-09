@@ -125,9 +125,9 @@ import {
   limit,
   writeBatch,
   Timestamp,
+  getCountFromServer,
   setDoc,
   getDoc,
-  getCountFromServer,
   increment,
   deleteField
 } from 'firebase/firestore';
@@ -178,6 +178,19 @@ const TeacherDashboard = () => {
   const [studentMap, setStudentMap] = useState<Map<string, string>>(new Map());
   const [studentIdMap, setStudentIdMap] = useState<Map<string, string>>(new Map());
   const [studentDetailsMap, setStudentDetailsMap] = useState<Map<string, any>>(new Map()); // email -> {name, reg_no, va_no}
+
+  // Limits & Pagination
+  const [limitExams, setLimitExams] = useState(5);
+  const [limitSyllabi, setLimitSyllabi] = useState(5);
+  const [limitAssignments, setLimitAssignments] = useState(5);
+  const [limitAnnouncements, setLimitAnnouncements] = useState(5);
+  const [limitQueries, setLimitQueries] = useState(5);
+
+  const [totalExams, setTotalExams] = useState(0);
+  const [totalSyllabi, setTotalSyllabi] = useState(0);
+  const [totalAssignments, setTotalAssignments] = useState(0);
+  const [totalAnnouncements, setTotalAnnouncements] = useState(0);
+  const [totalQueries, setTotalQueries] = useState(0);
 
   // Form States
   const [selectedWorkspace, setSelectedWorkspace] = useState('');
@@ -379,13 +392,9 @@ const TeacherDashboard = () => {
 
 
     // Real-time listeners
-    const unsubExams = subscribeExams(email);
-    const unsubSyllabi = subscribeSyllabi(email);
-    const unsubQueries = subscribeQueries(email);
-    const unsubAssignments = subscribeAssignments(email);
-    const unsubAnnouncements = subscribeAnnouncements(email);
-
-    // Listen to Student Presence
+    // Real-time listeners moved to separate effects
+    // Init Google Drive
+    initGoogleDrive();
     const statusRef = ref(database, '/status');
     const unsubPresence = onValue(statusRef, (snapshot) => {
       const data = snapshot.val();
@@ -457,16 +466,130 @@ const TeacherDashboard = () => {
 
     return () => {
       clearInterval(timer);
-      unsubExams();
-      unsubSyllabi();
-      unsubQueries();
-      unsubAssignments();
-      unsubAnnouncements();
       unsubMaintenance();
       unsubSession();
       unsubPresence();
     };
   }, []);
+
+  // --- Modular Data Listeners (with Pagination, Caching & Aggregation) ---
+
+  // 1. Exams Listener
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`exams_${userEmail}`);
+    if (cached && cached.length >= limitExams) {
+      setExams(cached.slice(0, limitExams));
+    }
+
+    // Aggregation
+    const countQ = query(collection(db, 'exams'), where('teacherEmail', '==', userEmail));
+    getCountFromServer(countQ).then(snap => setTotalExams(snap.data().count)).catch(console.error);
+
+    const q = query(collection(db, 'exams'), where('teacherEmail', '==', userEmail), limit(limitExams));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setExams(data);
+      SessionCache.set(`exams_${userEmail}`, data, 5);
+    }, console.error);
+    return () => unsub();
+  }, [userEmail, limitExams]);
+
+  // 2. Syllabi Listener
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`syllabi_${userEmail}`);
+    if (cached && cached.length >= limitSyllabi) {
+      setSyllabi(cached.slice(0, limitSyllabi));
+    }
+
+    // Aggregation
+    const countQ = query(collection(db, 'syllabi'), where('owner', '==', userEmail));
+    getCountFromServer(countQ).then(snap => setTotalSyllabi(snap.data().count)).catch(console.error);
+
+    const q = query(collection(db, 'syllabi'), where('owner', '==', userEmail), limit(limitSyllabi));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setSyllabi(data);
+      SessionCache.set(`syllabi_${userEmail}`, data, 10);
+    }, console.error);
+    return () => unsub();
+  }, [userEmail, limitSyllabi]);
+
+  // 3. Announcements Listener
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`announcements_${userEmail}`);
+    if (cached && cached.length >= limitAnnouncements) {
+      setAnnouncements(cached.slice(0, limitAnnouncements));
+    }
+
+    // Aggregation
+    const countQ = query(collection(db, 'announcements'), where('teacherEmail', '==', userEmail));
+    getCountFromServer(countQ).then(snap => setTotalAnnouncements(snap.data().count)).catch(console.error);
+
+    const q = query(collection(db, 'announcements'), where('teacherEmail', '==', userEmail), limit(limitAnnouncements));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setAnnouncements(data);
+      SessionCache.set(`announcements_${userEmail}`, data, 5);
+    }, console.error);
+    return () => unsub();
+  }, [userEmail, limitAnnouncements]);
+
+  // 4. Assignments Listener (Pending Reviews)
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`assignments_${userEmail}`);
+    if (cached && cached.length >= limitAssignments) {
+      setAssignments(cached.slice(0, limitAssignments));
+    }
+
+    // Aggregation (Total Submissions)
+    const countQ = query(collection(db, 'submissions'), where('teacherEmail', 'in', [userEmail, '']));
+    getCountFromServer(countQ).then(snap => setTotalAssignments(snap.data().count)).catch(console.error);
+
+    // Recent items query
+    const q = query(collection(db, 'submissions'), where('teacherEmail', 'in', [userEmail, '']), limit(limitAssignments));
+
+    const unsub = onSnapshot(q, (snap) => {
+      let data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Client-side Sort
+      data.sort((a: any, b: any) => {
+        const dateA = a.createdAt?.seconds || a.submittedAt?.seconds || 0;
+        const dateB = b.createdAt?.seconds || b.submittedAt?.seconds || 0;
+        return dateB - dateA;
+      });
+      setAssignments(data);
+      SessionCache.set(`assignments_${userEmail}`, data, 3);
+    }, console.error);
+    return () => unsub();
+  }, [userEmail, limitAssignments]);
+
+  // 5. Queries Listener
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`queries_${userEmail}`);
+    if (cached && cached.length >= limitQueries) {
+      setQueries(cached.slice(0, limitQueries));
+    }
+
+    // Aggregation
+    const countQ = query(collection(db, 'queries'));
+    getCountFromServer(countQ).then(snap => setTotalQueries(snap.data().count)).catch(console.error);
+
+    const q = query(collection(db, 'queries'), limit(limitQueries));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setQueries(data);
+      SessionCache.set(`queries_${userEmail}`, data, 5);
+    }, console.error);
+    return () => unsub();
+  }, [userEmail, limitQueries]);
 
   // Maintenance Countdown Effect
   useEffect(() => {
@@ -1451,132 +1574,7 @@ const TeacherDashboard = () => {
     }
   };
 
-  // --- Subscriptions ---
-  const subscribeExams = (email: string) => {
-    // Try cache first (reduces reads on refresh)
-    const cached = SessionCache.get(`exams_${email}`);
-    if (cached) {
-      setExams(cached);
-      console.log('📦 Loaded exams from cache (0 reads) - Skipping subscription');
-      return () => { };
-    }
 
-    const q = query(collection(db, 'exams'), where('teacherEmail', '==', email));
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setExams(data);
-      SessionCache.set(`exams_${email}`, data, 5); // Cache for 5 minutes
-    }, (error) => {
-      console.error("Error fetching exams:", error);
-    });
-  };
-
-  const subscribeSyllabi = (email: string) => {
-    const cached = SessionCache.get(`syllabi_${email}`);
-    if (cached) {
-      setSyllabi(cached);
-      console.log('📦 Loaded syllabi from cache (0 reads) - Skipping subscription');
-      return () => { };
-    }
-
-    const q = query(collection(db, 'syllabi'), where('owner', '==', email));
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setSyllabi(data);
-      SessionCache.set(`syllabi_${email}`, data, 10); // Cache for 10 minutes
-    }, (error) => {
-      console.error("Error fetching syllabi:", error);
-    });
-  };
-
-  const subscribeQueries = (email: string) => {
-    const cached = SessionCache.get(`queries_${email}`);
-    if (cached) {
-      setQueries(cached);
-      console.log('📦 Loaded queries from cache (0 reads) - Skipping subscription');
-      return () => { };
-    }
-
-    // OPTIMIZATION: Load only 5 most recent queries
-    const q = query(collection(db, 'queries'), limit(5));
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setQueries(data);
-      SessionCache.set(`queries_${email}`, data, 5); // Cache for 5 minutes
-    }, (error) => {
-      console.error("Error fetching queries:", error);
-    });
-  };
-
-  const subscribeAssignments = (email: string) => {
-    // Try cache first (most expensive query)
-    const cached = SessionCache.get(`assignments_${email}`);
-    if (cached) {
-      setAssignments(cached);
-      console.log('📦 Loaded assignments from cache (0 reads) - Skipping subscription');
-      return () => { };
-    }
-
-    // OPTIMIZATION: Only fetch recent submissions (last 60 days) by default
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    // const cutoffTimestamp = Timestamp.fromDate(sixtyDaysAgo); // Removed for now to allow old items
-
-    // Query mostly by teacher email first.
-    // We remove the 'createdAt' filter to capture old items that only have 'submittedAt'
-    const q = query(
-      collection(db, 'submissions'),
-      where('teacherEmail', 'in', [email, ''])
-    );
-
-    console.log('🔥 [SUB] Subscribing to assignments...');
-    return onSnapshot(q, (snap) => {
-      console.log(`🔥 [READ] Assignments update: ${snap.docs.length} docs (size: ${snap.size})`);
-      let data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-      // Client-side Filter: Keep items newer than 60 days OR items with no timestamp (legacy)
-      // Check both createdAt and submittedAt
-      data = data.filter((d: any) => {
-        const timestamp = d.createdAt || d.submittedAt;
-        if (!timestamp) return true; // Keep if no date found (safety)
-        return timestamp.seconds > (sixtyDaysAgo.getTime() / 1000);
-      });
-
-      // Sort by whatever date is available
-      data.sort((a: any, b: any) => {
-        const dateA = a.createdAt?.seconds || a.submittedAt?.seconds || 0;
-        const dateB = b.createdAt?.seconds || b.submittedAt?.seconds || 0;
-        return dateB - dateA;
-      });
-
-      setAssignments(data);
-      SessionCache.set(`assignments_${email}`, data, 3); // Cache for 3 minutes (changes frequently)
-    }, (error) => {
-      console.error("Error fetching assignments:", error);
-    });
-  };
-
-  const subscribeAnnouncements = (email: string) => {
-    const cached = SessionCache.get(`announcements_${email}`);
-    if (cached) {
-      setAnnouncements(cached);
-      console.log('📦 Loaded announcements from cache (0 reads) - Skipping subscription');
-      return () => { };
-    }
-
-    const q = query(collection(db, 'announcements'), where('teacherEmail', '==', email));
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setAnnouncements(data);
-      SessionCache.set(`announcements_${email}`, data, 5);
-    }, (error) => {
-      console.error("Error fetching announcements:", error);
-    });
-  };
 
   // --- Actions ---
 
@@ -4061,7 +4059,7 @@ const TeacherDashboard = () => {
               <CardContent className="p-6 flex items-center justify-between">
                 <div>
                   <p className="text-purple-200 text-sm font-medium">Active Exams</p>
-                  <h3 className="text-4xl font-bold mt-2">{stats.exams}</h3>
+                  <h3 className="text-4xl font-bold mt-2">{totalExams}</h3>
                 </div>
                 <div className="p-3 bg-purple-500/20 rounded-full">
                   <FileText className="h-8 w-8 text-purple-400" />
@@ -4071,8 +4069,8 @@ const TeacherDashboard = () => {
             <Card className="bg-gradient-to-br from-yellow-900/80 to-slate-900 border-slate-700 text-white shadow-lg hover:shadow-yellow-900/20 transition-all">
               <CardContent className="p-6 flex items-center justify-between">
                 <div>
-                  <p className="text-yellow-200 text-sm font-medium">Pending Reviews</p>
-                  <h3 className="text-4xl font-bold mt-2">{stats.pendingReviews}</h3>
+                  <p className="text-yellow-200 text-sm font-medium">Total Submissions</p>
+                  <h3 className="text-4xl font-bold mt-2">{totalAssignments}</h3>
                 </div>
                 <div className="p-3 bg-yellow-500/20 rounded-full">
                   <AlertCircle className="h-8 w-8 text-yellow-400" />
@@ -4083,7 +4081,7 @@ const TeacherDashboard = () => {
               <CardContent className="p-6 flex items-center justify-between">
                 <div>
                   <p className="text-green-200 text-sm font-medium">Syllabus Uploaded</p>
-                  <h3 className="text-4xl font-bold mt-2">{stats.syllabi}</h3>
+                  <h3 className="text-4xl font-bold mt-2">{totalSyllabi}</h3>
                 </div>
                 <div className="p-3 bg-green-500/20 rounded-full">
                   <BookOpen className="h-8 w-8 text-green-400" />
@@ -4483,6 +4481,13 @@ const TeacherDashboard = () => {
                       ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                     </div>
                   )}
+                {exams.length === limitExams && (
+                  <div className="flex justify-center mt-4">
+                    <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitExams(prev => prev + 5)}>
+                      Load More Tests ({limitExams} currently loaded)
+                    </Button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -4680,6 +4685,13 @@ const TeacherDashboard = () => {
                     ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                   </div>
                 )}
+              {announcements.length === limitAnnouncements && (
+                <div className="flex justify-center mt-4 border-t border-slate-700/50 pt-4">
+                  <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAnnouncements(prev => prev + 5)}>
+                    Load More Announcements ({limitAnnouncements} currently loaded)
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -4884,6 +4896,13 @@ const TeacherDashboard = () => {
                         ).length / 20)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                       </div>
                     )}
+                  {syllabi.length === limitSyllabi && (
+                    <div className="flex justify-center mt-4">
+                      <Button variant="ghost" size="sm" className="text-green-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitSyllabi(prev => prev + 5)}>
+                        Load More Syllabi ({limitSyllabi} currently loaded)
+                      </Button>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -5249,6 +5268,13 @@ const TeacherDashboard = () => {
                           }).length <= assignmentPage * 9} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                         </div>
                       )}
+                    {assignments.length === limitAssignments && (
+                      <div className="flex justify-center mt-4">
+                        <Button variant="ghost" size="sm" className="text-indigo-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 5)}>
+                          Load More Submissions ({limitAssignments} currently loaded)
+                        </Button>
+                      </div>
+                    )}
                   </>
                 )}
               </CardContent>
