@@ -169,9 +169,10 @@ const StudentDashboard = () => {
   const [syllabusSearch, setSyllabusSearch] = useState('');
   const [assignmentPage, setAssignmentPage] = useState(1);
   const [announcePage, setAnnouncePage] = useState(1);
-  const [examLimit, setExamLimit] = useState(6);
-  const [syllabusLimit, setSyllabusLimit] = useState(6);
-  const [announceLimit, setAnnounceLimit] = useState(5);
+  const [limitExams, setLimitExams] = useState(5);
+  const [limitSyllabi, setLimitSyllabi] = useState(5);
+  const [limitAnnouncements, setLimitAnnouncements] = useState(5);
+  const [limitAssignments, setLimitAssignments] = useState(5);
   const [marksPage, setMarksPage] = useState(1);
   const [examMarksPage, setExamMarksPage] = useState(1);
   const [selectedUnomId, setSelectedUnomId] = useState<string | null>(null);
@@ -407,170 +408,161 @@ const StudentDashboard = () => {
   }, [maintenanceMode]);
 
   // Real-time Listeners & Notifications
-  // Real-time Listeners & Notifications
+  // --- Modular Data Listeners (with Pagination & Caching) ---
+  const isRecent = (timestamp: any) => {
+    if (!timestamp) return false;
+    const now = Date.now();
+    const time = timestamp.seconds * 1000;
+    return (now - time) < 1000 * 60 * 60; // 1 hour
+  };
+
+  // 1. Exams Listener
   useEffect(() => {
     if (!userEmail) return;
-
-    let unsubExams: any;
-    let unsubSyllabi: any;
-    let unsubAnnouncements: any;
-    let unsubAssignments: any;
-    let unsubRTDB: any;
-
-    // Load from cache first (instant UI on refresh)
-    // Load from cache first (instant UI on refresh)
-    const CACHE_TTL = 15; // 15 minutes
-    const cachedExams = SessionCache.get(`exams_${userEmail}`);
-    const cachedSyllabi = SessionCache.get(`syllabi_${userEmail}`);
-    const cachedAnnouncements = SessionCache.get(`announcements_${userEmail}`);
-    const cachedAssignments = SessionCache.get(`assignments_${userEmail}`);
-
-    if (cachedExams) {
-      setExams(cachedExams);
-      console.log('📦 Loaded exams from cache (0 reads)');
-    } else {
-      console.log('❌ Cache Miss: exams');
+    const cached = SessionCache.get(`exams_${userEmail}`);
+    if (cached && cached.length >= limitExams) {
+      setExams(cached.slice(0, limitExams));
+      console.log(`📦 Loaded exams from cache (${limitExams}/${cached.length} items)`);
+      return;
     }
 
-    if (cachedSyllabi) {
-      setSyllabi(cachedSyllabi);
-      console.log('📦 Loaded syllabi from cache (0 reads)');
-    } else {
-      console.log('❌ Cache Miss: syllabi');
+    const q = query(
+      collection(db, 'exams'),
+      where('students', 'array-contains', userEmail),
+      limit(limitExams)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setExams(data);
+      SessionCache.set(`exams_${userEmail}`, data, 15);
+
+      if (!isInitialLoad.current) {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const d = change.doc.data();
+            if (isRecent(d.createdAt)) addNotification('exam', `New Exam: ${d.title}`);
+          }
+        });
+      }
+    }, err => console.error("Exams error:", err));
+    return () => unsub();
+  }, [userEmail, limitExams]);
+
+  // 2. Syllabi Listener
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`syllabi_${userEmail}`);
+    if (cached && cached.length >= limitSyllabi) {
+      setSyllabi(cached.slice(0, limitSyllabi));
+      return;
     }
 
-    if (cachedAnnouncements) {
-      setAnnouncements(cachedAnnouncements);
-      console.log('📦 Loaded announcements from cache (0 reads)');
-    } else {
-      console.log('❌ Cache Miss: announcements');
+    const q = query(
+      collection(db, 'syllabi'),
+      where('students', 'array-contains', userEmail),
+      limit(limitSyllabi)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setSyllabi(data);
+      SessionCache.set(`syllabi_${userEmail}`, data, 15);
+
+      if (!isInitialLoad.current) {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const d = change.doc.data();
+            if (isRecent(d.createdAt)) addNotification('syllabus', `New Syllabus: ${d.name}`);
+          }
+        });
+      }
+    }, err => console.error("Syllabi error:", err));
+    return () => unsub();
+  }, [userEmail, limitSyllabi]);
+
+  // 3. Announcements Listener
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`announcements_${userEmail}`);
+    if (cached && cached.length >= limitAnnouncements) {
+      setAnnouncements(cached.slice(0, limitAnnouncements));
+      return;
     }
 
-    if (cachedAssignments) {
-      setAssignments(cachedAssignments);
-      setMarks(cachedAssignments.filter((a: any) => a.status === 'graded'));
-      console.log('📦 Loaded assignments from cache (0 reads)');
-    } else {
-      console.log('❌ Cache Miss: assignments');
+    const q = query(
+      collection(db, 'announcements'),
+      where('students', 'array-contains', userEmail),
+      limit(limitAnnouncements)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setAnnouncements(data);
+      SessionCache.set(`announcements_${userEmail}`, data, 15);
+
+      if (!isInitialLoad.current) {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const d = change.doc.data();
+            if (isRecent(d.createdAt)) addNotification('announcement', `Announcement: ${d.title}`);
+          }
+        });
+      }
+    }, err => console.error("Announcements error:", err));
+    return () => unsub();
+  }, [userEmail, limitAnnouncements]);
+
+  // 4. Assignments Listener
+  useEffect(() => {
+    if (!userEmail) return;
+    const cached = SessionCache.get(`assignments_${userEmail}`);
+    if (cached && cached.length >= limitAssignments) {
+      // Logic for filtered marks needs assignments so we set both
+      const slice = cached.slice(0, limitAssignments);
+      setAssignments(slice);
+      setMarks(slice.filter((a: any) => a.status === 'graded'));
+      return;
     }
 
-    // Exams Listener
-    if (!cachedExams) {
-      // OPTIMIZATION: Limit to latest 5 exams
-      const latestExamsQuery = query(
-        collection(db, 'exams'),
-        where('students', 'array-contains', userEmail),
-        limit(5)
-      );
-      unsubExams = onSnapshot(latestExamsQuery, (snap) => {
-        const newExams = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        newExams.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setExams(newExams);
-        SessionCache.set(`exams_${userEmail}`, newExams, CACHE_TTL);
+    const q = query(
+      collection(db, 'submissions'),
+      where('studentEmail', '==', userEmail),
+      limit(limitAssignments)
+    );
 
-        if (!isInitialLoad.current) {
-          snap.docChanges().forEach(change => {
-            if (change.type === 'added') {
-              const data = change.doc.data();
-              addNotification('exam', `New Exam: ${data.title}`);
-            }
-          });
-        }
-      }, (error) => console.error("Error fetching exams:", error));
-    }
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+      setAssignments(data);
+      setMarks(data.filter((a: any) => a.status === 'graded'));
+      SessionCache.set(`assignments_${userEmail}`, data, 15);
 
-    // Syllabi Listener
-    if (!cachedSyllabi) {
-      // OPTIMIZATION: Limit to latest 5 syllabi
-      const latestSyllabiQuery = query(
-        collection(db, 'syllabi'),
-        where('students', 'array-contains', userEmail),
-        limit(5)
-      );
-      unsubSyllabi = onSnapshot(latestSyllabiQuery, (snap) => {
-        const newSyllabi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        newSyllabi.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setSyllabi(newSyllabi);
-        SessionCache.set(`syllabi_${userEmail}`, newSyllabi, CACHE_TTL);
+      if (!isInitialLoad.current) {
+        snap.docChanges().forEach(change => {
+          const d = change.doc.data();
+          if (change.type === 'modified' && d.status === 'graded') {
+            // Always notify for marks
+            addNotification('marks', `Graded: ${d.assignmentTitle}`);
+          }
+        });
+      }
+    }, err => console.error("Assignments error:", err));
+    return () => unsub();
+  }, [userEmail, limitAssignments]);
 
-        if (!isInitialLoad.current) {
-          snap.docChanges().forEach(change => {
-            if (change.type === 'added') {
-              const data = change.doc.data();
-              addNotification('syllabus', `New Syllabus: ${data.name}`);
-            }
-          });
-        }
-      }, (error) => console.error("Error fetching syllabi:", error));
-    }
+  // 5. Initial Load Timer & RTDB
+  useEffect(() => {
+    if (!userEmail) return;
+    setTimeout(() => { isInitialLoad.current = false; }, 3000);
 
-    // Announcements Listener
-    if (!cachedAnnouncements) {
-      // OPTIMIZATION: Limit to latest 5 announcements
-      const latestAnnouncementsQuery = query(
-        collection(db, 'announcements'),
-        where('students', 'array-contains', userEmail),
-        limit(5)
-      );
-      unsubAnnouncements = onSnapshot(latestAnnouncementsQuery, (snap) => {
-        const newAnnouncements = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        newAnnouncements.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setAnnouncements(newAnnouncements);
-        SessionCache.set(`announcements_${userEmail}`, newAnnouncements, CACHE_TTL);
-
-        if (!isInitialLoad.current) {
-          snap.docChanges().forEach(change => {
-            if (change.type === 'added') {
-              const data = change.doc.data();
-              addNotification('announcement', `Announcement: ${data.title}`);
-            }
-          });
-        }
-      }, (error) => console.error("Error fetching announcements:", error));
-    }
-
-    // Assignments Listener
-    if (!cachedAssignments) {
-      // OPTIMIZATION: Limit to latest 5 assignments
-      const latestAssignmentsQuery = query(
-        collection(db, 'submissions'),
-        where('studentEmail', '==', userEmail),
-        limit(5)
-      );
-      unsubAssignments = onSnapshot(latestAssignmentsQuery, (snap) => {
-        const newAssignments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        newAssignments.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
-        setAssignments(newAssignments);
-        setMarks(newAssignments.filter((a: any) => a.status === 'graded'));
-        SessionCache.set(`assignments_${userEmail}`, newAssignments, CACHE_TTL);
-
-        if (!isInitialLoad.current) {
-          snap.docChanges().forEach(change => {
-            const data = change.doc.data();
-            if (change.type === 'modified') {
-              if (data.status === 'graded') {
-                addNotification('marks', `Graded: ${data.assignmentTitle} (${data.marks} marks)`);
-              }
-            }
-          });
-        }
-      }, (error) => console.error("Error fetching assignments:", error));
-    }
-
-    // RTDB - Legacy/Safety
     const notificationsRef = ref(database, 'notifications');
     const notificationsQuery = rtdbQuery(notificationsRef, limitToLast(1));
-    unsubRTDB = onChildAdded(notificationsQuery, () => { });
-
-    setTimeout(() => { isInitialLoad.current = false; }, 2000);
-
-    return () => {
-      if (unsubExams) unsubExams();
-      if (unsubSyllabi) unsubSyllabi();
-      if (unsubAnnouncements) unsubAnnouncements();
-      if (unsubAssignments) unsubAssignments();
-      if (unsubRTDB) unsubRTDB();
-    };
+    const unsubRTDB = onChildAdded(notificationsQuery, () => { });
+    return () => unsubRTDB();
   }, [userEmail]);
 
   // Permission Check
@@ -2246,6 +2238,13 @@ const StudentDashboard = () => {
                 <Button variant="outline" size="sm" onClick={() => setSyllabusPage(p => Math.min(Math.ceil(syllabi.length / 9), p + 1))} disabled={syllabusPage === Math.ceil(syllabi.length / 9)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
               </div>
             )}
+            {syllabi.length === limitSyllabi && (
+              <div className="flex justify-center mt-4">
+                <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitSyllabi(prev => prev + 5)}>
+                  Load More Syllabi ({limitSyllabi} currently loaded)
+                </Button>
+              </div>
+            )}
           </div>
         )
       }
@@ -2317,6 +2316,13 @@ const StudentDashboard = () => {
                 <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.max(1, p - 1))} disabled={examPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
                 <span className="text-sm text-slate-400">Page {examPage} of {Math.ceil(exams.length / 9)}</span>
                 <Button variant="outline" size="sm" onClick={() => setExamPage(p => Math.min(Math.ceil(exams.length / 9), p + 1))} disabled={examPage === Math.ceil(exams.length / 9)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+              </div>
+            )}
+            {exams.length === limitExams && (
+              <div className="flex justify-center mt-4">
+                <Button variant="ghost" size="sm" className="text-purple-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitExams(prev => prev + 5)}>
+                  Load More Tests ({limitExams} currently loaded)
+                </Button>
               </div>
             )}
           </div>
@@ -2878,6 +2884,13 @@ const StudentDashboard = () => {
                   <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.max(1, p - 1))} disabled={announcePage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
                   <span className="text-sm text-slate-400">Page {announcePage} of {Math.ceil(announcements.filter(a => a.title.toLowerCase().includes(announcementSearch.toLowerCase()) || a.description.toLowerCase().includes(announcementSearch.toLowerCase())).length / 10)}</span>
                   <Button variant="outline" size="sm" onClick={() => setAnnouncePage(p => Math.min(Math.ceil(announcements.filter(a => a.title.toLowerCase().includes(announcementSearch.toLowerCase()) || a.description.toLowerCase().includes(announcementSearch.toLowerCase())).length / 10), p + 1))} disabled={announcePage === Math.ceil(announcements.filter(a => a.title.toLowerCase().includes(announcementSearch.toLowerCase()) || a.description.toLowerCase().includes(announcementSearch.toLowerCase())).length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                </div>
+              )}
+              {announcements.length === limitAnnouncements && (
+                <div className="flex justify-center mt-4">
+                  <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAnnouncements(prev => prev + 5)}>
+                    Load More Announcements ({limitAnnouncements} currently loaded)
+                  </Button>
                 </div>
               )}
             </div>
