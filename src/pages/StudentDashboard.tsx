@@ -446,7 +446,11 @@ const StudentDashboard = () => {
       let total = cached?.count || 0;
       if (!cached) {
         try {
-          const countQ = query(collection(db, 'exams'), where('students', 'array-contains', userEmail));
+          const countQ = query(
+            collection(db, 'exams'),
+            where('students', 'array-contains', userEmail),
+            where('status', '!=', 'draft')
+          );
           const countSnap = await getCountFromServer(countQ);
           if (!isMounted) return;
           total = countSnap.data().count;
@@ -461,6 +465,7 @@ const StudentDashboard = () => {
       const q = query(
         collection(db, 'exams'),
         where('students', 'array-contains', userEmail),
+        where('status', '!=', 'draft'),
         orderBy('createdAt', 'desc'),
         limit(limitExams)
       );

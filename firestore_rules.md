@@ -56,29 +56,27 @@ service cloud.firestore {
     // --- Collection Rules ---
 
     // Users: 
-    // - Read: Restrict to own profile or Teachers/Admins (Prevents PII leakage)
-    // - Write: Admin only (Students update specific fields via profile forms, controlled here)
+    // - Read: Owners can read own. Teachers/Admins can read all. ANYONE can read 'teacher' profiles (for dropdowns).
+    // - Write: Admin only
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || resource.data.role == 'teacher' || resource.data.role == 'admin');
+      allow read: if isOwner(userId) || isAdmin() || isTeacher() || resource.data.role == 'teacher'; 
       allow create: if isAdmin();
       allow delete: if isAdmin();
       allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role); 
     }
 
     // Workspaces:
-    // - Read: Authenticated users (Can be further restricted to enrolled students if 'students' array exists)
-    // - Write: Admins only
     match /workspaces/{workspaceId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
     // Content (Exams, Syllabi, Announcements):
-    // - Read: Authenticated users. 
-    // - Write: Admins or Teachers
     match /exams/{docId} {
-      // Security: Students should not read drafts or future exams
-      allow read: if isAuthenticated() && (resource.data.status != 'draft' || isAdmin() || isTeacher());
+      // Security: Students must be in the 'students' list AND the exam must not be a draft.
+      // Teachers/Admins have full access.
+      allow read: if isAdmin() || isTeacher() || 
+        (isAuthenticated() && resource.data.status != 'draft' && (resource.data.students.hasAny([getUserEmail()]) || resource.data.students.hasAny([request.auth.token.email])));
       allow write: if isAdmin() || isTeacher();
     }
     match /syllabi/{docId} {
@@ -95,7 +93,6 @@ service cloud.firestore {
     }
 
     // Submissions:
-    // - Read: Teachers/Admins OR the student who owns the submission
     match /submissions/{docId} {
       allow read: if isAdmin() || isTeacher() || (isAuthenticated() && resource.data.studentEmail == getUserEmail());
       allow create: if isAuthenticated();
@@ -120,9 +117,9 @@ service cloud.firestore {
 
     // --- New Features (Attendance, Marks, UNOM) ---
     
-    // Attendance: Secure to owner
+    // Attendance: Secure to owner (Match by Email as used in StudentDashboard)
     match /attendance/{docId} {
-      allow read: if isAdmin() || isTeacher() || (isAuthenticated() && resource.data.studentId == request.auth.uid);
+      allow read: if isAdmin() || isTeacher() || (isAuthenticated() && resource.data.studentEmail == getUserEmail());
       allow write: if isAdmin() || isTeacher();
     }
 
