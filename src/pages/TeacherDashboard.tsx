@@ -1599,7 +1599,7 @@ const TeacherDashboard = () => {
       if (uniqueEmails.size === 0) return;
 
       // CACHE LOGIC: Partial Cache
-      const CACHE_KEY = `student_profiles_cache_v2_${userEmail}`; // v2 to force refresh
+      const CACHE_KEY = `student_profiles_cache_v3_${userEmail}`; // v3 to force refresh (includes all fields)
       let cachedSMap = new Map<string, string>();
       let cachedIdMap = new Map<string, string>();
       let cachedDetailsMap = new Map<string, any>();
@@ -1646,19 +1646,12 @@ const TeacherDashboard = () => {
             if (d.email) {
               newSMap.set(d.email, d.name || '');
               newIdMap.set(d.email, d.uid || doc.id);
-              newDetailsMap.set(d.email, {
-                name: d.name || '',
-                va_no: d.va_no || ''
-              });
+              newDetailsMap.set(d.email, d); // STORE FULL OBJECT
               // Normalize lowercase for robust lookup
               if (d.email.toLowerCase() !== d.email) {
                 newSMap.set(d.email.toLowerCase(), d.name || '');
                 newIdMap.set(d.email.toLowerCase(), d.uid || doc.id);
-                newDetailsMap.set(d.email.toLowerCase(), {
-                  name: d.name || '',
-                  reg_no: d.reg_no || '',
-                  va_no: d.va_no || ''
-                });
+                newDetailsMap.set(d.email.toLowerCase(), d);
               }
             }
           });
