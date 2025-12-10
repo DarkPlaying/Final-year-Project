@@ -1386,10 +1386,9 @@ const StudentDashboard = () => {
           return !subjects.some((s: string) => d[s] === 'AB' || (typeof d[s] === 'string' && d[s].startsWith('RA')));
         });
 
-        rankableStudents.sort((a: any, b: any) => b.total - a.total);
-        rankableStudents.forEach((d: any, i: number) => {
-          d.rank = i + 1;
-        });
+        // Ranking should be done by the teacher or server-side. 
+        // Do not re-sort or re-rank here to avoid race conditions and manipulation.
+
 
         // Update
         transaction.update(sfDocRef, {

@@ -14,24 +14,14 @@ importScripts('https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-comp
 // Retrieve config params from the script URL
 const params = new URLSearchParams(self.location.search);
 
-// FALLBACK CONFIG (In case URL params fail)
-const defaultConfig = {
-    apiKey: "AIzaSyBKFJgmeykAc4CK9zDrKz74Sy7Qyq6C8y8",
-    authDomain: "education-ai-af34e.firebaseapp.com",
-    projectId: "education-ai-af34e",
-    storageBucket: "education-ai-af34e.firebasestorage.app",
-    messagingSenderId: "815335775209",
-    appId: "1:815335775209:web:3a81533577520983aweb"
-};
+const apiKey = params.get('apiKey');
+const authDomain = params.get('authDomain');
+const projectId = params.get('projectId');
+const storageBucket = params.get('storageBucket');
+const messagingSenderId = params.get('messagingSenderId');
+const appId = params.get('appId');
 
-const apiKey = params.get('apiKey') || defaultConfig.apiKey;
-const authDomain = params.get('authDomain') || defaultConfig.authDomain;
-const projectId = params.get('projectId') || defaultConfig.projectId;
-const storageBucket = params.get('storageBucket') || defaultConfig.storageBucket;
-const messagingSenderId = params.get('messagingSenderId') || defaultConfig.messagingSenderId;
-const appId = params.get('appId') || defaultConfig.appId;
-
-if (apiKey && projectId) {
+if (apiKey && projectId && messagingSenderId) {
     const firebaseConfig = {
         apiKey,
         authDomain,
@@ -70,7 +60,9 @@ if (apiKey && projectId) {
         self.registration.showNotification(notificationTitle, notificationOptions);
     });
 } else {
-    console.warn('Firebase Messaging SW: Missing config parameters in URL and Default Config');
+    // Graceful degradation: If config is missing (e.g. direct file access), do nothing
+    // This removes the security risk of having keys in the file
+    console.log('Firebase Messaging SW: Waiting for config via URL parameters...');
 }
 
 // Handle Notification Click

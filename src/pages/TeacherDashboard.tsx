@@ -806,8 +806,6 @@ const TeacherDashboard = () => {
 
             if (storedPassword.startsWith('$2')) {
               isFirestoreMatch = await verifyPassword(passwordForm.current, storedPassword);
-            } else if (storedPassword === passwordForm.current) {
-              isFirestoreMatch = true;
             }
 
             if (isFirestoreMatch) {
