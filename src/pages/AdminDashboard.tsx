@@ -534,9 +534,49 @@ const AdminDashboard = () => {
         workspaces: workspacesCount.data().count
       });
 
-      // Growth chart data requires full read or a separate "stats" document. 
-      // Disabling full read for performance. Ideally, maintain a 'daily_stats' collection.
-      setUserGrowthData([]);
+      // Calculate User Growth (Group by Month)
+      // We fetch all users to calculate accurate growth over time. 
+      // specific fields are not fetched to save bandwidth if possible, but Firestore fetches full docs.
+      // Optimization: In a real large app, use valid aggregation or a stats counter doc.
+      const growthQ = query(usersRef, orderBy('createdAt', 'asc'));
+      const growthSnap = await getDocs(growthQ);
+
+      const growthMap = new Map<string, number>();
+      let cumulativeUsers = 0;
+
+      growthSnap.forEach(doc => {
+        const data = doc.data();
+        if (data.createdAt) {
+          const date = new Date(data.createdAt.seconds * 1000);
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); // e.g., "Dec 2025"
+
+          growthMap.set(monthKey, (growthMap.get(monthKey) || 0) + 1);
+        }
+      });
+
+      const chartData: { date: string; users: number }[] = [];
+      const sortedMonths = Array.from(growthMap.keys()).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+      let runningTotal = 0;
+      // If we want to show the last 6 months or all history:
+      // Let's show all history for now as the dataset is likely small.
+      sortedMonths.forEach(month => {
+        runningTotal += growthMap.get(month)!;
+        chartData.push({
+          date: month,
+          users: runningTotal
+        });
+      });
+
+      // If no data, show at least current month
+      if (chartData.length === 0) {
+        chartData.push({
+          date: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          users: 0
+        });
+      }
+
+      setUserGrowthData(chartData);
 
     } catch (error) {
       console.error('Error loading stats:', error);
