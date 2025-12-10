@@ -333,10 +333,18 @@ const StudentDashboard = () => {
     // Check for Compulsory Update Announcements (Cached)
     const checkCompulsory = async () => {
       if (!email) return;
+
+      // OPTIMIZATION: Check cache to avoid reading announcements on every reload
+      const cacheKey = `compulsory_check_${email}`;
+      if (SessionCache.get(cacheKey)) return;
+
       let announcements = [];
+      // Note: This query might grab all if not indexed properly, but we cache the result check
       const q = query(collection(db, 'announcements'), where('students', 'array-contains', email), where('type', '==', 'compulsory_update_request'));
       const snap = await getDocs(q);
       announcements = snap.docs.map(d => d.data());
+
+      SessionCache.set(cacheKey, true, 60); // Cache check for 60 minutes
 
       if (announcements.length === 0) return;
 
@@ -420,183 +428,257 @@ const StudentDashboard = () => {
   useEffect(() => {
     if (!userEmail) return;
     const cached = SessionCache.get(`exams_${userEmail}`);
-    if (cached && cached.length >= limitExams) {
-      setExams(cached.slice(0, limitExams));
-      console.log(`📦 Loaded exams from cache (${limitExams}/${cached.length} items)`);
-      console.log(`📦 Loaded exams from cache (${limitExams}/${cached.length} items)`);
-      // Fallthrough to fetch count
+    if (cached) {
+      setTotalExams(cached.count); // Optimistically use cached count
+      if (cached.items && cached.items.length >= limitExams) {
+        setExams(cached.items.slice(0, limitExams));
+        return;
+      }
     }
 
-    // Aggregation: Get Total Count
-    const countQ = query(
-      collection(db, 'exams'),
-      where('students', 'array-contains', userEmail)
-    );
-    getCountFromServer(countQ).then(snap => setTotalExams(snap.data().count)).catch(console.error);
+    // Only fetch count if not cached (saves 1 meta-read)
+    // Only fetch count if not cached (saves 1 meta-read)
+    // We use a mutable variable to hold the unsubscribe function
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-    if (cached && cached.length >= limitExams) return;
-
-    const q = query(
-      collection(db, 'exams'),
-      where('students', 'array-contains', userEmail),
-      orderBy('createdAt', 'desc'),
-      limit(limitExams)
-    );
-
-
-
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setExams(data);
-      SessionCache.set(`exams_${userEmail}`, data, 15);
-
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const d = change.doc.data();
-            if (isRecent(d.createdAt)) addNotification('exam', `New Exam: ${d.title}`);
-          }
-        });
+    const setupListener = async () => {
+      let total = cached?.count || 0;
+      if (!cached) {
+        try {
+          const countQ = query(collection(db, 'exams'), where('students', 'array-contains', userEmail));
+          const countSnap = await getCountFromServer(countQ);
+          if (!isMounted) return;
+          total = countSnap.data().count;
+          setTotalExams(total);
+        } catch (e) {
+          console.error("Error fetching exam count:", e);
+        }
       }
-    }, err => console.error("Exams error:", err));
-    return () => unsub();
+
+      if (!isMounted) return;
+
+      const q = query(
+        collection(db, 'exams'),
+        where('students', 'array-contains', userEmail),
+        orderBy('createdAt', 'desc'),
+        limit(limitExams)
+      );
+
+      unsubscribe = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // data.sort handled by orderBy
+        setExams(data);
+        SessionCache.set(`exams_${userEmail}`, { items: data, count: total }, 15);
+
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const d = change.doc.data();
+              if (isRecent(d.createdAt)) addNotification('exam', `New Exam: ${d.title}`);
+            }
+          });
+        }
+      }, err => console.error("Exams error:", err));
+    };
+
+    setupListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [userEmail, limitExams]);
 
   // 2. Syllabi Listener
   useEffect(() => {
     if (!userEmail) return;
     const cached = SessionCache.get(`syllabi_${userEmail}`);
-    if (cached && cached.length >= limitSyllabi) {
-      setSyllabi(cached.slice(0, limitSyllabi));
+    if (cached) {
+      setTotalSyllabi(cached.count);
+      if (cached.items && cached.items.length >= limitSyllabi) {
+        setSyllabi(cached.items.slice(0, limitSyllabi));
+        return;
+      }
     }
 
-    // Aggregation: Get Total Count
-    const countQ = query(
-      collection(db, 'syllabi'),
-      where('students', 'array-contains', userEmail)
-    );
-    getCountFromServer(countQ).then(snap => setTotalSyllabi(snap.data().count)).catch(console.error);
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-    if (cached && cached.length >= limitSyllabi) return;
-
-    const q = query(
-      collection(db, 'syllabi'),
-      where('students', 'array-contains', userEmail),
-      orderBy('createdAt', 'desc'),
-      limit(limitSyllabi)
-    );
-
-
-
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setSyllabi(data);
-      SessionCache.set(`syllabi_${userEmail}`, data, 15);
-
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const d = change.doc.data();
-            if (isRecent(d.createdAt)) addNotification('syllabus', `New Syllabus: ${d.name}`);
-          }
-        });
+    const setupListener = async () => {
+      let total = cached?.count || 0;
+      if (!cached) {
+        try {
+          const countQ = query(collection(db, 'syllabi'), where('students', 'array-contains', userEmail));
+          const countSnap = await getCountFromServer(countQ);
+          if (!isMounted) return;
+          total = countSnap.data().count;
+          setTotalSyllabi(total);
+        } catch (e) {
+          console.error("Error fetching syllabus count", e);
+        }
       }
-    }, err => console.error("Syllabi error:", err));
-    return () => unsub();
+
+      if (!isMounted) return;
+
+      const q = query(
+        collection(db, 'syllabi'),
+        where('students', 'array-contains', userEmail),
+        orderBy('createdAt', 'desc'),
+        limit(limitSyllabi)
+      );
+
+      unsubscribe = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setSyllabi(data);
+        SessionCache.set(`syllabi_${userEmail}`, { items: data, count: total }, 15);
+
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const d = change.doc.data();
+              if (isRecent(d.createdAt)) addNotification('syllabus', `New Syllabus: ${d.name}`);
+            }
+          });
+        }
+      }, err => console.error("Syllabi error:", err));
+
+    };
+
+    setupListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [userEmail, limitSyllabi]);
 
   // 3. Announcements Listener
   useEffect(() => {
     if (!userEmail) return;
     const cached = SessionCache.get(`announcements_${userEmail}`);
-    if (cached && cached.length >= limitAnnouncements) {
-      setAnnouncements(cached.slice(0, limitAnnouncements));
+    if (cached) {
+      setTotalAnnouncements(cached.count);
+      if (cached.items && cached.items.length >= limitAnnouncements) {
+        setAnnouncements(cached.items.slice(0, limitAnnouncements));
+        return;
+      }
     }
 
-    // Aggregation: Get Total Count
-    const countQ = query(
-      collection(db, 'announcements'),
-      where('students', 'array-contains', userEmail)
-    );
-    getCountFromServer(countQ).then(snap => setTotalAnnouncements(snap.data().count)).catch(console.error);
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-    if (cached && cached.length >= limitAnnouncements) return;
-
-    const q = query(
-      collection(db, 'announcements'),
-      where('students', 'array-contains', userEmail),
-      orderBy('createdAt', 'desc'),
-      limit(limitAnnouncements)
-    );
-
-
-
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setAnnouncements(data);
-      SessionCache.set(`announcements_${userEmail}`, data, 15);
-
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const d = change.doc.data();
-            if (isRecent(d.createdAt)) addNotification('announcement', `Announcement: ${d.title}`);
-          }
-        });
+    const setupListener = async () => {
+      let total = cached?.count || 0;
+      if (!cached) {
+        try {
+          const countQ = query(collection(db, 'announcements'), where('students', 'array-contains', userEmail));
+          const countSnap = await getCountFromServer(countQ);
+          if (!isMounted) return;
+          total = countSnap.data().count;
+          setTotalAnnouncements(total);
+        } catch (e) {
+          console.error("Error fetching announcement count", e);
+        }
       }
-    }, err => console.error("Announcements error:", err));
-    return () => unsub();
+
+      if (!isMounted) return;
+
+      const q = query(
+        collection(db, 'announcements'),
+        where('students', 'array-contains', userEmail),
+        orderBy('createdAt', 'desc'),
+        limit(limitAnnouncements)
+      );
+
+      unsubscribe = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setAnnouncements(data);
+        SessionCache.set(`announcements_${userEmail}`, { items: data, count: total }, 15);
+
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const d = change.doc.data();
+              if (isRecent(d.createdAt)) addNotification('announcement', `Announcement: ${d.title}`);
+            }
+          });
+        }
+      }, err => console.error("Announcements error:", err));
+    };
+
+    setupListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [userEmail, limitAnnouncements]);
 
   // 4. Assignments Listener
   useEffect(() => {
     if (!userEmail) return;
     const cached = SessionCache.get(`assignments_${userEmail}`);
-    if (cached && cached.length >= limitAssignments) {
-      // Logic for filtered marks needs assignments so we set both
-      const slice = cached.slice(0, limitAssignments);
-      setAssignments(slice);
-      setMarks(slice.filter((a: any) => a.status === 'graded'));
+    if (cached) {
+      setTotalAssignments(cached.count);
+      if (cached.items && cached.items.length >= limitAssignments) {
+        const slice = cached.items.slice(0, limitAssignments);
+        setAssignments(slice);
+        setMarks(slice.filter((a: any) => a.status === 'graded'));
+        return;
+      }
     }
 
-    // Aggregation: Get Total Count
-    const countQ = query(
-      collection(db, 'submissions'),
-      where('studentEmail', '==', userEmail)
-    );
-    getCountFromServer(countQ).then(snap => setTotalAssignments(snap.data().count)).catch(console.error);
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-    if (cached && cached.length >= limitAssignments) return;
-
-    const q = query(
-      collection(db, 'submissions'),
-      where('studentEmail', '==', userEmail),
-      limit(limitAssignments)
-    );
-
-
-
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
-      setAssignments(data);
-      setMarks(data.filter((a: any) => a.status === 'graded'));
-      SessionCache.set(`assignments_${userEmail}`, data, 15);
-
-      if (!isInitialLoad.current) {
-        snap.docChanges().forEach(change => {
-          const d = change.doc.data();
-          if (change.type === 'modified' && d.status === 'graded') {
-            // Always notify for marks
-            addNotification('marks', `Graded: ${d.assignmentTitle}`);
-          }
-        });
+    const setupListener = async () => {
+      let total = cached?.count || 0;
+      if (!cached) {
+        try {
+          const countQ = query(collection(db, 'submissions'), where('studentEmail', '==', userEmail));
+          const countSnap = await getCountFromServer(countQ);
+          if (!isMounted) return;
+          total = countSnap.data().count;
+          setTotalAssignments(total);
+        } catch (e) {
+          console.error("Error fetching assignment count", e);
+        }
       }
-    }, err => console.error("Assignments error:", err));
-    return () => unsub();
+
+      if (!isMounted) return;
+
+      const q = query(
+        collection(db, 'submissions'),
+        where('studentEmail', '==', userEmail),
+        orderBy('submittedAt', 'desc'),
+        limit(limitAssignments)
+      );
+
+      unsubscribe = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setAssignments(data);
+        setMarks(data.filter((a: any) => a.status === 'graded'));
+        SessionCache.set(`assignments_${userEmail}`, { items: data, count: total }, 15);
+
+        if (!isInitialLoad.current) {
+          snap.docChanges().forEach(change => {
+            const d = change.doc.data();
+            if (change.type === 'modified' && d.status === 'graded') {
+              // Always notify for marks
+              addNotification('marks', `Graded: ${d.assignmentTitle}`);
+            }
+          });
+        }
+      }, err => console.error("Assignments error:", err));
+    };
+
+    setupListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [userEmail, limitAssignments]);
 
   // 5. Initial Load Timer & RTDB
@@ -710,40 +792,53 @@ const StudentDashboard = () => {
     return () => unsub();
   }, [userId]);
 
-  // Exam Marks Listener
+  // 6. Exam Marks Listener (Aggregated)
   useEffect(() => {
     if (!userEmail) return;
-
-    const cacheKey = `examMarks_${userEmail}`;
-    const cached = SessionCache.get(cacheKey);
-
-    if (cached && cached.length >= limitExamMarks) {
-      setExamMarks(cached.slice(0, limitExamMarks));
-      console.log('📦 Loaded exam marks from cache');
+    const cached = SessionCache.get(`marks_${userEmail}`);
+    if (cached) {
+      setTotalExamMarks(cached.count);
+      if (cached.items && cached.items.length >= limitExamMarks) {
+        setExamMarks(cached.items.slice(0, limitExamMarks));
+        return;
+      }
     }
 
-    // Aggregation: Get Total Count
-    const countQ = query(
-      collection(db, 'marks'),
-      where('studentEmail', '==', userEmail)
-    );
-    getCountFromServer(countQ).then(snap => setTotalExamMarks(snap.data().count)).catch(console.error);
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
 
-    if (cached && cached.length >= limitExamMarks) return;
+    const setupListener = async () => {
+      let total = cached?.count || 0;
+      if (!cached) {
+        try {
+          const countQ = query(collection(db, 'marks'), where('studentEmail', '==', userEmail));
+          const countSnap = await getCountFromServer(countQ);
+          if (!isMounted) return;
+          total = countSnap.data().count;
+          setTotalExamMarks(total);
+        } catch (e) { console.error("Error fetching marks count", e); }
+      }
 
-    const q = query(
-      collection(db, 'marks'),
-      where('studentEmail', '==', userEmail),
-      limit(limitExamMarks)
-    );
+      if (!isMounted) return;
 
-    const unsub = onSnapshot(q, (snap) => {
-      const newMarks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      newMarks.sort((a: any, b: any) => (b.publishedAt?.seconds || 0) - (a.publishedAt?.seconds || 0));
-      setExamMarks(newMarks);
-      SessionCache.set(cacheKey, newMarks, 15);
-    });
-    return () => unsub();
+      const q = query(
+        collection(db, 'marks'),
+        where('studentEmail', '==', userEmail),
+        orderBy('publishedAt', 'desc'),
+        limit(limitExamMarks)
+      );
+      unsubscribe = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setExamMarks(data);
+        SessionCache.set(`marks_${userEmail}`, { items: data, count: total }, 15);
+      });
+    };
+    setupListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [userEmail, limitExamMarks]);
 
   // Fetch UNOM Reports
@@ -794,7 +889,7 @@ const StudentDashboard = () => {
     }
   }, [myWorkspaces, userEmail]);
 
-  // Attendance Listener
+  // Attendance Fetcher (Optimized: Scoped to Workspaces)
   useEffect(() => {
     if (!userEmail || myWorkspaces.length === 0 || !attendanceMonth) {
       setAttendance([]);
@@ -807,40 +902,58 @@ const StudentDashboard = () => {
     if (cached) {
       setAttendance(cached);
       console.log('📦 Loaded attendance from cache (0 reads)');
-    } else {
+      return;
+    }
+
+    const fetchAttendance = async () => {
       console.log('❌ Cache Miss: attendance');
       const [year, month] = attendanceMonth.split('-');
       const startDateStr = `${attendanceMonth}-01`;
       const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
       const endDateStr = `${attendanceMonth}-${lastDay}`;
 
-      const q = query(
-        collection(db, 'attendance'),
-        where('date', '>=', startDateStr),
-        where('date', '<=', endDateStr)
-      );
+      // Chunk workspaces to avoid 'in' query limit of 10
+      const chunks = [];
+      for (let i = 0; i < myWorkspaces.length; i += 10) {
+        chunks.push(myWorkspaces.slice(i, i + 10));
+      }
 
-      const unsub = onSnapshot(q, (snap) => {
-        const records = snap.docs.map(d => d.data());
+      try {
+        const promises = chunks.map(async (chunk) => {
+          const q = query(
+            collection(db, 'attendance'),
+            where('workspaceId', 'in', chunk),
+            where('date', '>=', startDateStr),
+            where('date', '<=', endDateStr)
+          );
+          const snap = await getDocs(q);
+          return snap.docs.map(d => d.data());
+        });
 
-        // Filter by my workspaces and process status
-        const myAttendance = records
-          .filter((r: any) => myWorkspaces.includes(r.workspaceId))
-          .map((r: any) => {
-            const isPresent = r.presentStudents && (
-              r.presentStudents.includes(userEmail) ||
-              r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
-            );
-            return { ...r, status: isPresent ? 'present' : 'absent' };
-          });
+        const results = await Promise.all(promises);
+        // Flatten
+        const allRecords = results.flat();
 
-        myAttendance.sort((a: any, b: any) => a.date.localeCompare(b.date));
+        // Process status client-side
+        const myAttendance = allRecords.map((r: any) => {
+          const isPresent = r.presentStudents && (
+            r.presentStudents.includes(userEmail) ||
+            r.presentStudents.some((s: any) => typeof s === 'object' && s.email === userEmail)
+          );
+          return { ...r, status: isPresent ? 'present' : 'absent' };
+        });
+
+        // Sort by date (descending) so newest is first in the list
+        myAttendance.sort((a: any, b: any) => b.date.localeCompare(a.date));
+
         setAttendance(myAttendance);
         SessionCache.set(cacheKey, myAttendance, 15);
-      });
+      } catch (error) {
+        console.error("Error fetching attendance:", error);
+      }
+    };
 
-      return () => unsub();
-    }
+    fetchAttendance();
   }, [userEmail, myWorkspaces, attendanceMonth]);
 
 
@@ -1376,54 +1489,49 @@ const StudentDashboard = () => {
       const lastDay = new Date(endYear, endMonth, 0).getDate();
       const endDateStr = `${downloadTo}-${lastDay.toString().padStart(2, '0')}`;
 
-      // OPTIMIZATION: Query per workspace instead of global query
-      // This reduces reads from ~9,000 to ~150 (98% reduction!)
+      // OPTIMIZATION: Query per workspace chunk with DATE RANGE
+      // This reduces reads from ~9,000 (history) to ~20 (month)
       const reportAttendance: any[] = [];
 
-      console.log('Fetching attendance for workspaces:', myWorkspaces);
-      console.log('Date range:', startDateStr, 'to', endDateStr);
+      const chunks = [];
+      for (let i = 0; i < myWorkspaces.length; i += 10) {
+        chunks.push(myWorkspaces.slice(i, i + 10));
+      }
 
-      for (const wsId of myWorkspaces) {
+      for (const chunk of chunks) {
         try {
-          // TEMP FIX: Query only by workspaceId to avoid composite index
-          // Filter dates client-side instead
           const q = query(
             collection(db, 'attendance'),
-            where('workspaceId', '==', wsId)
+            where('workspaceId', 'in', chunk),
+            where('date', '>=', startDateStr),
+            where('date', '<=', endDateStr)
           );
 
           const snap = await getDocs(q);
-          console.log(`Workspace ${wsId}: Found ${snap.docs.length} total attendance records`);
-
           snap.docs.forEach(docSnap => {
             const r = docSnap.data();
+            let isPresent = false;
+            let studentDetails = null;
 
-            // Filter dates in JavaScript (works without index)
-            if (r.date >= startDateStr && r.date <= endDateStr) {
-              let isPresent = false;
-              let studentDetails = null;
-
-              if (r.presentStudents) {
-                if (r.presentStudents.includes(userEmail)) {
+            if (r.presentStudents) {
+              if (r.presentStudents.includes(userEmail)) {
+                isPresent = true;
+              } else {
+                // Check complex object structure if applicable
+                const found = r.presentStudents.find((s: any) => typeof s === 'object' && s.email === userEmail);
+                if (found) {
                   isPresent = true;
-                } else {
-                  const found = r.presentStudents.find((s: any) => typeof s === 'object' && s.email === userEmail);
-                  if (found) {
-                    isPresent = true;
-                    studentDetails = found;
-                  }
+                  studentDetails = found;
                 }
               }
-
-              console.log(`Date ${r.date}: Student is ${isPresent ? 'PRESENT' : 'ABSENT'}`);
-              reportAttendance.push({ ...r, status: isPresent ? 'present' : 'absent', studentDetails });
             }
+            reportAttendance.push({ ...r, status: isPresent ? 'present' : 'absent', studentDetails });
           });
-        } catch (error) {
-          console.error(`Error fetching attendance for workspace ${wsId}:`, error);
-          // Continue with other workspaces
+        } catch (err) {
+          console.error("Error fetching report attendance chunk:", err);
         }
       }
+
 
       console.log('Total attendance records found:', reportAttendance.length);
       console.log('Report attendance data:', reportAttendance);
