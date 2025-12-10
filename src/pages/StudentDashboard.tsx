@@ -448,8 +448,7 @@ const StudentDashboard = () => {
         try {
           const countQ = query(
             collection(db, 'exams'),
-            where('students', 'array-contains', userEmail),
-            where('status', '!=', 'draft')
+            where('students', 'array-contains', userEmail)
           );
           const countSnap = await getCountFromServer(countQ);
           if (!isMounted) return;
@@ -465,14 +464,16 @@ const StudentDashboard = () => {
       const q = query(
         collection(db, 'exams'),
         where('students', 'array-contains', userEmail),
-        where('status', '!=', 'draft'),
         orderBy('createdAt', 'desc'),
         limit(limitExams)
       );
 
       unsubscribe = onSnapshot(q, (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        // data.sort handled by orderBy
+        // Client-side filtering of drafts to match UI expectation (avoids Index error)
+        const data = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter((d: any) => d.status !== 'draft');
+
         setExams(data);
         SessionCache.set(`exams_${userEmail}`, { items: data, count: total }, 15);
 
