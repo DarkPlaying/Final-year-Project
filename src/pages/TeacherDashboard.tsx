@@ -5794,7 +5794,7 @@ const TeacherDashboard = () => {
                               </th>
                               {Array.from({ length: new Date(parseInt(viewAttendanceDate.split('-')[0]), parseInt(viewAttendanceDate.split('-')[1]), 0).getDate() }, (_, i) => i + 1).map(day => (
                                 <th key={day} className={`p-0 font-medium text-slate-400 text-center border-r border-slate-800/50 last:border-0 ${hoveredCol === day ? 'bg-blue-500/10' : ''}`}>
-                                  <div className="py-2 w-7 flex items-center justify-center">{day}</div>
+                                  <div className="py-2 w-12 flex items-center justify-center">{day}</div>
                                 </th>
                               ))}
                             </tr>
@@ -5824,10 +5824,10 @@ const TeacherDashboard = () => {
                                           className={`p-0 text-center border-r border-slate-800/50 last:border-0 transition-colors ${hoveredRow === idx || hoveredCol === day ? 'bg-blue-500/10' : ''}`}
                                           onMouseEnter={() => { setHoveredRow(idx); setHoveredCol(day); }}
                                         >
-                                          <div className="py-1 w-7 flex items-center justify-center">
+                                          <div className="py-1 w-12 flex items-center justify-center">
                                             <div
-                                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-medium 
-                                            ${!hasRecord ? 'bg-slate-800/30 text-slate-600' :
+                                              className={`w-10 h-10 rounded flex items-center justify-center text-sm font-bold 
+                                              ${!hasRecord ? 'bg-slate-800/30 text-slate-600' :
                                                   isPresent ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}
                                               title={`${dateStr}: ${!hasRecord ? 'No Record' : isPresent ? 'Present' : 'Absent'}`}
                                             >
@@ -6667,29 +6667,33 @@ const TeacherDashboard = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-700">
-                      <span className="text-sm text-slate-400 whitespace-nowrap">Bulk Mark:</span>
-                      <Select value={bulkAttendanceStatus} onValueChange={(v: any) => setBulkAttendanceStatus(v)}>
-                        <SelectTrigger className="w-[100px] bg-slate-950 border-slate-700 text-slate-300 h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="present">Present</SelectItem>
-                          <SelectItem value="absent">Absent</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        placeholder="Enter identifiers (e.g. 602, 607)"
-                        className="bg-slate-950 border-slate-700 text-slate-300 h-9 flex-1"
-                        value={bulkAttendanceInput}
-                        onChange={(e) => setBulkAttendanceInput(e.target.value)}
-                      />
-                      <Button
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white h-9"
-                        onClick={handleBulkAttendanceUpdate}
-                      >
-                        Update
-                      </Button>
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-700">
+                      <div className="flex items-center gap-2 w-full md:w-auto">
+                        <span className="text-sm text-slate-400 whitespace-nowrap">Bulk Mark:</span>
+                        <Select value={bulkAttendanceStatus} onValueChange={(v: any) => setBulkAttendanceStatus(v)}>
+                          <SelectTrigger className="w-[100px] bg-slate-950 border-slate-700 text-slate-300 h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="present">Present</SelectItem>
+                            <SelectItem value="absent">Absent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex gap-2 flex-1 w-full">
+                        <Input
+                          placeholder="Enter identifiers (e.g. 602, 607)"
+                          className="bg-slate-950 border-slate-700 text-slate-300 h-9 flex-1 min-w-0"
+                          value={bulkAttendanceInput}
+                          onChange={(e) => setBulkAttendanceInput(e.target.value)}
+                        />
+                        <Button
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 shrink-0"
+                          onClick={handleBulkAttendanceUpdate}
+                        >
+                          Update
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
