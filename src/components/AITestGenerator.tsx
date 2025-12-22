@@ -17,7 +17,7 @@ export const AITestGenerator = () => {
             <Button
               variant="outline"
               className="gap-2"
-              onClick={() => window.open('https://web-production-8bbe1.up.railway.app/', '_blank')}
+              onClick={() => window.open('https://darkplayer23-question-paper-generator.hf.space/', '_blank')}
             >
               <ExternalLink className="h-4 w-4" />
               Open in New Tab
@@ -27,7 +27,7 @@ export const AITestGenerator = () => {
         <CardContent>
           <div className="w-full h-[800px] bg-white rounded-lg overflow-hidden border border-slate-700">
             <iframe
-              src="https://web-production-8bbe1.up.railway.app/"
+              src="https://darkplayer23-question-paper-generator.hf.space/"
               className="w-full h-full border-0"
               title="AI Test Generator"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
