@@ -5765,8 +5765,13 @@ const TeacherDashboard = () => {
                         <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
                           <div className="flex items-center gap-4 w-full">
                             <div className="relative">
-                              <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-                                <UserCheck className="h-5 w-5" />
+                              <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 overflow-hidden">
+                                {(() => {
+                                  const details = studentDetailsMap.get(email);
+                                  const photo = details?.photoURL || details?.profile_picture || details?.photoUrl;
+                                  if (photo) return <img src={photo} alt="Profile" className="h-full w-full object-cover" />;
+                                  return <UserCheck className="h-5 w-5" />;
+                                })()}
                               </div>
                               {(() => {
                                 const uid = studentIdMap.get(email);

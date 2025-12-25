@@ -69,9 +69,50 @@ import { messaging } from '@/lib/firebase';
 import { getToken, onMessage, deleteToken } from 'firebase/messaging';
 
 // Google Drive Config
-const EXAM_CLIENT_ID = '815335775209-mkgtp7o17o48e5ul7lmgn4uljko3e8ag.apps.googleusercontent.com'; // User provided Client ID
+const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID; // User provided Client ID
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-const ASSIGNMENT_DRIVE_FOLDER_ID = '1l7eC3pUZIdlzfp5wp1hfgWZjj_p-m2gc'; // User provided folder
+const ASSIGNMENT_DRIVE_FOLDER_ID = import.meta.env.VITE_ASSIGNMENT_DRIVE_FOLDER_ID; // User provided folder
+const PROFILE_PICTURE_DRIVE_FOLDER_ID = import.meta.env.VITE_PROFILE_PICTURE_DRIVE_FOLDER_ID;
+
+const uploadFileToDrive = async (file: File, folderId: string) => {
+  return new Promise<string>((resolve, reject) => {
+    const accessToken = (window as any).gapi?.auth?.getToken()?.access_token;
+    if (!accessToken) {
+      reject(new Error("No Google Drive access token"));
+      return;
+    }
+
+    const metadata = {
+      name: file.name,
+      mimeType: file.type,
+      parents: [folderId]
+    };
+
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', file);
+
+    fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,thumbnailLink,webContentLink', {
+      method: 'POST',
+      headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+      body: form
+    })
+      .then(res => res.json())
+      .then(val => {
+        if (val.error) {
+          reject(val.error);
+        } else {
+          // Construct direct image link if possible, or use webContentLink
+          // lh3.googleusercontent.com allows direct image loading without auth if public or with cookie if private? 
+          // Drive images usually require auth or are not hotlinkable easily. 
+          // TeacherDashboard uses `https://lh3.googleusercontent.com/d/${val.id}` which works for authenticated users or public.
+          // We will use the same strategy.
+          resolve(`https://lh3.googleusercontent.com/d/${val.id}`);
+        }
+      })
+      .catch(reject);
+  });
+};
 
 // Session-based cache helper (survives page refresh, clears on tab close)
 // Session-based cache helper (configured to use localStorage for better mobile persistence)
@@ -342,14 +383,18 @@ const StudentDashboard = () => {
           handleLogout();
         }
 
+
+
+
         // Check for compulsory details or forced update notification
         // We check notifications in a separate effect, but we can also check the user doc for legacy flag
-        if (!data.va_no || !data.personal_mobile || !data.name || data.forceProfileUpdate) {
+        if (!data.photoURL || !data.va_no || !data.personal_mobile || !data.name || data.forceProfileUpdate) {
           setShowDetailsModal(true);
           setDetailsForm(prev => ({
             name: prev.name || data.name || '',
             va_no: prev.va_no || data.va_no || '',
-            personal_mobile: prev.personal_mobile || data.personal_mobile || ''
+            personal_mobile: prev.personal_mobile || data.personal_mobile || '',
+            photoURL: prev.photoURL || data.photoURL || data.profile_picture || data.photoUrl || ''
           }));
         }
       }
@@ -1878,6 +1923,8 @@ const StudentDashboard = () => {
       json = await upload();
     }
 
+
+
     const fileId = json.id;
 
     // Make public (Viewer mode)
@@ -1942,8 +1989,35 @@ const StudentDashboard = () => {
     }
   };
 
+  const handleProfileImageUpload = async (e: any) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Check auth
+    if (!driveAccessToken) {
+      toast.error("Please login with Google Drive first (Click the lock icon in sidebar)");
+      tokenClient.current.requestAccessToken();
+      return;
+    }
+
+    const toastId = toast.loading("Uploading profile picture...");
+    try {
+      const link = await uploadFileToDrive(file, PROFILE_PICTURE_DRIVE_FOLDER_ID);
+      setDetailsForm((prev: any) => ({ ...prev, photoURL: link }));
+      toast.success("Profile picture uploaded", { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to upload profile picture", { id: toastId });
+    }
+  };
+
   const handleDetailsSubmit = async () => {
     // Validate all required fields
+    if (!detailsForm.photoURL) {
+      toast.error("Please upload your profile picture");
+      return;
+    }
+
     for (const field of requiredFields) {
       if (!detailsForm[field] || !detailsForm[field].toString().trim()) {
         toast.error(`Please enter your ${field.replace(/_/g, ' ')}`);
@@ -2080,7 +2154,8 @@ const StudentDashboard = () => {
       user={{
         name: userProfile?.name || userEmail.split('@')[0],
         role: 'student',
-        email: userEmail
+        email: userEmail,
+        photoURL: userProfile?.photoURL || userProfile?.profile_picture || userProfile?.photoUrl
       }}
       headerContent={
         <div className="flex items-center gap-4">
@@ -3157,6 +3232,37 @@ const StudentDashboard = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto px-1">
+            {/* Profile Picture Upload Section */}
+            {detailsPage === 1 && (
+              <div className="flex flex-col items-center justify-center gap-4 mb-6">
+                <div className="relative group">
+                  <div className="h-24 w-24 rounded-full bg-slate-800 border-2 border-dashed border-slate-600 flex items-center justify-center overflow-hidden cursor-pointer hover:border-slate-400 transition-colors relative">
+                    {detailsForm.photoURL ? (
+                      <img src={detailsForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
+                    ) : (
+                      <Upload className="h-8 w-8 text-slate-400" />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={handleProfileImageUpload}
+                    />
+                    {/* Notification Bubble */}
+                    {(!detailsForm.photoURL) && (
+                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10 hidden sm:block">
+                        <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
+                          Click here to upload
+                          <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2 text-center text-blue-400">Tap image to upload</p>
+                </div>
+              </div>
+            )}
+
             {requiredFields
               .slice((detailsPage - 1) * 7, detailsPage * 7)
               .map((field) => {
