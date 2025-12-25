@@ -368,65 +368,6 @@ const TeacherDashboard = () => {
   // Image Upload State
   const [showImageCropper, setShowImageCropper] = useState(false);
 
-  const handleProfileImageUpload = async (blob: Blob) => {
-    try {
-      if (!driveAccessToken) {
-        toast.error("Google Drive access is required to upload profile picture. Please authorize Drive access.");
-        // Optionally trigger login if you have access to the function, strictly simple warning for now
-        return;
-      }
-
-      toast.loading("Uploading profile picture to Drive...");
-
-      // 1. Upload to Google Drive
-      const metadata = {
-        name: `${userId}_profile_pic_${Date.now()}.png`, // timestamp to avoid naming conflicts/caching
-        mimeType: 'image/png',
-        parents: ['1EU8uCIIXymEY04-oeyXpDv54Y64w0f61'] // User provided folder
-      };
-
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      form.append('file', blob);
-
-      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${driveAccessToken}`
-        },
-        body: form
-      });
-
-      if (!response.ok) {
-        throw new Error(`Drive upload failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const fileId = data.id;
-
-      // Construct a viewable URL (thumbnail link)
-      // Note: "https://drive.google.com/uc?export=view&id=" is a common workaround for serving images directly
-      const drivePhotoUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
-
-      // 2. Update Firestore with Drive URL
-      await updateDoc(doc(db, 'users', userId), {
-        photoURL: drivePhotoUrl,
-        profileUpdatedAt: serverTimestamp()
-      });
-
-      // 3. Update Local State
-      setTeacherProfileForm(prev => ({ ...prev, photoURL: drivePhotoUrl }));
-
-      toast.dismiss();
-      toast.success("Profile picture updated (Saved to Drive)");
-
-    } catch (e) {
-      console.error(e);
-      toast.dismiss();
-      toast.error("Failed to upload image");
-    }
-  };
-
   // Load Config from LocalStorage
   useEffect(() => {
     const savedConfig = localStorage.getItem('studentExportConfig');
