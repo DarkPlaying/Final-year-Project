@@ -156,7 +156,7 @@ const AdminDashboard = () => {
 
   // Teachers Presence & Config
   const [presenceData, setPresenceData] = useState<any>({});
-  const [teacherDetailsConfig, setTeacherDetailsConfig] = useState<string[]>(['name', 'email', 'department', 'vta_no', 'mobile']);
+  const [teacherDetailsConfig, setTeacherDetailsConfig] = useState<string[]>(['name', 'email', 'department', 'vta_no', 'personal_mobile']);
   const [showTeacherFieldsDialog, setShowTeacherFieldsDialog] = useState(false);
   const [newTeacherDetailField, setNewTeacherDetailField] = useState('');
 

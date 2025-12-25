@@ -7078,8 +7078,11 @@ const TeacherDashboard = () => {
                   </Button>
                 )}
               </div>
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-400 relative">
                 {!driveAccessToken ? 'Connect Drive to Upload Profile Pic' : 'Upload Profile Picture'}
+                <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-bounce shadow-lg after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-4 after:border-transparent after:border-t-blue-600/90">
+                  Click here to upload
+                </span>
               </span>
             </div>
 
@@ -7177,20 +7180,16 @@ const TeacherDashboard = () => {
           </div>
 
           <DialogFooter className="flex-col !space-x-0 gap-2">
-            {!driveAccessToken && (
-              <Button
-                type="button"
-                variant="outline"
-                className="bg-blue-600 hover:bg-blue-700 text-white border-0 w-full"
-                onClick={handleGoogleAuth}
-              >
-                Login with Drive
-              </Button>
-            )}
+
             <Button onClick={async () => {
               // Validation
               const validationFields = requiredTeacherFields.map(f => f === 'name' ? 'full_name' : f);
               const missing = validationFields.filter(f => !teacherProfileForm[f]);
+
+              if (!teacherProfileForm.photoURL && !teacherProfileForm.profile_picture) {
+                toast.error("Please upload your profile picture to continue.");
+                return;
+              }
 
               if (missing.length > 0) {
                 toast.error(`Please fill all required fields: ${missing.join(', ')}`);
