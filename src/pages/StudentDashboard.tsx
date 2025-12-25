@@ -2026,13 +2026,7 @@ const StudentDashboard = () => {
     }
   };
 
-  const handleGoogleAuth = () => {
-    if (tokenClient.current) {
-      tokenClient.current.requestAccessToken();
-    } else {
-      toast.error("Google Auth not initialized");
-    }
-  };
+
 
   const handleDetailsSubmit = async () => {
     // Validate all required fields
