@@ -1238,11 +1238,15 @@ const TeacherDashboard = () => {
     });
 
     // Get link
-    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=webViewLink`, {
+    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=webViewLink,webContentLink,thumbnailLink`, {
       headers: { 'Authorization': 'Bearer ' + driveAccessToken }
     });
     const metaJson = await metaRes.json();
-    return metaJson.webViewLink;
+
+    // Prefer webContentLink for direct access, or fallback to a constructed embed link
+    // Note: webContentLink usually forces download. formatting it as an image source is tricky with Drive.
+    // The most reliable way for public images is: https://lh3.googleusercontent.com/d/{FILE_ID}
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
   };
 
   const handleProfileImageUpload = async (blob: Blob) => {
