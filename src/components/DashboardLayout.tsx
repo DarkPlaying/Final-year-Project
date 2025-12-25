@@ -22,7 +22,7 @@ interface DashboardLayoutProps {
   }[];
   headerContent?: React.ReactNode;
   title: string;
-  user?: { name: string; role: string; email?: string };
+  user?: { name: string; role: string; email?: string; photoURL?: string; profile_picture?: string };
 }
 
 /**
@@ -122,8 +122,12 @@ export const DashboardLayout = ({ children, sidebarItems, title, headerContent, 
           {/* User Account Info (Fixed at Bottom) */}
           <div className="p-4 border-t bg-card/50">
             <div className="flex items-center gap-3 mb-3">
-              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                <UserIcon className="h-5 w-5" />
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">
+                {user?.photoURL || user?.profile_picture ? (
+                  <img src={user.photoURL || user.profile_picture} alt="Profile" className="h-full w-full object-cover" />
+                ) : (
+                  <UserIcon className="h-5 w-5" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user?.name}</p>

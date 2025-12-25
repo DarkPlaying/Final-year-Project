@@ -630,7 +630,9 @@ const AdminDashboard = () => {
               email: data.email,
               role: data.role,
               department: data.department || '-',
-              createdAt: data.createdAt
+              createdAt: data.createdAt,
+              profile_picture: data.profile_picture,
+              photoURL: data.photoURL || data.photoUrl
             });
           }
         });
@@ -662,7 +664,9 @@ const AdminDashboard = () => {
               email: data.email,
               role: data.role,
               department: data.department || '-',
-              createdAt: data.createdAt
+              createdAt: data.createdAt,
+              profile_picture: data.profile_picture,
+              photoURL: data.photoURL || data.photoUrl
             });
           }
         };

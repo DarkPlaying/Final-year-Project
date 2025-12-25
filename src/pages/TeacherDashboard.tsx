@@ -4286,7 +4286,12 @@ const TeacherDashboard = () => {
     <DashboardLayout
       sidebarItems={sidebarItems}
       title="Teacher Dashboard"
-      user={{ name: userEmail.split('@')[0], role: 'teacher', email: userEmail }}
+      user={{
+        name: teacherProfileForm.full_name || userEmail.split('@')[0],
+        role: 'teacher',
+        email: userEmail,
+        photoURL: teacherProfileForm.photoURL || teacherProfileForm.profile_picture || teacherProfileForm.photoUrl
+      }}
       headerContent={
         <div className="flex items-center gap-2 md:gap-4">
           <Button

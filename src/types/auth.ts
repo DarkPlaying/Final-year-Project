@@ -9,6 +9,8 @@ export interface User {
   name: string;
   email: string;
   department?: string;
+  photoURL?: string;
+  profile_picture?: string;
 }
 
 export interface AuthState {
