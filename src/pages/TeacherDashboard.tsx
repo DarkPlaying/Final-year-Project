@@ -1304,6 +1304,39 @@ const TeacherDashboard = () => {
     return metaJson.webViewLink;
   };
 
+  const handleProfileImageUpload = async (blob: Blob) => {
+    if (!driveAccessToken) {
+      toast.error("Please sign in with Google first");
+      return;
+    }
+
+    try {
+      toast.loading("Uploading profile picture...");
+      const file = new File([blob], `profile_pic_${userId}_${Date.now()}.png`, { type: 'image/png' });
+
+      // Upload to Drive
+      const link = await uploadFileToDrive(file, EXAM_DRIVE_FOLDER_ID);
+
+      // Update Firestore
+      await updateDoc(doc(db, 'users', userId), {
+        profile_picture: link,
+        photoUrl: link, // standard firebase field
+        photoURL: link, // react-firebase-hooks style
+        profileUpdatedAt: serverTimestamp()
+      });
+
+      // Update Local State
+      setTeacherProfileForm(prev => ({ ...prev, profile_picture: link, photoURL: link }));
+
+      toast.dismiss();
+      toast.success("Profile picture updated!");
+    } catch (error: any) {
+      console.error("Profile upload error:", error);
+      toast.dismiss();
+      toast.error(`Failed to upload: ${error.message}`);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, setLink: (l: string) => void) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -7066,8 +7099,8 @@ const TeacherDashboard = () => {
             <div className="flex flex-col items-center gap-2 mb-4">
               <div className="relative">
                 <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800">
-                  {teacherProfileForm.photoURL ? (
-                    <img src={teacherProfileForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
+                  {teacherProfileForm.photoURL || teacherProfileForm.profile_picture ? (
+                    <img src={teacherProfileForm.photoURL || teacherProfileForm.profile_picture} alt="Profile" className="h-full w-full object-cover" />
                   ) : (
                     <div className="h-full w-full flex items-center justify-center text-slate-500">
                       <Users className="h-10 w-10" />
