@@ -3240,11 +3240,14 @@ const StudentDashboard = () => {
 
       {/* Compulsory Details Dialog */}
       <Dialog open={showDetailsModal} onOpenChange={() => { }}>
-        <DialogContent className="sm:max-w-[425px] bg-slate-900 border-slate-700 text-white [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+        <DialogContent className="sm:max-w-[600px] bg-slate-950 border-slate-700 text-white [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Complete Your Profile</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-red-500">
+              <AlertTriangle className="h-5 w-5" />
+              Action Required: Update Profile
+            </DialogTitle>
             <DialogDescription className="text-slate-400">
-              Please provide the following details to continue to your dashboard.
+              Please update your profile with the following mandatory details to continue using the dashboard.
               {requiredFields.length > 7 && <span className="block mt-1 text-xs text-blue-400">Page {detailsPage} of {Math.ceil(requiredFields.length / 7)}</span>}
             </DialogDescription>
           </DialogHeader>
@@ -3266,7 +3269,7 @@ const StudentDashboard = () => {
 
                 {/* Bubble Notification - Only show if no photo */}
                 {(!detailsForm.photoURL) && (
-                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10 hidden sm:block">
+                  <div className="absolute left-full bottom-0 -translate-y-1/2 ml-3 z-10 hidden sm:block">
                     <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
                       Click here to upload
                       <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
