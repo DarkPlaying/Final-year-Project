@@ -150,6 +150,7 @@ const AdminDashboard = () => {
   // Teachers Management State
   const [teachers, setTeachers] = useState<Profile[]>([]);
   const [teachersSearch, setTeachersSearch] = useState('');
+  const [teachersDepartmentFilter, setTeachersDepartmentFilter] = useState('all');
   const [teachersSort, setTeachersSort] = useState<'default' | 'online' | 'last_seen'>('default');
   const [limitTeachers, setLimitTeachers] = useState(20);
   const [teachersLoading, setTeachersLoading] = useState(false);
@@ -2480,6 +2481,19 @@ const AdminDashboard = () => {
                     onChange={(e) => setTeachersSearch(e.target.value)}
                   />
                 </div>
+
+                <Select value={teachersDepartmentFilter} onValueChange={setTeachersDepartmentFilter}>
+                  <SelectTrigger className="w-[180px] bg-slate-900 border-slate-700">
+                    <SelectValue placeholder="Filter Department" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700 text-slate-200">
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {Array.from(new Set(teachers.map(t => t.department).filter(Boolean))).sort().map(dept => (
+                      <SelectItem key={dept} value={dept || 'unknown'}>{dept}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
                 {/* Actions */}
                 <Button variant="destructive" onClick={handleDeleteAllTeachers} className="whitespace-nowrap flex-1 md:flex-none">
                   Delete All
@@ -2520,16 +2534,20 @@ const AdminDashboard = () => {
               </div>
 
               <div className="space-y-4">
-                {teachers.filter(t =>
-                  (t.full_name || '').toLowerCase().includes(teachersSearch.toLowerCase()) ||
-                  (t.email || '').toLowerCase().includes(teachersSearch.toLowerCase())
-                ).length === 0 ? (
+                {teachers.filter(t => {
+                  const matchesSearch = (t.full_name || '').toLowerCase().includes(teachersSearch.toLowerCase()) ||
+                    (t.email || '').toLowerCase().includes(teachersSearch.toLowerCase());
+                  const matchesDept = teachersDepartmentFilter === 'all' || t.department === teachersDepartmentFilter;
+                  return matchesSearch && matchesDept;
+                }).length === 0 ? (
                   <p className="text-center text-slate-500 py-8">No teachers found.</p>
                 ) : (
-                  teachers.filter(t =>
-                    (t.full_name || '').toLowerCase().includes(teachersSearch.toLowerCase()) ||
-                    (t.email || '').toLowerCase().includes(teachersSearch.toLowerCase())
-                  )
+                  teachers.filter(t => {
+                    const matchesSearch = (t.full_name || '').toLowerCase().includes(teachersSearch.toLowerCase()) ||
+                      (t.email || '').toLowerCase().includes(teachersSearch.toLowerCase());
+                    const matchesDept = teachersDepartmentFilter === 'all' || t.department === teachersDepartmentFilter;
+                    return matchesSearch && matchesDept;
+                  })
                     .slice(0, limitTeachers)
                     .map((teacher, idx) => (
                       <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
