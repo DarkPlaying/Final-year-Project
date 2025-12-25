@@ -7057,6 +7057,17 @@ const TeacherDashboard = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Bubble Notification - Only show if no photo */}
+                {(!teacherProfileForm.photoURL && !teacherProfileForm.profile_picture) && (
+                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10">
+                    <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
+                      Click here to upload
+                      <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
+                    </div>
+                  </div>
+                )}
+
                 {driveAccessToken ? (
                   <Button
                     size="icon"
@@ -7078,11 +7089,8 @@ const TeacherDashboard = () => {
                   </Button>
                 )}
               </div>
-              <span className="text-xs text-slate-400 relative">
+              <span className="text-xs text-slate-400">
                 {!driveAccessToken ? 'Connect Drive to Upload Profile Pic' : 'Upload Profile Picture'}
-                <span className="absolute -top-12 left-1/2 -translate-x-1/2 bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-bounce shadow-lg after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-4 after:border-transparent after:border-t-blue-600/90">
-                  Click here to upload
-                </span>
               </span>
             </div>
 
