@@ -144,6 +144,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const EXAM_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID;
 const SYLLABUS_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID; // Using same folder for now as per snippet
+const PROFILE_PICTURE_DRIVE_FOLDER_ID = import.meta.env.VITE_PROFILE_PICTURE_DRIVE_FOLDER_ID;
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 const safeDate = (date: any): Date => {
@@ -1260,7 +1261,7 @@ const TeacherDashboard = () => {
       const file = new File([blob], `profile_pic_${userId}_${Date.now()}.png`, { type: 'image/png' });
 
       // Upload to Drive
-      const link = await uploadFileToDrive(file, EXAM_DRIVE_FOLDER_ID);
+      const link = await uploadFileToDrive(file, PROFILE_PICTURE_DRIVE_FOLDER_ID);
 
       // Update Firestore
       await updateDoc(doc(db, 'users', userId), {
