@@ -232,6 +232,32 @@ const StudentDashboard = () => {
     setNotifications(prev => [{ id: Date.now(), type, message, time: new Date(), read: false }, ...prev]);
   };
 
+  const checkCompulsoryUpdate = async (announcementData: any, currentUid: string) => {
+    if (!currentUid) return;
+    const userSnap = await getDoc(doc(db, 'users', currentUid));
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      const lastUpdate = userData.profileUpdatedAt; // Timestamp
+      const requestTimestamp = announcementData.createdAt;
+
+      // If never updated OR request is newer than user update
+      if (!lastUpdate || (requestTimestamp?.seconds > lastUpdate?.seconds)) {
+        setShowDetailsModal(true);
+
+        // Set required fields from announcement or default
+        const fields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+        setRequiredFields(fields);
+
+        // Pre-fill form with existing data for these fields
+        const initialForm: any = {};
+        fields.forEach((field: string) => {
+          initialForm[field] = userData[field] || '';
+        });
+        setDetailsForm(initialForm);
+      }
+    }
+  };
+
   useEffect(() => {
     const email = localStorage.getItem('userEmail');
     const uid = localStorage.getItem('userId');
@@ -330,60 +356,27 @@ const StudentDashboard = () => {
     });
 
     // Listen for Compulsory Update Announcements
-    // Check for Compulsory Update Announcements (Cached)
+    // Check for Compulsory Update Announcements
     const checkCompulsory = async () => {
       if (!email) return;
 
-      // OPTIMIZATION: Check cache to avoid reading announcements on every reload
-      const cacheKey = `compulsory_check_${email}`;
-      if (SessionCache.get(cacheKey)) return;
+      // Removed aggressive caching for compulsory checks to ensure users see it immediately.
+      // We rely on limit(1) to keep it light.
 
       let announcements = [];
-      // Note: This query might grab all if not indexed properly, but we cache the result check
       const q = query(collection(db, 'announcements'), where('students', 'array-contains', email), where('type', '==', 'compulsory_update_request'));
       const snap = await getDocs(q);
       announcements = snap.docs.map(d => d.data());
 
-      SessionCache.set(cacheKey, true, 60); // Cache check for 60 minutes
-
-      if (announcements.length === 0) return;
-
-      // Sort by createdAt desc
       announcements.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
       const latestAnnouncement = announcements[0];
       if (latestAnnouncement) {
-        checkCompulsoryUpdate(latestAnnouncement);
+        checkCompulsoryUpdate(latestAnnouncement, uid || '');
       }
     };
 
     checkCompulsory();
-
-    const checkCompulsoryUpdate = async (announcementData: any) => {
-      if (!uid) return;
-      const userSnap = await getDoc(doc(db, 'users', uid));
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        const lastUpdate = userData.profileUpdatedAt; // Timestamp
-        const requestTimestamp = announcementData.createdAt;
-
-        // If never updated OR request is newer than user update
-        if (!lastUpdate || (requestTimestamp?.seconds > lastUpdate?.seconds)) {
-          setShowDetailsModal(true);
-
-          // Set required fields from announcement or default
-          const fields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
-          setRequiredFields(fields);
-
-          // Pre-fill form with existing data for these fields
-          const initialForm: any = {};
-          fields.forEach((field: string) => {
-            initialForm[field] = userData[field] || '';
-          });
-          setDetailsForm(initialForm);
-        }
-      }
-    };
 
     return () => {
       clearInterval(timer);
@@ -607,6 +600,11 @@ const StudentDashboard = () => {
             if (change.type === 'added') {
               const d = change.doc.data();
               if (isRecent(d.createdAt)) addNotification('announcement', `Announcement: ${d.title}`);
+
+              // Trigger compulsory update modal immediately
+              if (d.type === 'compulsory_update_request') {
+                checkCompulsoryUpdate(d, userId);
+              }
             }
           });
         }

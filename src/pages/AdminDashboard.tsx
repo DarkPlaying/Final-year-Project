@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,10 +58,16 @@ import {
   CloudUpload,
   Save,
   Lock,
-  ExternalLink
+  RotateCcw,
+  Power,
+  ExternalLink,
+  Edit,
+  PlusCircle,
+  Clock
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
-import { db } from '@/lib/firebase';
+import { db, database } from '@/lib/firebase';
+import { ref, update, onValue } from 'firebase/database';
 
 import { signInAnonymously } from 'firebase/auth';
 import { createUserInBothSystems } from '@/lib/createUser';
@@ -93,6 +99,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { usePresence } from '@/hooks/usePresence';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 interface Profile {
   id: string;
@@ -101,6 +109,14 @@ interface Profile {
   role: UserRole;
   department?: string;
   createdAt?: any;
+  // New Fields for Teachers
+  vta_no?: string;
+  personal_mobile?: string;
+  date_of_joining?: any;
+  date_of_birth?: any;
+  address?: string;
+  current_salary?: string;
+  [key: string]: any;
 }
 
 interface Workspace {
@@ -130,6 +146,20 @@ const AdminDashboard = () => {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [queries, setQueries] = useState<QueryItem[]>([]);
   const [stats, setStats] = useState({ users: 0, students: 0, teachers: 0, workspaces: 0 });
+
+  // Teachers Management State
+  const [teachers, setTeachers] = useState<Profile[]>([]);
+  const [teachersSearch, setTeachersSearch] = useState('');
+  const [teachersSort, setTeachersSort] = useState<'default' | 'online' | 'last_seen'>('default');
+  const [limitTeachers, setLimitTeachers] = useState(20);
+  const [teachersLoading, setTeachersLoading] = useState(false);
+
+  // Teachers Presence & Config
+  const [presenceData, setPresenceData] = useState<any>({});
+  const [teacherDetailsConfig, setTeacherDetailsConfig] = useState<string[]>(['name', 'email', 'department', 'vta_no', 'mobile']);
+  const [showTeacherFieldsDialog, setShowTeacherFieldsDialog] = useState(false);
+  const [newTeacherDetailField, setNewTeacherDetailField] = useState('');
+
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [uploadHistory, setUploadHistory] = useState<any[]>([]);
   const [userGrowthData, setUserGrowthData] = useState<any[]>([]);
@@ -1627,9 +1657,300 @@ const AdminDashboard = () => {
     setSelectedCategory('all');
   };
 
+  // --- TEACHER MANAGEMENT LOGIC ---
+
+  const [availableTeacherFields, setAvailableTeacherFields] = useState<string[]>([
+    'name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'
+  ]);
+
+  const loadTeachers = useCallback(async () => {
+    setTeachersLoading(true);
+    try {
+      // 1. Fetch all teachers
+      const usersRef = collection(db, 'users');
+      let q = query(usersRef, where('role', '==', 'teacher'));
+
+      const snapshot = await getDocs(q);
+      const loadedTeachers: Profile[] = [];
+      const teacherIds: string[] = [];
+      const allKeys = new Set<string>();
+
+      snapshot.forEach(doc => {
+        const data = doc.data() as any;
+        teacherIds.push(doc.id);
+
+        // Collect keys
+        Object.keys(data).forEach(key => {
+          if (!['hashedPassword', 'password', 'uid', 'id', 'role', 'createdAt', 'activeSessionId', 'email_lower', 'assignedWorkspaces'].includes(key)) {
+            allKeys.add(key);
+          }
+        });
+
+        loadedTeachers.push({
+          id: doc.id,
+          full_name: data.name || data.full_name || 'Unknown',
+          email: data.email,
+          role: data.role,
+          department: data.department || '-',
+          createdAt: data.createdAt,
+          vta_no: data.vta_no,
+          personal_mobile: data.personal_mobile,
+          date_of_joining: data.date_of_joining,
+          date_of_birth: data.date_of_birth,
+          address: data.address,
+          current_salary: data.current_salary,
+          ...data // Include all other dynamic fields
+        });
+      });
+
+      // Update available fields - merge standard with discovered
+      const stdFields = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+      const discovered = Array.from(allKeys).filter(k => !stdFields.includes(k) && k !== 'name' && k !== 'full_name');
+      // Note: 'name' is mapped to 'full_name' usually, 'mobile' to 'personal_mobile'
+
+      setAvailableTeacherFields([...stdFields, ...discovered]);
+      setTeachers(loadedTeachers);
+
+    } catch (error) {
+      console.error('Error loading teachers:', error);
+      toast.error('Failed to load teachers');
+    } finally {
+      setTeachersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === 'teachers') {
+      loadTeachers();
+    }
+  }, [activeSection, loadTeachers]);
+
+  // --- TEACHER HELPERS ---
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('teacherExportConfig');
+    if (savedConfig) {
+      const parsed = JSON.parse(savedConfig);
+      // Migration: If config is the "Old Default", upgrade it
+      const oldDefault = ['name', 'email', 'department', 'vta_no', 'mobile'];
+      if (parsed.length === oldDefault.length && parsed.every((v: string, i: number) => v === oldDefault[i])) {
+        const newDefault = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+        setTeacherDetailsConfig(newDefault);
+        saveTeacherConfig(newDefault);
+      } else {
+        setTeacherDetailsConfig(parsed);
+      }
+    } else {
+      // First time load - set full default
+      const newDefault = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+      setTeacherDetailsConfig(newDefault);
+      saveTeacherConfig(newDefault);
+    }
+  }, []);
+
+  const saveTeacherConfig = (config: string[]) => {
+    localStorage.setItem('teacherExportConfig', JSON.stringify(config));
+  };
+
+  const handleAddTeacherDetailField = () => {
+    if (!newTeacherDetailField.trim()) return;
+    if (teacherDetailsConfig.includes(newTeacherDetailField.trim())) {
+      toast.error("Field already exists");
+      return;
+    }
+    const newConfig = [...teacherDetailsConfig, newTeacherDetailField.trim()];
+    setTeacherDetailsConfig(newConfig);
+    setNewTeacherDetailField('');
+    saveTeacherConfig(newConfig);
+  };
+
+  // Real-time Presence Listener
+  useEffect(() => {
+    const statusRef = ref(database, '/status');
+    const unsub = onValue(statusRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setPresenceData(data);
+      } else {
+        setPresenceData({});
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const formatLastSeen = (timestamp: number) => {
+    if (!timestamp) return 'Never';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+
+    // If less than 24 hours
+    if (diff < 24 * 60 * 60 * 1000) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const handleDownloadTeacherDetails = async () => {
+    if (teachers.length === 0) {
+      toast.error("No teachers to download");
+      return;
+    }
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Teacher Details');
+
+      // Dynamic headers based on config
+      const availableHeaders: { [key: string]: string } = {
+        'name': 'Name',
+        'email': 'Email',
+        'department': 'Department',
+        'vta_no': 'Vta no',
+        'mobile': 'Personal mobile',
+        'date_of_joining': 'Date of Joining',
+        'date_of_birth': 'Date of birth',
+        'address': 'Address',
+        'current_salary': 'Current Salary'
+      };
+
+      // Define Columns
+      const columns = teacherDetailsConfig.map(f => ({
+        header: availableHeaders[f] || f.charAt(0).toUpperCase() + f.slice(1).replace(/_/g, ' '),
+        key: f,
+        width: 25
+      }));
+
+      worksheet.columns = columns;
+
+      // Add Data
+      const sortedTeachers = [...teachers].sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+      sortedTeachers.forEach(t => {
+        const row: any = {};
+        teacherDetailsConfig.forEach(field => {
+          switch (field) {
+            case 'name': row[field] = t.full_name; break;
+            case 'email': row[field] = t.email; break;
+            case 'department': row[field] = t.department || '-'; break;
+            case 'vta_no': row[field] = t.vta_no || '-'; break;
+            case 'mobile': row[field] = t.personal_mobile || '-'; break;
+            case 'date_of_joining': row[field] = t.date_of_joining ? new Date(t.date_of_joining.seconds * 1000).toLocaleDateString() : '-'; break;
+            case 'date_of_birth': row[field] = t.date_of_birth ? new Date(t.date_of_birth.seconds * 1000).toLocaleDateString() : '-'; break;
+            case 'address': row[field] = t.address || '-'; break;
+            case 'current_salary': row[field] = t.current_salary || '-'; break;
+            default: row[field] = (t as any)[field] || '-';
+          }
+        });
+        worksheet.addRow(row);
+      });
+
+      // Style Headers
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+
+      // Apply styling ONLY to the columns we have
+      for (let i = 1; i <= columns.length; i++) {
+        const cell = headerRow.getCell(i);
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFD9D9D9' }
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+      }
+
+      // Style Data Rows
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber > 1) {
+          row.eachCell((cell, colNumber) => {
+            const isAddress = columns[colNumber - 1]?.key === 'address';
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: isAddress ? 'left' : 'center',
+              wrapText: isAddress
+            };
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+          });
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `Teacher_Details_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success("Downloaded successfully");
+
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to download teacher details");
+    }
+  };
+
+  const handleRaiseAgainAllTeachers = async () => {
+    if (!confirm("Are you sure you want to raise a compulsory profile update request for ALL teachers?")) return;
+
+    try {
+      const teacherEmails = teachers.map(t => t.email);
+      if (teacherEmails.length === 0) return;
+
+      await addDoc(collection(db, 'announcements'), {
+        title: 'SYSTEM: Compulsory Profile Update',
+        description: 'Action Required: Please update your teacher profile details immediately (VTA, Mobile, etc).',
+        link: '',
+        workspaceId: 'system', // Global system announcement
+        students: teacherEmails, // Re-using 'students' field for target emails (works for teachers too if logic adapted)
+        // Ideally we should have a 'targetRoles' or 'targetEmails' field, but reusing 'students' for now as generic target
+        teacherEmail: 'admin@system.com',
+        type: 'compulsory_update_request',
+        targetRole: 'teacher', // Specific flag
+        requiredFields: Array.from(new Set(['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary', ...teacherDetailsConfig])),
+        createdAt: serverTimestamp()
+      });
+
+      toast.success(`Request raised for ${teacherEmails.length} teachers`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to raise request");
+    }
+  };
+
+  const handleDeleteAllTeachers = async () => {
+    const confirmKey = prompt("WARNING: This will delete ALL teacher accounts and their data. Type 'DELETE ALL TEACHERS' to confirm.");
+    if (confirmKey !== 'DELETE ALL TEACHERS') return;
+
+    try {
+      const batch = writeBatch(db);
+      teachers.forEach(t => {
+        batch.delete(doc(db, 'users', t.id));
+      });
+      await batch.commit();
+      toast.success("All teachers deleted");
+      loadTeachers();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to delete teachers");
+    }
+  };
+
+  const handleResetTeacherPresence = async (email: string) => {
+    // Logic would be same as 'handleResetPresence' but for teacher
+    toast.info("Reset presence triggered (same as student logic)");
+  };
+
   const sidebarItems = [
     { icon: <LayoutDashboard size={20} />, label: 'Overview', onClick: () => setActiveSection('overview'), active: activeSection === 'overview' },
     { icon: <Users size={20} />, label: 'Manage Users', onClick: () => setActiveSection('users'), active: activeSection === 'users' },
+    { icon: <Users size={20} />, label: 'Manage Teachers', onClick: () => setActiveSection('teachers'), active: activeSection === 'teachers' },
     { icon: <Briefcase size={20} />, label: 'Workspaces', onClick: () => setActiveSection('workspaces'), active: activeSection === 'workspaces' },
     { icon: <MessageSquare size={20} />, label: 'View Queries', onClick: () => setActiveSection('queries'), active: activeSection === 'queries' },
     { icon: <Bot size={20} />, label: 'AI CSV Generator', onClick: () => setActiveSection('aiCsv'), active: activeSection === 'aiCsv' },
@@ -2021,7 +2342,7 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* USERS SECTION */}
+      {/* USERS SECTION (Existing) */}
       {activeSection === 'users' && (
         <div className="space-y-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -2111,330 +2432,537 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* WORKSPACES SECTION */}
-      {activeSection === 'workspaces' && (
+      {/* MANAGE TEACHERS SECTION */}
+      {activeSection === 'teachers' && (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Create New Workspace</CardTitle>
-              <CardDescription>Add a new workspace for a class or group</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-2xl font-bold text-white">Manage Teachers</h2>
+            <p className="text-slate-400">View and manage registered teachers.</p>
+          </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                <div className="space-y-2">
-                  <Label>Workspace Name (e.g., Batch 2023 - 2025)</Label>
+          <Card className="bg-slate-800 border-slate-700 text-white">
+            <CardContent className="p-6 space-y-4">
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-2 mb-4">
+                <div className="relative flex-1 w-full">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                   <Input
-                    value={newWorkspace.name}
-                    onChange={e => setNewWorkspace({ ...newWorkspace, name: e.target.value })}
-                    placeholder="Enter workspace name"
+                    placeholder="Search teachers..."
+                    className="pl-8 bg-slate-900 border-slate-700 w-full"
+                    value={teachersSearch}
+                    onChange={(e) => setTeachersSearch(e.target.value)}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Category (e.g., BSC A)</Label>
-                  <Input
-                    value={newWorkspace.category}
-                    onChange={e => setNewWorkspace({ ...newWorkspace, category: e.target.value })}
-                    placeholder="Enter category"
-                  />
-                </div>
-                <Button onClick={handleCreateWorkspace} className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0">
-                  <Briefcase className="mr-2 h-4 w-4" /> Create Workspace
+                {/* Actions */}
+                <Button variant="destructive" onClick={handleDeleteAllTeachers} className="whitespace-nowrap flex-1 md:flex-none">
+                  Delete All
                 </Button>
               </div>
+
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <Button onClick={handleDownloadTeacherDetails} className="bg-green-600 hover:bg-green-700 text-white text-xs md:text-sm h-8 md:h-10">
+                  <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Details
+                </Button>
+
+                <Button variant="outline" onClick={() => setShowTeacherFieldsDialog(true)} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
+                  <Edit className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Fields
+                </Button>
+
+                <Button variant="outline" onClick={handleRaiseAgainAllTeachers} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Force all teachers to update fields">
+                  <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise All
+                </Button>
+
+                <Button variant="outline" onClick={async () => {
+                  if (!confirm("Reset presence for ALL teachers? This will force them offline.")) return;
+                  const batchUpdates: any = {};
+                  teachers.forEach(t => {
+                    batchUpdates[`/status/${t.id}/state`] = 'offline';
+                    batchUpdates[`/status/${t.id}/connections`] = null;
+                    batchUpdates[`/status/${t.id}/last_changed`] = Date.now();
+                  });
+                  try {
+                    await update(ref(database), batchUpdates);
+                    toast.success("All teachers marked offline");
+                  } catch (e) {
+                    console.error(e);
+                    toast.error("Failed to reset presence");
+                  }
+                }} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Reset online status">
+                  <RefreshCw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Reset Presence
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                {teachers.filter(t =>
+                  (t.full_name || '').toLowerCase().includes(teachersSearch.toLowerCase()) ||
+                  (t.email || '').toLowerCase().includes(teachersSearch.toLowerCase())
+                ).length === 0 ? (
+                  <p className="text-center text-slate-500 py-8">No teachers found.</p>
+                ) : (
+                  teachers.filter(t =>
+                    (t.full_name || '').toLowerCase().includes(teachersSearch.toLowerCase()) ||
+                    (t.email || '').toLowerCase().includes(teachersSearch.toLowerCase())
+                  )
+                    .slice(0, limitTeachers)
+                    .map((teacher, idx) => (
+                      <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
+                        <div className="flex items-center gap-4 w-full">
+                          <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                            <Users className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-white truncate">{teacher.full_name}</p>
+                              <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">{teacher.department || 'No Dept'}</span>
+                              {
+                                presenceData[teacher.id]?.state === 'online' ? (
+                                  <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_4px_2px_rgba(34,197,94,0.4)]" title="Online"></div>
+                                ) : (
+                                  <div className="w-2 h-2 rounded-full bg-slate-600" title="Offline"></div>
+                                )
+                              }
+                              {presenceData[teacher.id]?.last_changed && (
+                                <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {presenceData[teacher.id]?.state === 'online' ? 'Active now' : `Last seen: ${formatLastSeen(presenceData[teacher.id]?.last_changed)}`}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 truncate">{teacher.email}</p>
+                            <div className="flex gap-2 mt-1">
+                              {teacherDetailsConfig.includes('vta_no') && <span className="text-[10px] text-slate-600">VTA: {teacher.vta_no || 'N/A'}</span>}
+                              {teacherDetailsConfig.includes('mobile') && <span className="text-[10px] text-slate-600">Mob: {teacher.personal_mobile || 'N/A'}</span>}
+                              {teacherDetailsConfig.includes('current_salary') && <span className="text-[10px] text-slate-600">Salary: {teacher.current_salary || 'N/A'}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 w-full md:w-auto">
+                          <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={async () => {
+                            if (!confirm(`Reset presence for ${teacher.full_name}?`)) return;
+                            try {
+                              await update(ref(database, `/status/${teacher.id}`), {
+                                state: 'offline',
+                                connections: null,
+                                last_changed: Date.now()
+                              });
+                              toast.success("Presence reset");
+                            } catch (e) {
+                              console.error(e);
+                              toast.error("Failed to reset presence");
+                            }
+                          }} title="Reset Presence">
+                            <Power className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => {
+                            // Just re-use raise all for now or implement single
+                            handleRaiseAgainAllTeachers();
+                          }} title="Raise Request">
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => {
+                            toast.info("Coming soon");
+                          }} title="Download Resume">
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                )}
+              </div>
+
+              {teachers.length > limitTeachers && (
+                <Button variant="ghost" onClick={() => setLimitTeachers(p => p + 10)} className="w-full mt-4">Load More</Button>
+              )}
             </CardContent>
           </Card>
 
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <h3 className="text-lg font-medium">My Workspaces ({filteredWorkspaces.length})</h3>
-            <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
-              <Input
-                placeholder="Search workspaces..."
-                className="w-full md:w-[200px]"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-full md:w-[150px]"><SelectValue placeholder="All Categories" /></SelectTrigger>
-                  <SelectContent>
-                    {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" onClick={handleReset} className="flex-1 md:flex-none">Reset</Button>
-              </div>
-            </div>
-          </div>
+          {/* Configure Teacher Fields Dialog */}
+          <Dialog open={showTeacherFieldsDialog} onOpenChange={setShowTeacherFieldsDialog}>
+            <DialogContent className="bg-slate-900 border-slate-700 text-white">
+              <DialogHeader>
+                <DialogTitle>Configure Teacher Details Fields</DialogTitle>
+                <DialogDescription className="text-slate-400">
+                  Add or remove fields to include in the teacher details download and view.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="text-xs text-slate-400 flex items-center gap-2">
+                  <span><span className="text-yellow-500 font-semibold">Tip:</span> These fields determine columns in the CSV export.</span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add custom field (e.g., pan_card)"
+                    value={newTeacherDetailField}
+                    onChange={(e) => setNewTeacherDetailField(e.target.value)}
+                    className="bg-slate-800 border-slate-700 text-white h-9"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTeacherDetailField()}
+                  />
+                  <Button onClick={handleAddTeacherDetailField} size="sm" className="bg-emerald-600 hover:bg-emerald-700">Add</Button>
+                </div>
 
-          <div className="space-y-4">
-            {filteredWorkspaces.slice((workspacePage - 1) * 2, workspacePage * 2).map((ws) => (
-              <Card key={ws.id} className="overflow-hidden">
-                <div className="bg-muted/30 p-4 flex items-center justify-between border-b">
-                  <div className="flex items-center gap-3">
-                    <h4 className="font-semibold text-lg">{ws.name}</h4>
-                    <span className="text-xs bg-secondary/20 text-secondary-foreground px-2 py-1 rounded">{ws.category}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white border-0" onClick={() => handleOpenCsvUpload(ws.id, ws.name)}><Upload className="h-3 w-3 mr-1" /> CSV</Button>
-                    <Button variant="destructive" size="sm" className="h-8" onClick={() => handleDeleteWorkspace(ws.id, ws.name)}>Delete</Button>
+                <div className="space-y-2">
+                  <Label>Active & Available Fields</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {/* Combine config with available fields to ensure all selected are shown even if not in available */}
+                    {Array.from(new Set([...availableTeacherFields, ...teacherDetailsConfig])).map(field => (
+                      <div key={field}
+                        onClick={() => {
+                          let newConfig;
+                          if (teacherDetailsConfig.includes(field)) {
+                            newConfig = teacherDetailsConfig.filter(f => f !== field);
+                          } else {
+                            newConfig = [...teacherDetailsConfig, field];
+                          }
+                          setTeacherDetailsConfig(newConfig);
+                          saveTeacherConfig(newConfig);
+                        }}
+                        className={`flex items-center gap-1 px-3 py-1 rounded-full border cursor-pointer select-none transition-colors
+                                ${teacherDetailsConfig.includes(field) ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}
+                      >
+                        <span className="text-sm capitalize">{field.replace(/_/g, ' ')}</span>
+                        {teacherDetailsConfig.includes(field) ? <X className="h-3 w-3" /> : <PlusCircle className="h-3 w-3" />}
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <CardContent className="p-4 space-y-4">
-                  {/* Role Appointment Section */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-900/30 rounded-lg border border-slate-800">
-                    <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Class Teacher</Label>
-                      <Select
-                        value={ws.classTeacher || ''}
-                        onValueChange={(val) => handleAppointRole(ws.id, 'classTeacher', val)}
-                      >
-                        <SelectTrigger className={`h-8 text-sm ${!ws.classTeacher ? 'border-red-500/50' : 'border-slate-700'}`}>
-                          <SelectValue placeholder="Select Class Teacher" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ws.teachers.length > 0 ? (
-                            ws.teachers.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)
-                          ) : (
-                            <SelectItem value="none" disabled>No teachers added</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {!ws.classTeacher && <span className="text-[10px] text-red-400 flex items-center mt-1"><AlertTriangle className="h-3 w-3 mr-1" /> Required</span>}
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Mentor</Label>
-                      <Select
-                        value={ws.mentor || ''}
-                        onValueChange={(val) => handleAppointRole(ws.id, 'mentor', val)}
-                      >
-                        <SelectTrigger className={`h-8 text-sm ${!ws.mentor ? 'border-red-500/50' : 'border-slate-700'}`}>
-                          <SelectValue placeholder="Select Mentor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ws.teachers.length > 0 ? (
-                            ws.teachers.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)
-                          ) : (
-                            <SelectItem value="none" disabled>No teachers added</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      {!ws.mentor && <span className="text-[10px] text-red-400 flex items-center mt-1"><AlertTriangle className="h-3 w-3 mr-1" /> Required</span>}
-                    </div>
-                  </div>
-
-                  {/* Teachers Section */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <h5 className="text-sm font-medium text-muted-foreground">Teachers ({ws.teachers.length})</h5>
-                    </div>
-                    <div className="space-y-2">
-                      {ws.teachers.map(email => (
-                        <div key={email} className="flex items-center justify-between bg-muted/50 p-2 rounded text-sm">
-                          <span>{email}</span>
-                          <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={() => handleRemoveMember(ws.id, 'teacher', email)}>Remove</Button>
-                        </div>
-                      ))}
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Teacher email"
-                          className="h-8 text-sm"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddMember(ws.id, 'teacher', e.currentTarget.value);
-                          }}
-                        />
-                        <Button size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white border-0" onClick={(e) => {
-                          const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                          handleAddMember(ws.id, 'teacher', input.value);
-                          input.value = '';
-                        }}>Add Teacher</Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Students Section */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <h5 className="text-sm font-medium text-muted-foreground">Students ({ws.students.length})</h5>
-                    </div>
-                    <div className="space-y-2">
-                      {ws.students.slice(((workspaceStudentPages[ws.id] || 1) - 1) * 10, (workspaceStudentPages[ws.id] || 1) * 10).map(email => (
-                        <div key={email} className="flex items-center justify-between bg-muted/50 p-2 rounded text-sm">
-                          <span>{email}</span>
-                          <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={() => handleRemoveMember(ws.id, 'student', email)}>Remove</Button>
-                        </div>
-                      ))}
-
-                      {/* Student Pagination Controls */}
-                      {ws.students.length > 10 && (
-                        <div className="flex items-center justify-center space-x-2 py-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setWorkspaceStudentPages(prev => ({ ...prev, [ws.id]: Math.max(1, (prev[ws.id] || 1) - 1) }))}
-                            disabled={(workspaceStudentPages[ws.id] || 1) === 1}
-                            className="h-6 w-6 p-0"
-                          >
-                            <ChevronLeft className="h-3 w-3" />
-                          </Button>
-                          <span className="text-xs text-slate-400">
-                            {(workspaceStudentPages[ws.id] || 1)} / {Math.ceil(ws.students.length / 10)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setWorkspaceStudentPages(prev => ({ ...prev, [ws.id]: Math.min(Math.ceil(ws.students.length / 10), (prev[ws.id] || 1) + 1) }))}
-                            disabled={(workspaceStudentPages[ws.id] || 1) >= Math.ceil(ws.students.length / 10)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <ChevronRight className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      )}
-
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Student email"
-                          className="h-8 text-sm"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddMember(ws.id, 'student', e.currentTarget.value);
-                          }}
-                        />
-                        <Button size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white border-0" onClick={(e) => {
-                          const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                          handleAddMember(ws.id, 'student', input.value);
-                          input.value = '';
-                        }}>Add Student</Button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* Workspace Pagination */}
-          {filteredWorkspaces.length > 2 && (
-            <div className="flex items-center justify-center space-x-2 pt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setWorkspacePage(p => Math.max(1, p - 1))}
-                disabled={workspacePage === 1}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-              </Button>
-              <span className="text-sm text-slate-400">
-                Page {workspacePage} of {Math.ceil(filteredWorkspaces.length / 2)}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setWorkspacePage(p => Math.min(Math.ceil(filteredWorkspaces.length / 2), p + 1))}
-                disabled={workspacePage >= Math.ceil(filteredWorkspaces.length / 2)}
-              >
-                Next <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
-          )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowTeacherFieldsDialog(false)} className="border-slate-600 hover:bg-slate-800 text-white">Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
-      {/* QUERIES SECTION */}
-      {activeSection === 'queries' && (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">User Queries</h2>
-            <Button variant="destructive" size="sm" onClick={async () => {
-              if (!confirm('Are you sure you want to delete ALL queries? This cannot be undone.')) return;
-              try {
-                const batch = writeBatch(db);
-                const q = query(collection(db, 'queries'));
-                const snap = await getDocs(q);
-                snap.forEach(doc => batch.delete(doc.ref));
-                await batch.commit();
-                toast.success('All queries deleted');
-                loadQueries();
-              } catch (error) {
-                console.error(error);
-                toast.error('Failed to delete queries');
-              }
-            }}>
-              <Trash2 className="mr-2 h-4 w-4" /> Delete All
-            </Button>
-          </div>
-          <div className="grid gap-4">
-            {queries.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">No queries found</div>
-            ) : (
-              queries.map((q) => (
-                <Card key={q.id}>
-                  <CardHeader>
-                    <div className="flex justify-between">
-                      <CardTitle className="text-base">{q.query}</CardTitle>
-                      <span className={`text-xs px-2 py-1 rounded-full ${q.status === 'solved' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                        {q.status}
-                      </span>
+      {/* WORKSPACES SECTION */}
+      {
+        activeSection === 'workspaces' && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Create New Workspace</CardTitle>
+                <CardDescription>Add a new workspace for a class or group</CardDescription>
+              </CardHeader>
+              <CardContent>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                  <div className="space-y-2">
+                    <Label>Workspace Name (e.g., Batch 2023 - 2025)</Label>
+                    <Input
+                      value={newWorkspace.name}
+                      onChange={e => setNewWorkspace({ ...newWorkspace, name: e.target.value })}
+                      placeholder="Enter workspace name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Category (e.g., BSC A)</Label>
+                    <Input
+                      value={newWorkspace.category}
+                      onChange={e => setNewWorkspace({ ...newWorkspace, category: e.target.value })}
+                      placeholder="Enter category"
+                    />
+                  </div>
+                  <Button onClick={handleCreateWorkspace} className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0">
+                    <Briefcase className="mr-2 h-4 w-4" /> Create Workspace
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <h3 className="text-lg font-medium">My Workspaces ({filteredWorkspaces.length})</h3>
+              <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+                <Input
+                  placeholder="Search workspaces..."
+                  className="w-full md:w-[200px]"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                    <SelectTrigger className="w-full md:w-[150px]"><SelectValue placeholder="All Categories" /></SelectTrigger>
+                    <SelectContent>
+                      {categories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" onClick={handleReset} className="flex-1 md:flex-none">Reset</Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {filteredWorkspaces.slice((workspacePage - 1) * 2, workspacePage * 2).map((ws) => (
+                <Card key={ws.id} className="overflow-hidden">
+                  <div className="bg-muted/30 p-4 flex items-center justify-between border-b">
+                    <div className="flex items-center gap-3">
+                      <h4 className="font-semibold text-lg">{ws.name}</h4>
+                      <span className="text-xs bg-secondary/20 text-secondary-foreground px-2 py-1 rounded">{ws.category}</span>
                     </div>
-                    <CardDescription>{q.userEmail} • {q.createdAt?.toDate().toLocaleString()}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {(q.reply || q.adminReply) && (
-                      <div className="bg-muted p-3 rounded-md text-sm mb-3">
-                        <strong>Reply:</strong> {q.reply || q.adminReply}
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white border-0" onClick={() => handleOpenCsvUpload(ws.id, ws.name)}><Upload className="h-3 w-3 mr-1" /> CSV</Button>
+                      <Button variant="destructive" size="sm" className="h-8" onClick={() => handleDeleteWorkspace(ws.id, ws.name)}>Delete</Button>
+                    </div>
+                  </div>
+                  <CardContent className="p-4 space-y-4">
+                    {/* Role Appointment Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Class Teacher</Label>
+                        <Select
+                          value={ws.classTeacher || ''}
+                          onValueChange={(val) => handleAppointRole(ws.id, 'classTeacher', val)}
+                        >
+                          <SelectTrigger className={`h-8 text-sm ${!ws.classTeacher ? 'border-red-500/50' : 'border-slate-700'}`}>
+                            <SelectValue placeholder="Select Class Teacher" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ws.teachers.length > 0 ? (
+                              ws.teachers.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)
+                            ) : (
+                              <SelectItem value="none" disabled>No teachers added</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {!ws.classTeacher && <span className="text-[10px] text-red-400 flex items-center mt-1"><AlertTriangle className="h-3 w-3 mr-1" /> Required</span>}
                       </div>
-                    )}
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={async () => {
-                        const reply = prompt('Enter reply:');
-                        if (reply) {
-                          await updateDoc(doc(db, 'queries', q.id), {
-                            adminReply: reply,
-                            status: 'replied',
-                            repliedAt: serverTimestamp()
-                          });
-                          loadQueries();
-                        }
-                      }}>Reply</Button>
-                      {q.status !== 'solved' && (
-                        <Button size="sm" variant="default" onClick={async () => {
-                          await updateDoc(doc(db, 'queries', q.id), {
-                            status: 'solved',
-                            solvedAt: serverTimestamp()
-                          });
-                          loadQueries();
-                        }}>Mark Solved</Button>
-                      )}
+                      <div>
+                        <Label className="text-xs text-muted-foreground mb-1 block">Mentor</Label>
+                        <Select
+                          value={ws.mentor || ''}
+                          onValueChange={(val) => handleAppointRole(ws.id, 'mentor', val)}
+                        >
+                          <SelectTrigger className={`h-8 text-sm ${!ws.mentor ? 'border-red-500/50' : 'border-slate-700'}`}>
+                            <SelectValue placeholder="Select Mentor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ws.teachers.length > 0 ? (
+                              ws.teachers.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)
+                            ) : (
+                              <SelectItem value="none" disabled>No teachers added</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {!ws.mentor && <span className="text-[10px] text-red-400 flex items-center mt-1"><AlertTriangle className="h-3 w-3 mr-1" /> Required</span>}
+                      </div>
+                    </div>
+
+                    {/* Teachers Section */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <h5 className="text-sm font-medium text-muted-foreground">Teachers ({ws.teachers.length})</h5>
+                      </div>
+                      <div className="space-y-2">
+                        {ws.teachers.map(email => (
+                          <div key={email} className="flex items-center justify-between bg-muted/50 p-2 rounded text-sm">
+                            <span>{email}</span>
+                            <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={() => handleRemoveMember(ws.id, 'teacher', email)}>Remove</Button>
+                          </div>
+                        ))}
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Teacher email"
+                            className="h-8 text-sm"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddMember(ws.id, 'teacher', e.currentTarget.value);
+                            }}
+                          />
+                          <Button size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white border-0" onClick={(e) => {
+                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                            handleAddMember(ws.id, 'teacher', input.value);
+                            input.value = '';
+                          }}>Add Teacher</Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Students Section */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <h5 className="text-sm font-medium text-muted-foreground">Students ({ws.students.length})</h5>
+                      </div>
+                      <div className="space-y-2">
+                        {ws.students.slice(((workspaceStudentPages[ws.id] || 1) - 1) * 10, (workspaceStudentPages[ws.id] || 1) * 10).map(email => (
+                          <div key={email} className="flex items-center justify-between bg-muted/50 p-2 rounded text-sm">
+                            <span>{email}</span>
+                            <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={() => handleRemoveMember(ws.id, 'student', email)}>Remove</Button>
+                          </div>
+                        ))}
+
+                        {/* Student Pagination Controls */}
+                        {ws.students.length > 10 && (
+                          <div className="flex items-center justify-center space-x-2 py-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setWorkspaceStudentPages(prev => ({ ...prev, [ws.id]: Math.max(1, (prev[ws.id] || 1) - 1) }))}
+                              disabled={(workspaceStudentPages[ws.id] || 1) === 1}
+                              className="h-6 w-6 p-0"
+                            >
+                              <ChevronLeft className="h-3 w-3" />
+                            </Button>
+                            <span className="text-xs text-slate-400">
+                              {(workspaceStudentPages[ws.id] || 1)} / {Math.ceil(ws.students.length / 10)}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setWorkspaceStudentPages(prev => ({ ...prev, [ws.id]: Math.min(Math.ceil(ws.students.length / 10), (prev[ws.id] || 1) + 1) }))}
+                              disabled={(workspaceStudentPages[ws.id] || 1) >= Math.ceil(ws.students.length / 10)}
+                              className="h-6 w-6 p-0"
+                            >
+                              <ChevronRight className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Student email"
+                            className="h-8 text-sm"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddMember(ws.id, 'student', e.currentTarget.value);
+                            }}
+                          />
+                          <Button size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white border-0" onClick={(e) => {
+                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                            handleAddMember(ws.id, 'student', input.value);
+                            input.value = '';
+                          }}>Add Student</Button>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
-              ))
+              ))}
+            </div>
+
+            {/* Workspace Pagination */}
+            {filteredWorkspaces.length > 2 && (
+              <div className="flex items-center justify-center space-x-2 pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setWorkspacePage(p => Math.max(1, p - 1))}
+                  disabled={workspacePage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                </Button>
+                <span className="text-sm text-slate-400">
+                  Page {workspacePage} of {Math.ceil(filteredWorkspaces.length / 2)}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setWorkspacePage(p => Math.min(Math.ceil(filteredWorkspaces.length / 2), p + 1))}
+                  disabled={workspacePage >= Math.ceil(filteredWorkspaces.length / 2)}
+                >
+                  Next <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
             )}
           </div>
-        </div>
-      )}
+        )
+      }
+
+      {/* QUERIES SECTION */}
+      {
+        activeSection === 'queries' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">User Queries</h2>
+              <Button variant="destructive" size="sm" onClick={async () => {
+                if (!confirm('Are you sure you want to delete ALL queries? This cannot be undone.')) return;
+                try {
+                  const batch = writeBatch(db);
+                  const q = query(collection(db, 'queries'));
+                  const snap = await getDocs(q);
+                  snap.forEach(doc => batch.delete(doc.ref));
+                  await batch.commit();
+                  toast.success('All queries deleted');
+                  loadQueries();
+                } catch (error) {
+                  console.error(error);
+                  toast.error('Failed to delete queries');
+                }
+              }}>
+                <Trash2 className="mr-2 h-4 w-4" /> Delete All
+              </Button>
+            </div>
+            <div className="grid gap-4">
+              {queries.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">No queries found</div>
+              ) : (
+                queries.map((q) => (
+                  <Card key={q.id}>
+                    <CardHeader>
+                      <div className="flex justify-between">
+                        <CardTitle className="text-base">{q.query}</CardTitle>
+                        <span className={`text-xs px-2 py-1 rounded-full ${q.status === 'solved' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                          {q.status}
+                        </span>
+                      </div>
+                      <CardDescription>{q.userEmail} • {q.createdAt?.toDate().toLocaleString()}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {(q.reply || q.adminReply) && (
+                        <div className="bg-muted p-3 rounded-md text-sm mb-3">
+                          <strong>Reply:</strong> {q.reply || q.adminReply}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={async () => {
+                          const reply = prompt('Enter reply:');
+                          if (reply) {
+                            await updateDoc(doc(db, 'queries', q.id), {
+                              adminReply: reply,
+                              status: 'replied',
+                              repliedAt: serverTimestamp()
+                            });
+                            loadQueries();
+                          }
+                        }}>Reply</Button>
+                        {q.status !== 'solved' && (
+                          <Button size="sm" variant="default" onClick={async () => {
+                            await updateDoc(doc(db, 'queries', q.id), {
+                              status: 'solved',
+                              solvedAt: serverTimestamp()
+                            });
+                            loadQueries();
+                          }}>Mark Solved</Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+        )
+      }
 
       {/* AI CSV GENERATOR */}
-      {activeSection === 'aiCsv' && (
-        <div className="space-y-6 h-[calc(100vh-200px)]">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">AI CSV Generator</h2>
-            <Button variant="outline" asChild>
-              <a href="https://web-production-39641.up.railway.app/" target="_blank" rel="noopener noreferrer">
-                Open in New Tab
-              </a>
-            </Button>
+      {
+        activeSection === 'aiCsv' && (
+          <div className="space-y-6 h-[calc(100vh-200px)]">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">AI CSV Generator</h2>
+              <Button variant="outline" asChild>
+                <a href="https://web-production-39641.up.railway.app/" target="_blank" rel="noopener noreferrer">
+                  Open in New Tab
+                </a>
+              </Button>
+            </div>
+            <div className="w-full h-full border rounded-lg overflow-hidden bg-black">
+              <iframe
+                src="https://web-production-39641.up.railway.app/"
+                className="w-full h-full border-none"
+                title="AI CSV Generator"
+              />
+            </div>
           </div>
-          <div className="w-full h-full border rounded-lg overflow-hidden bg-black">
-            <iframe
-              src="https://web-production-39641.up.railway.app/"
-              className="w-full h-full border-none"
-              title="AI CSV Generator"
-            />
-          </div>
-        </div>
-      )}
+        )
+      }
 
 
 
@@ -2567,185 +3095,187 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* SEND MAIL SECTION */}
-      {activeSection === 'send-mail' && (
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Mail className="h-6 w-6 text-purple-400" /> Bulk User Import & Email Sender
-          </h2>
-          <p className="text-slate-400">Upload CSV and send login credentials via Gmail SMTP (Simulator).</p>
+      {
+        activeSection === 'send-mail' && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Mail className="h-6 w-6 text-purple-400" /> Bulk User Import & Email Sender
+            </h2>
+            <p className="text-slate-400">Upload CSV and send login credentials via Gmail SMTP (Simulator).</p>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Configuration Card */}
-            <Card className="bg-slate-800 border-slate-700 text-white h-fit">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-blue-400"><Settings className="h-5 w-5" /> Gmail Configuration</CardTitle>
-                <CardDescription>
-                  Use an <a href="https://myaccount.google.com/apppasswords" target="_blank" className="text-blue-400 underline">App Password</a>, not your login password.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Gmail Address</Label>
-                  <Input
-                    placeholder="example@gmail.com"
-                    className="bg-slate-900 border-slate-700"
-                    value={mailConfig.gmailUser}
-                    onChange={e => setMailConfig({ ...mailConfig, gmailUser: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>App Password (16 chars)</Label>
-                  <Input
-                    type="password"
-                    placeholder="xxxx xxxx xxxx xxxx"
-                    className="bg-slate-900 border-slate-700"
-                    value={mailConfig.appPassword}
-                    onChange={e => setMailConfig({ ...mailConfig, appPassword: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>From Name</Label>
-                  <Input
-                    placeholder="EduPortal"
-                    className="bg-slate-900 border-slate-700"
-                    value={mailConfig.fromName}
-                    onChange={e => setMailConfig({ ...mailConfig, fromName: e.target.value })}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Upload & Actions Card */}
-            <Card className="bg-slate-800 border-slate-700 text-white h-fit">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-400"><Upload className="h-5 w-5" /> CSV Upload</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Select CSV File</Label>
-                  <Input
-                    type="file"
-                    accept=".csv"
-                    className="bg-slate-900 border-slate-700 file:text-slate-200 file:bg-slate-800"
-                    onChange={handleMailCSVUpload}
-                  />
-                </div>
-                <div className="bg-slate-900 p-3 rounded-md text-xs font-mono text-slate-400">
-                  <p className="mb-1 font-bold">Required Columns:</p>
-                  name,email,password,role,department
-                </div>
-                <Button
-                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
-                  onClick={handleSendBatchEmails}
-                  disabled={isSendingMail || mailRecipients.length === 0}
-                >
-                  {isSendingMail ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...</>
-                  ) : (
-                    <><Mail className="h-4 w-4 mr-2" /> Process & Send Emails</>
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Progress & Logs */}
-          <Card className="bg-slate-800 border-slate-700 text-white">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 decoration-amber-400 text-amber-400"><FileSpreadsheet className="h-5 w-5" /> Progress & Logs</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-slate-900 p-4 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-slate-200">{mailStats.total}</div>
-                  <div className="text-xs text-slate-500">Total Users</div>
-                </div>
-                <div className="bg-slate-900 p-4 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-green-500">{mailStats.sent}</div>
-                  <div className="text-xs text-slate-500">Sent</div>
-                </div>
-                <div className="bg-slate-900 p-4 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-red-500">{mailStats.errors}</div>
-                  <div className="text-xs text-slate-500">Errors</div>
-                </div>
-              </div>
-
-              {/* Progress Bar */}
-              {isSendingMail && (
-                <div className="space-y-1">
-                  <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all duration-300"
-                      style={{ width: `${mailProgress}%` }}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Configuration Card */}
+              <Card className="bg-slate-800 border-slate-700 text-white h-fit">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-blue-400"><Settings className="h-5 w-5" /> Gmail Configuration</CardTitle>
+                  <CardDescription>
+                    Use an <a href="https://myaccount.google.com/apppasswords" target="_blank" className="text-blue-400 underline">App Password</a>, not your login password.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Gmail Address</Label>
+                    <Input
+                      placeholder="example@gmail.com"
+                      className="bg-slate-900 border-slate-700"
+                      value={mailConfig.gmailUser}
+                      onChange={e => setMailConfig({ ...mailConfig, gmailUser: e.target.value })}
                     />
                   </div>
-                  <div className="text-right text-xs text-slate-400">{mailProgress}%</div>
-                </div>
-              )}
+                  <div className="space-y-2">
+                    <Label>App Password (16 chars)</Label>
+                    <Input
+                      type="password"
+                      placeholder="xxxx xxxx xxxx xxxx"
+                      className="bg-slate-900 border-slate-700"
+                      value={mailConfig.appPassword}
+                      onChange={e => setMailConfig({ ...mailConfig, appPassword: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>From Name</Label>
+                    <Input
+                      placeholder="EduPortal"
+                      className="bg-slate-900 border-slate-700"
+                      value={mailConfig.fromName}
+                      onChange={e => setMailConfig({ ...mailConfig, fromName: e.target.value })}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
-              {/* Logs Window */}
-              <div
-                ref={logContainerRef}
-                className="bg-black/50 border border-slate-700 rounded-md p-4 h-64 overflow-y-auto font-mono text-sm space-y-1"
-              >
-                {mailLogs.length === 0 && <span className="text-slate-600 italic">Waiting for process to start...</span>}
-                {mailLogs.map((log, i) => (
-                  <div key={i} className={`
+              {/* Upload & Actions Card */}
+              <Card className="bg-slate-800 border-slate-700 text-white h-fit">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-green-400"><Upload className="h-5 w-5" /> CSV Upload</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Select CSV File</Label>
+                    <Input
+                      type="file"
+                      accept=".csv"
+                      className="bg-slate-900 border-slate-700 file:text-slate-200 file:bg-slate-800"
+                      onChange={handleMailCSVUpload}
+                    />
+                  </div>
+                  <div className="bg-slate-900 p-3 rounded-md text-xs font-mono text-slate-400">
+                    <p className="mb-1 font-bold">Required Columns:</p>
+                    name,email,password,role,department
+                  </div>
+                  <Button
+                    className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
+                    onClick={handleSendBatchEmails}
+                    disabled={isSendingMail || mailRecipients.length === 0}
+                  >
+                    {isSendingMail ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Sending...</>
+                    ) : (
+                      <><Mail className="h-4 w-4 mr-2" /> Process & Send Emails</>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Progress & Logs */}
+            <Card className="bg-slate-800 border-slate-700 text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 decoration-amber-400 text-amber-400"><FileSpreadsheet className="h-5 w-5" /> Progress & Logs</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-slate-900 p-4 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-slate-200">{mailStats.total}</div>
+                    <div className="text-xs text-slate-500">Total Users</div>
+                  </div>
+                  <div className="bg-slate-900 p-4 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-green-500">{mailStats.sent}</div>
+                    <div className="text-xs text-slate-500">Sent</div>
+                  </div>
+                  <div className="bg-slate-900 p-4 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-red-500">{mailStats.errors}</div>
+                    <div className="text-xs text-slate-500">Errors</div>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                {isSendingMail && (
+                  <div className="space-y-1">
+                    <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 transition-all duration-300"
+                        style={{ width: `${mailProgress}%` }}
+                      />
+                    </div>
+                    <div className="text-right text-xs text-slate-400">{mailProgress}%</div>
+                  </div>
+                )}
+
+                {/* Logs Window */}
+                <div
+                  ref={logContainerRef}
+                  className="bg-black/50 border border-slate-700 rounded-md p-4 h-64 overflow-y-auto font-mono text-sm space-y-1"
+                >
+                  {mailLogs.length === 0 && <span className="text-slate-600 italic">Waiting for process to start...</span>}
+                  {mailLogs.map((log, i) => (
+                    <div key={i} className={`
                                 ${log.type === 'success' ? 'text-green-400' : ''}
                                 ${log.type === 'error' ? 'text-red-400' : ''}
                                 ${log.type === 'warn' ? 'text-yellow-400' : ''}
                                 ${log.type === 'info' ? 'text-blue-300' : ''}
                             `}>
-                    <span className="text-slate-600 mr-2">[{new Date().toLocaleTimeString()}]</span>
-                    {log.msg}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                      <span className="text-slate-600 mr-2">[{new Date().toLocaleTimeString()}]</span>
+                      {log.msg}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
 
-          {/* How to Get Gmail App Password */}
-          <Card className="bg-slate-800 border-amber-500/50 text-white">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-amber-400">
-                <Lock className="h-5 w-5" /> How to Get Your Gmail App Password
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-slate-300">
-                Follow these steps to generate the 16-digit "App password" you must paste into the field above.
-              </p>
-              <ol className="list-decimal pl-5 space-y-2 text-slate-400 text-sm">
-                <li>
-                  After 2-Step Verification is ON, open the App Passwords page directly.
-                </li>
-                <li>
-                  Sign in again if asked, choose an app and device (or select <strong>Other (Custom name)</strong> and type "EduPortal SMTP"), then click <strong>Generate</strong>.
-                </li>
-                <li>
-                  Google will show a 16-character app password. Copy it (without spaces) and paste it into the <strong>"App Password (16 chars)"</strong> field above.
-                </li>
-                <li>
-                  Keep this app password safe. If you change your main Google password later, you must return to this page and generate a new app password.
-                </li>
-              </ol>
-              <div className="pt-2">
-                <Button
-                  variant="outline"
-                  className="bg-slate-900 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
-                  onClick={() => window.open('https://myaccount.google.com/apppasswords', '_blank')}
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" /> Go to App Passwords Page
-                </Button>
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                For more details, see Google's official <a href="https://support.google.com/mail/answer/185833" target="_blank" rel="noreferrer" className="text-blue-400 underline">help article</a>.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            {/* How to Get Gmail App Password */}
+            <Card className="bg-slate-800 border-amber-500/50 text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-400">
+                  <Lock className="h-5 w-5" /> How to Get Your Gmail App Password
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-slate-300">
+                  Follow these steps to generate the 16-digit "App password" you must paste into the field above.
+                </p>
+                <ol className="list-decimal pl-5 space-y-2 text-slate-400 text-sm">
+                  <li>
+                    After 2-Step Verification is ON, open the App Passwords page directly.
+                  </li>
+                  <li>
+                    Sign in again if asked, choose an app and device (or select <strong>Other (Custom name)</strong> and type "EduPortal SMTP"), then click <strong>Generate</strong>.
+                  </li>
+                  <li>
+                    Google will show a 16-character app password. Copy it (without spaces) and paste it into the <strong>"App Password (16 chars)"</strong> field above.
+                  </li>
+                  <li>
+                    Keep this app password safe. If you change your main Google password later, you must return to this page and generate a new app password.
+                  </li>
+                </ol>
+                <div className="pt-2">
+                  <Button
+                    variant="outline"
+                    className="bg-slate-900 border-amber-500/50 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                    onClick={() => window.open('https://myaccount.google.com/apppasswords', '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" /> Go to App Passwords Page
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  For more details, see Google's official <a href="https://support.google.com/mail/answer/185833" target="_blank" rel="noreferrer" className="text-blue-400 underline">help article</a>.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )
+      }
 
       {/* BACKUP FILES */}
       {

@@ -19,5 +19,7 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const database = getDatabase(app);
 export const messaging = getMessaging(app);
+import { getStorage } from "firebase/storage";
+export const storage = getStorage(app);
 
 
