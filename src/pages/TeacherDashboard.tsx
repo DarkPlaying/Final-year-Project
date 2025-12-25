@@ -1,4 +1,5 @@
-﻿﻿import { useState, useEffect, useRef, useCallback } from 'react';
+﻿﻿import { useState, useEffect, useRef, useCallback } from 'react'; // Refreshed
+
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { DashboardLayout } from '@/components/DashboardLayout';
@@ -135,6 +136,9 @@ import { database } from '@/lib/firebase';
 import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update, remove } from 'firebase/database';
 import { AITestGenerator } from '@/components/AITestGenerator';
 import { DatePicker } from '@/components/ui/date-picker';
+import { ImageCropper } from '@/components/ui/image-crop';
+import { storage } from '@/lib/firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Google Drive Config
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -356,6 +360,73 @@ const TeacherDashboard = () => {
   const [showDetailsConfigDialog, setShowDetailsConfigDialog] = useState(false);
   const [newDetailField, setNewDetailField] = useState('');
 
+  // Teacher Profile Update State
+  const [showTeacherProfileDialog, setShowTeacherProfileDialog] = useState(false);
+  const [teacherProfileForm, setTeacherProfileForm] = useState<any>({});
+  const [requiredTeacherFields, setRequiredTeacherFields] = useState<string[]>(['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary']);
+
+  // Image Upload State
+  const [showImageCropper, setShowImageCropper] = useState(false);
+
+  const handleProfileImageUpload = async (blob: Blob) => {
+    try {
+      if (!driveAccessToken) {
+        toast.error("Google Drive access is required to upload profile picture. Please authorize Drive access.");
+        // Optionally trigger login if you have access to the function, strictly simple warning for now
+        return;
+      }
+
+      toast.loading("Uploading profile picture to Drive...");
+
+      // 1. Upload to Google Drive
+      const metadata = {
+        name: `${userId}_profile_pic_${Date.now()}.png`, // timestamp to avoid naming conflicts/caching
+        mimeType: 'image/png',
+        parents: ['1EU8uCIIXymEY04-oeyXpDv54Y64w0f61'] // User provided folder
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', blob);
+
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${driveAccessToken}`
+        },
+        body: form
+      });
+
+      if (!response.ok) {
+        throw new Error(`Drive upload failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const fileId = data.id;
+
+      // Construct a viewable URL (thumbnail link)
+      // Note: "https://drive.google.com/uc?export=view&id=" is a common workaround for serving images directly
+      const drivePhotoUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
+
+      // 2. Update Firestore with Drive URL
+      await updateDoc(doc(db, 'users', userId), {
+        photoURL: drivePhotoUrl,
+        profileUpdatedAt: serverTimestamp()
+      });
+
+      // 3. Update Local State
+      setTeacherProfileForm(prev => ({ ...prev, photoURL: drivePhotoUrl }));
+
+      toast.dismiss();
+      toast.success("Profile picture updated (Saved to Drive)");
+
+    } catch (e) {
+      console.error(e);
+      toast.dismiss();
+      toast.error("Failed to upload image");
+    }
+  };
+
   // Load Config from LocalStorage
   useEffect(() => {
     const savedConfig = localStorage.getItem('studentExportConfig');
@@ -393,8 +464,14 @@ const TeacherDashboard = () => {
 
     // Real-time listeners
     // Real-time listeners moved to separate effects
-    // Init Google Drive
-    initGoogleDrive();
+    // Init Google Drive (with polling like Student Dashboard)
+    const checkGoogle = setInterval(() => {
+      if ((window as any).google) {
+        initGoogleDrive();
+        clearInterval(checkGoogle);
+      }
+    }, 500);
+    setTimeout(() => clearInterval(checkGoogle), 10000);
     const statusRef = ref(database, '/status');
     const unsubPresence = onValue(statusRef, (snapshot) => {
       const data = snapshot.val();
@@ -405,8 +482,7 @@ const TeacherDashboard = () => {
       }
     });
 
-    // Init Google Drive
-    initGoogleDrive();
+
 
     // Session Timer
     const timer = setInterval(() => {
@@ -477,6 +553,92 @@ const TeacherDashboard = () => {
       loadWorkspaces(userEmail, userId);
     }
   }, [userEmail, userId]);
+
+  // --- CHECK COMPULSORY UPDATE (Specific to Teachers) ---
+  useEffect(() => {
+    if (!userId || !userEmail) return;
+
+    const checkTeacherCompulsory = async () => {
+      try {
+        // 1. Check for specific announcement request
+        const announcementsRef = collection(db, 'announcements');
+        // We look for type: 'compulsory_update_request' where targetRole is 'teacher' OR students array contains this email
+        // Since we re-used 'students' field in AdminDashboard for target list
+        const q = query(
+          announcementsRef,
+          where('type', '==', 'compulsory_update_request'),
+          where('students', 'array-contains', userEmail)
+        );
+        const snap = await getDocs(q);
+
+        // 2. Check current profile completeness
+        const userDocRef = doc(db, 'users', userId);
+        const userSnap = await getDoc(userDocRef);
+
+        let needsUpdate = false;
+        let activeRequiredFields = ['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+
+          // Check if forced by system announcement
+          if (!snap.empty) {
+            const latestRequest = snap.docs.sort((a, b) => b.data().createdAt?.seconds - a.data().createdAt?.seconds)[0];
+            const lastProfileUpdate = userData.profileUpdatedAt?.seconds || 0;
+
+            if (latestRequest.data().createdAt?.seconds > lastProfileUpdate) {
+              needsUpdate = true;
+              // Use fields from announcement if present
+              if (latestRequest.data().requiredFields) {
+                activeRequiredFields = latestRequest.data().requiredFields;
+              }
+            }
+          }
+
+          // Check for missing basic data fields regardless of announcement
+          // (Self-healing enforcement for standard fields)
+          const stdFields = ['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+          const missingFields = stdFields.filter(f => !userData[f] || userData[f] === '');
+          if (missingFields.length > 0) {
+            needsUpdate = true;
+          }
+
+          if (needsUpdate) {
+            setRequiredTeacherFields(activeRequiredFields);
+
+            // Pre-fill form with existing data
+            const initialForm: any = {
+              full_name: userData.name || '',
+              vta_no: userData.vta_no || '',
+              personal_mobile: userData.personal_mobile || '',
+              department: userData.department || '',
+              date_of_joining: userData.date_of_joining ? safeDate(userData.date_of_joining).toISOString().split('T')[0] : '',
+              date_of_birth: userData.date_of_birth ? safeDate(userData.date_of_birth).toISOString().split('T')[0] : '',
+              address: userData.address || '',
+              current_salary: userData.current_salary || '',
+              photoURL: userData.photoURL || ''
+            };
+
+            // Populate other dynamic fields
+            activeRequiredFields.forEach(field => {
+              if (!initialForm[field] && userData[field]) {
+                initialForm[field] = userData[field];
+              }
+            });
+
+            setTeacherProfileForm(initialForm);
+            setShowTeacherProfileDialog(true);
+          }
+        }
+      } catch (e) {
+        console.error("Error checking compulsory update:", e);
+      }
+    };
+
+    // Slight delay to allow auth to settle
+    const output = setTimeout(checkTeacherCompulsory, 2000);
+    return () => clearTimeout(output);
+  }, [userId, userEmail]);
 
   // --- Modular Data Listeners (with Pagination, Caching & Aggregation) ---
 
@@ -1025,35 +1187,59 @@ const TeacherDashboard = () => {
 
   // --- Google Drive Integration ---
   const initGoogleDrive = () => {
-    if (typeof window !== 'undefined' && (window as any).google) {
-      try {
-        tokenClient.current = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: EXAM_CLIENT_ID,
-          scope: SCOPES,
-          callback: (tokenResponse: any) => {
-            if (tokenResponse && tokenResponse.access_token) {
-              setDriveAccessToken(tokenResponse.access_token);
-              toast.success('Google Drive authenticated!');
-            }
-          },
-        });
-      } catch (err) {
-        console.error('Google Drive init error', err);
-      }
+    if (typeof window === 'undefined') return;
+
+    if (!(window as any).google) {
+      console.warn("Google script not loaded yet");
+      return;
+    }
+
+    if (!EXAM_CLIENT_ID) {
+      console.error("Missing Google Client ID");
+      toast.error("Configuration Error: Google Client ID is missing");
+      return;
+    }
+
+    try {
+      tokenClient.current = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: EXAM_CLIENT_ID,
+        scope: SCOPES,
+        callback: (tokenResponse: any) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            setDriveAccessToken(tokenResponse.access_token);
+            toast.success('Google Drive authenticated!');
+          }
+        },
+      });
+    } catch (err: any) {
+      console.error('Google Drive init error', err);
+      toast.error(`Auth Init Error: ${err.message || 'Unknown'}`);
     }
   };
 
   const handleGoogleAuth = () => {
+    // 1. Already initialized
     if (tokenClient.current) {
       tokenClient.current.requestAccessToken();
-    } else {
-      // Try to re-init if google is now available
+      return;
+    }
+
+    // 2. Try to initialize now
+    if ((window as any).google) {
       initGoogleDrive();
       if (tokenClient.current) {
         tokenClient.current.requestAccessToken();
-      } else {
-        toast.error('Google API not loaded yet. Please refresh the page.');
+        return;
       }
+    }
+
+    // 3. Diagnosis
+    if (!(window as any).google) {
+      toast.error('Google Scripts not loaded. Please refresh or check ad-blockers.');
+    } else if (!EXAM_CLIENT_ID) {
+      toast.error('System Error: Google Client ID is not configured.');
+    } else {
+      toast.error('Google Auth failed to initialize. Please refresh.');
     }
   };
 
@@ -1699,7 +1885,7 @@ const TeacherDashboard = () => {
       const q1 = query(collection(db, 'workspaces'), where('teachers', 'array-contains', email));
       console.log('🔥 [READ] Fetching workspaces (teacher)...');
       const s1 = await getDocs(q1);
-      console.log(`🔥 [READ] Fetched ${s1.size} workspaces (teacher)`);
+      console.log(`🔥 [READ] Fetched ${s1.size} workspaces (teacher) - Success`);
       s1.forEach(d => wsMap.set(d.id, { id: d.id, ...d.data() }));
 
       // 2. Admin checks
@@ -5288,8 +5474,10 @@ const TeacherDashboard = () => {
               </div>
               <div className="flex items-center gap-2 w-full md:w-auto">
                 <Label className="whitespace-nowrap text-slate-400 w-20 md:w-auto">Type:</Label>
-                <Select value={assignmentFilterType} onValueChange={(v: any) => setAssignmentFilterType(v)}>
-                  <SelectTrigger className="w-full md:w-[110px] bg-slate-900 border-slate-700 text-slate-300 h-8"><SelectValue placeholder="All" /></SelectTrigger>
+                <Select value={assignmentFilterType} onValueChange={(v) => setAssignmentFilterType(v as any)}>
+                  <SelectTrigger className="w-full md:w-[110px] bg-slate-900 border-slate-700 text-slate-300 h-8">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
                     <SelectItem value="exam">Exam</SelectItem>
@@ -5663,64 +5851,6 @@ const TeacherDashboard = () => {
               </CardContent>
             </Card>
 
-            {/* Configure Fields Dialog */}
-            <Dialog open={showDetailsConfigDialog} onOpenChange={setShowDetailsConfigDialog}>
-              <DialogContent className="bg-slate-900 border-slate-700 text-white">
-                <DialogHeader>
-                  <DialogTitle>Configure Student Details Fields</DialogTitle>
-                  <DialogDescription className="text-slate-400">
-                    Add or remove fields to include in the student details download.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Field name (e.g. address)"
-                      value={newDetailField}
-                      onChange={(e) => setNewDetailField(e.target.value)}
-                      className="bg-slate-800 border-slate-700 text-white"
-                    />
-                    <Button onClick={handleAddDetailField} className="bg-blue-600 hover:bg-blue-700">Add</Button>
-                  </div>
-                  <div className="text-xs text-slate-400 flex items-center gap-2">
-                    <span><span className="text-yellow-500 font-semibold">Notice:</span> Use <code className="bg-slate-800 px-1 rounded text-slate-300">reg_no</code> for Register Number (after 1st year get thier Register Number).</span>
-                    {!studentDetailsConfig.includes('reg_no') && (
-                      <button
-                        onClick={() => {
-                          if (!studentDetailsConfig.includes('reg_no')) {
-                            const newConfig = [...studentDetailsConfig, 'reg_no'];
-                            setStudentDetailsConfig(newConfig);
-                            saveDetailsConfig(newConfig);
-                            toast.success("Added reg_no field");
-                          }
-                        }}
-                        className="text-blue-400 hover:underline flex items-center gap-1"
-                      >
-                        <PlusCircle className="h-3 w-3" /> Add now
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Current Fields</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {studentDetailsConfig.map(field => (
-                        <div key={field} className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-                          <span className="text-sm">{field}</span>
-                          {['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'].includes(field) ? null : (
-                            <button onClick={() => handleRemoveDetailField(field)} className="text-slate-400 hover:text-red-400 ml-1">
-                              <X className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowDetailsConfigDialog(false)} className="border-slate-600 hover:bg-slate-800 text-white">Close</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </div>
         )
       }
@@ -6849,8 +6979,277 @@ const TeacherDashboard = () => {
           </DialogHeader>
         </DialogContent>
       </Dialog>
-    </DashboardLayout >
+
+      {/* GLOBAL DIALOGS */}
+      {/* Configure Fields Dialog */}
+      <Dialog open={showDetailsConfigDialog} onOpenChange={setShowDetailsConfigDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Configure Student Details Fields</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Add or remove fields to include in the student details download.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Field name (e.g. address)"
+                value={newDetailField}
+                onChange={(e) => setNewDetailField(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white"
+              />
+              <Button onClick={handleAddDetailField} className="bg-blue-600 hover:bg-blue-700">Add</Button>
+            </div>
+            {/* ... rest of content */}
+            <div className="text-xs text-slate-400 flex items-center gap-2">
+              <span><span className="text-yellow-500 font-semibold">Notice:</span> Use <code className="bg-slate-800 px-1 rounded text-slate-300">reg_no</code> for Register Number (after 1st year get thier Register Number).</span>
+              {!studentDetailsConfig.includes('reg_no') && (
+                <button
+                  onClick={() => {
+                    if (!studentDetailsConfig.includes('reg_no')) {
+                      const newConfig = [...studentDetailsConfig, 'reg_no'];
+                      setStudentDetailsConfig(newConfig);
+                      saveDetailsConfig(newConfig);
+                      toast.success("Added reg_no field");
+                    }
+                  }}
+                  className="text-blue-400 hover:underline flex items-center gap-1"
+                >
+                  <PlusCircle className="h-3 w-3" /> Add now
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Current Fields</Label>
+              <div className="flex flex-wrap gap-2">
+                {studentDetailsConfig.map(field => (
+                  <div key={field} className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                    <span className="text-sm">{field}</span>
+                    {['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'].includes(field) ? null : (
+                      <button onClick={() => handleRemoveDetailField(field)} className="text-slate-400 hover:text-red-400 ml-1">
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDetailsConfigDialog(false)} className="border-slate-600 hover:bg-slate-800 text-white">Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* TEACHER COMPULSORY PROFILE UPDATE DIALOG (GLOBAL) */}
+      <Dialog open={showTeacherProfileDialog} onOpenChange={(open) => {
+        // Force keep open if true
+        if (showTeacherProfileDialog) return;
+        setShowTeacherProfileDialog(open);
+      }}>
+        <DialogContent
+          className="bg-slate-900 border-slate-700 text-white max-h-[90vh] overflow-y-auto [&>button]:hidden"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-red-400 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" /> Action Required: Update Profile
+            </DialogTitle>
+            <DialogDescription className="text-slate-300">
+              Please update your profile with the following mandatory details to continue using the dashboard.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Profile Picture Section */}
+            <div className="flex flex-col items-center gap-2 mb-4">
+              <div className="relative">
+                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800">
+                  {teacherProfileForm.photoURL ? (
+                    <img src={teacherProfileForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-slate-500">
+                      <Users className="h-10 w-10" />
+                    </div>
+                  )}
+                </div>
+                {driveAccessToken ? (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg"
+                    onClick={() => setShowImageCropper(true)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 hover:text-white"
+                    onClick={handleGoogleAuth}
+                    title="Connect Google Drive to upload picture"
+                  >
+                    <Lock className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <span className="text-xs text-slate-400">
+                {!driveAccessToken ? 'Connect Drive to Upload Profile Pic' : 'Upload Profile Picture'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Full Name <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Full Name"
+                  value={teacherProfileForm.full_name || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, full_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>VTA Number <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="VTA Number"
+                  value={teacherProfileForm.vta_no || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, vta_no: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Personal Mobile <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Mobile Number"
+                  value={teacherProfileForm.personal_mobile || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, personal_mobile: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Department <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Department"
+                  value={teacherProfileForm.department || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, department: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Date of Joining <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+                  value={teacherProfileForm.date_of_joining || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, date_of_joining: e.target.value })}
+                />
+                <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Date of Birth <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+                  value={teacherProfileForm.date_of_birth || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, date_of_birth: e.target.value })}
+                />
+                <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Address <span className="text-red-500">*</span></Label>
+                <Textarea
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Residential Address"
+                  value={teacherProfileForm.address || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, address: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Current Salary <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Current Salary"
+                  value={teacherProfileForm.current_salary || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, current_salary: e.target.value })}
+                />
+              </div>
+
+              {/* Dynamic Fields Section */}
+              {requiredTeacherFields
+                .filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field))
+                .map(field => (
+                  <div key={field} className="space-y-2">
+                    <Label className="capitalize">{field.replace(/_/g, ' ')} <span className="text-red-500">*</span></Label>
+                    <Input
+                      className="bg-slate-800 border-slate-700"
+                      placeholder={`Enter ${field.replace(/_/g, ' ')}`}
+                      value={teacherProfileForm[field] || ''}
+                      onChange={e => setTeacherProfileForm({ ...teacherProfileForm, [field]: e.target.value })}
+                    />
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col !space-x-0 gap-2">
+            {!driveAccessToken && (
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-blue-600 hover:bg-blue-700 text-white border-0 w-full"
+                onClick={handleGoogleAuth}
+              >
+                Login with Drive
+              </Button>
+            )}
+            <Button onClick={async () => {
+              // Validation
+              const validationFields = requiredTeacherFields.map(f => f === 'name' ? 'full_name' : f);
+              const missing = validationFields.filter(f => !teacherProfileForm[f]);
+
+              if (missing.length > 0) {
+                toast.error(`Please fill all required fields: ${missing.join(', ')}`);
+                return;
+              }
+
+              try {
+                toast.loading("Updating profile...");
+                const updateData = {
+                  ...teacherProfileForm,
+                  name: teacherProfileForm.full_name, // Sync
+                  profileUpdatedAt: serverTimestamp(),
+                  date_of_joining: teacherProfileForm.date_of_joining ? Timestamp.fromDate(new Date(teacherProfileForm.date_of_joining)) : null,
+                  date_of_birth: teacherProfileForm.date_of_birth ? Timestamp.fromDate(new Date(teacherProfileForm.date_of_birth)) : null
+                };
+
+                await updateDoc(doc(db, 'users', userId), updateData);
+                toast.dismiss();
+                toast.success("Profile updated successfully");
+                setShowTeacherProfileDialog(false);
+              } catch (e) {
+                console.error(e);
+                toast.dismiss();
+                toast.error("Failed to update profile");
+              }
+            }} className="bg-green-600 hover:bg-green-700 w-full">
+              Save & Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ImageCropper
+        open={showImageCropper}
+        onOpenChange={setShowImageCropper}
+        onCropComplete={handleProfileImageUpload}
+        isAuthorized={!!driveAccessToken}
+        onAuthorize={handleGoogleAuth}
+      />
+    </DashboardLayout>
   );
 };
 
 export default TeacherDashboard;
+// End of TeacherDashboard
