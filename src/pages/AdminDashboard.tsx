@@ -1928,6 +1928,30 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleRaiseRequestForTeacher = async (teacherEmail: string) => {
+    try {
+      if (!teacherEmail) return;
+
+      await addDoc(collection(db, 'announcements'), {
+        title: 'SYSTEM: Compulsory Profile Update',
+        description: 'Action Required: Please update your teacher profile details immediately.',
+        link: '',
+        workspaceId: 'system',
+        students: [teacherEmail], // Target specific teacher
+        teacherEmail: 'admin@system.com',
+        type: 'compulsory_update_request',
+        targetRole: 'teacher',
+        requiredFields: Array.from(new Set(['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary', ...teacherDetailsConfig])),
+        createdAt: serverTimestamp()
+      });
+
+      toast.success(`Request raised for ${teacherEmail}`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to raise request");
+    }
+  };
+
   const handleDeleteAllTeachers = async () => {
     const confirmKey = prompt("WARNING: This will delete ALL teacher accounts and their data. Type 'DELETE ALL TEACHERS' to confirm.");
     if (confirmKey !== 'DELETE ALL TEACHERS') return;
@@ -2571,8 +2595,7 @@ const AdminDashboard = () => {
                             <Power className="h-4 w-4" />
                           </Button>
                           <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => {
-                            // Just re-use raise all for now or implement single
-                            handleRaiseAgainAllTeachers();
+                            handleRaiseRequestForTeacher(teacher.email);
                           }} title="Raise Request">
                             <RotateCcw className="h-4 w-4" />
                           </Button>
