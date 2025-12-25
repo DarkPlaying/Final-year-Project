@@ -36,8 +36,11 @@ import {
   Search as SearchIcon,
   ArrowRight,
   AlertTriangle,
-  XCircle
+  XCircle,
+  Users,
+  Edit
 } from 'lucide-react';
+import { ImageCropper } from '@/components/ui/image-crop';
 import { jsPDF } from "jspdf";
 import autoTable from 'jspdf-autotable';
 import { db } from '@/lib/firebase';
@@ -264,6 +267,7 @@ const StudentDashboard = () => {
   const [detailsForm, setDetailsForm] = useState<any>({});
   const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth']);
   const [detailsPage, setDetailsPage] = useState(1);
+  const [showImageCropper, setShowImageCropper] = useState(false);
 
   // Google Drive Auth State
   const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
@@ -1992,24 +1996,41 @@ const StudentDashboard = () => {
   };
 
   const handleProfileImageUpload = async (e: any) => {
+    // Legacy handler if needed, or redirect to cropper
+    // Since we are using ImageCropper now, this might not be triggered directly by input if we hide it.
+    // But for safety:
     const file = e.target.files[0];
     if (!file) return;
+    const blob = await new Response(file).blob();
+    handleCroppedImageUpload(blob);
+  };
 
+  const handleCroppedImageUpload = async (blob: Blob) => {
     // Check auth
     if (!driveAccessToken) {
-      toast.error("Please login with Google Drive first (Click the lock icon in sidebar)");
+      toast.error("Please login with Google Drive first");
       tokenClient.current.requestAccessToken();
       return;
     }
 
     const toastId = toast.loading("Uploading profile picture...");
     try {
+      const file = new File([blob], "profile_picture.png", { type: "image/png" });
       const link = await uploadFileToDrive(file, PROFILE_PICTURE_DRIVE_FOLDER_ID);
       setDetailsForm((prev: any) => ({ ...prev, photoURL: link }));
       toast.success("Profile picture uploaded", { id: toastId });
+      setShowImageCropper(false);
     } catch (error) {
       console.error(error);
       toast.error("Failed to upload profile picture", { id: toastId });
+    }
+  };
+
+  const handleGoogleAuth = () => {
+    if (tokenClient.current) {
+      tokenClient.current.requestAccessToken();
+    } else {
+      toast.error("Google Auth not initialized");
     }
   };
 
@@ -3236,32 +3257,53 @@ const StudentDashboard = () => {
           <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto px-1">
             {/* Profile Picture Upload Section */}
             {/* Profile Picture Upload Section - Always Show */}
-            <div className="flex flex-col items-center justify-center gap-4 mb-6">
-              <div className="relative group">
-                <div className="h-24 w-24 rounded-full bg-slate-800 border-2 border-dashed border-slate-600 flex items-center justify-center overflow-hidden cursor-pointer hover:border-slate-400 transition-colors relative">
+            {/* Profile Picture Upload Section - Always Show */}
+            <div className="flex flex-col items-center gap-2 mb-4">
+              <div className="relative">
+                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800">
                   {detailsForm.photoURL ? (
                     <img src={detailsForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
                   ) : (
-                    <Upload className="h-8 w-8 text-slate-400" />
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                    onChange={handleProfileImageUpload}
-                  />
-                  {/* Notification Bubble */}
-                  {(!detailsForm.photoURL) && (
-                    <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10 hidden sm:block">
-                      <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
-                        Click here to upload
-                        <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
-                      </div>
+                    <div className="h-full w-full flex items-center justify-center text-slate-500">
+                      <Users className="h-10 w-10" />
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 mt-2 text-center text-blue-400">Tap image to upload</p>
+
+                {/* Bubble Notification - Only show if no photo */}
+                {(!detailsForm.photoURL) && (
+                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10 hidden sm:block">
+                    <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
+                      Click here to upload
+                      <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
+                    </div>
+                  </div>
+                )}
+
+                {driveAccessToken ? (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg"
+                    onClick={() => setShowImageCropper(true)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 hover:text-white"
+                    onClick={handleGoogleAuth}
+                    title="Connect Google Drive to upload picture"
+                  >
+                    <Lock className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
+              <span className="text-xs text-slate-400">
+                {!driveAccessToken ? 'Connect Drive to Upload Profile Pic' : 'Upload Profile Picture'}
+              </span>
             </div>
 
 
@@ -3326,6 +3368,13 @@ const StudentDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ImageCropper
+        open={showImageCropper}
+        onOpenChange={setShowImageCropper}
+        onCropComplete={handleCroppedImageUpload}
+        isAuthorized={!!driveAccessToken}
+        onAuthorize={handleGoogleAuth}
+      />
     </DashboardLayout >
   );
 };
