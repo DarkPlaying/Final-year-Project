@@ -294,6 +294,8 @@ const StudentDashboard = () => {
         fields.forEach((field: string) => {
           initialForm[field] = userData[field] || '';
         });
+        // Ensure photoURL is preserved or loaded
+        initialForm.photoURL = userData.photoURL || userData.profile_picture || userData.photoUrl || '';
         setDetailsForm(initialForm);
       }
     }
@@ -3233,35 +3235,35 @@ const StudentDashboard = () => {
           </DialogHeader>
           <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto px-1">
             {/* Profile Picture Upload Section */}
-            {detailsPage === 1 && (
-              <div className="flex flex-col items-center justify-center gap-4 mb-6">
-                <div className="relative group">
-                  <div className="h-24 w-24 rounded-full bg-slate-800 border-2 border-dashed border-slate-600 flex items-center justify-center overflow-hidden cursor-pointer hover:border-slate-400 transition-colors relative">
-                    {detailsForm.photoURL ? (
-                      <img src={detailsForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
-                    ) : (
-                      <Upload className="h-8 w-8 text-slate-400" />
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      onChange={handleProfileImageUpload}
-                    />
-                    {/* Notification Bubble */}
-                    {(!detailsForm.photoURL) && (
-                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10 hidden sm:block">
-                        <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
-                          Click here to upload
-                          <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
-                        </div>
+            {/* Profile Picture Upload Section - Always Show */}
+            <div className="flex flex-col items-center justify-center gap-4 mb-6">
+              <div className="relative group">
+                <div className="h-24 w-24 rounded-full bg-slate-800 border-2 border-dashed border-slate-600 flex items-center justify-center overflow-hidden cursor-pointer hover:border-slate-400 transition-colors relative">
+                  {detailsForm.photoURL ? (
+                    <img src={detailsForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
+                  ) : (
+                    <Upload className="h-8 w-8 text-slate-400" />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    onChange={handleProfileImageUpload}
+                  />
+                  {/* Notification Bubble */}
+                  {(!detailsForm.photoURL) && (
+                    <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10 hidden sm:block">
+                      <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
+                        Click here to upload
+                        <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
                       </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-500 mt-2 text-center text-blue-400">Tap image to upload</p>
+                    </div>
+                  )}
                 </div>
+                <p className="text-xs text-slate-500 mt-2 text-center text-blue-400">Tap image to upload</p>
               </div>
-            )}
+            </div>
+
 
             {requiredFields
               .slice((detailsPage - 1) * 7, detailsPage * 7)
