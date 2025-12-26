@@ -7066,7 +7066,7 @@ const TeacherDashboard = () => {
 
                 {/* Bubble Notification - Only show if no photo */}
                 {(!teacherProfileForm.photoURL && !teacherProfileForm.profile_picture) && (
-                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-10">
+                  <div className="absolute left-full top-[85%] -translate-y-1/2 ml-3 z-10">
                     <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
                       Click here to upload
                       <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
