@@ -266,7 +266,7 @@ const StudentDashboard = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsForm, setDetailsForm] = useState<any>({});
   const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth']);
-   // const [detailsPage, setDetailsPage] = useState(1); // Pagination removed for grid view
+  // const [detailsPage, setDetailsPage] = useState(1); // Pagination removed for grid view
   const [showImageCropper, setShowImageCropper] = useState(false);
 
   // Google Drive Auth State
@@ -3240,7 +3240,7 @@ const StudentDashboard = () => {
 
       {/* Compulsory Details Dialog */}
       <Dialog open={showDetailsModal} onOpenChange={() => { }}>
-        <DialogContent className="sm:max-w-[600px] bg-slate-950 border-slate-700 text-white [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white [&>button]:hidden" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-500">
               <AlertTriangle className="h-5 w-5" />
@@ -3268,7 +3268,7 @@ const StudentDashboard = () => {
 
                 {/* Bubble Notification - Only show if no photo */}
                 {(!detailsForm.photoURL) && (
-                  <div className="absolute left-full top-3/4 -translate-y-1/2 ml-3 z-10 hidden sm:block">
+                  <div className="absolute left-full top-[85%] -translate-y-1/2 ml-3 z-10 hidden sm:block">
                     <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
                       Click here to upload
                       <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
