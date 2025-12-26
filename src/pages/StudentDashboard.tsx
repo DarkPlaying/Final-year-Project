@@ -266,7 +266,7 @@ const StudentDashboard = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsForm, setDetailsForm] = useState<any>({});
   const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth']);
-  const [detailsPage, setDetailsPage] = useState(1);
+   // const [detailsPage, setDetailsPage] = useState(1); // Pagination removed for grid view
   const [showImageCropper, setShowImageCropper] = useState(false);
 
   // Google Drive Auth State
@@ -3248,7 +3248,6 @@ const StudentDashboard = () => {
             </DialogTitle>
             <DialogDescription className="text-slate-400">
               Please update your profile with the following mandatory details to continue using the dashboard.
-              {requiredFields.length > 7 && <span className="block mt-1 text-xs text-blue-400">Page {detailsPage} of {Math.ceil(requiredFields.length / 7)}</span>}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto px-1">
@@ -3269,7 +3268,7 @@ const StudentDashboard = () => {
 
                 {/* Bubble Notification - Only show if no photo */}
                 {(!detailsForm.photoURL) && (
-                  <div className="absolute left-full bottom-0 -translate-y-1/2 ml-3 z-10 hidden sm:block">
+                  <div className="absolute left-full top-3/4 -translate-y-1/2 ml-3 z-10 hidden sm:block">
                     <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
                       Click here to upload
                       <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
@@ -3303,65 +3302,47 @@ const StudentDashboard = () => {
               </span>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-            {requiredFields
-              .slice((detailsPage - 1) * 7, detailsPage * 7)
-              .map((field) => {
-                let placeholder = `Enter your ${field.replace(/_/g, ' ')}`;
-                let type = "text";
 
-                if (field === 'batch_year') placeholder = "2023 - 2026";
-                if (field === 'date_of_birth') {
-                  placeholder = "11/12/2008";
-                  // We can use type="date" but user asked for "date selection field can also type"
-                  // Standard text input with placeholder is safest for "can also type", or type="date"
-                  // Let's use type="text" with the specific placeholder as requested, or type="date" if they want a picker.
-                  // "date selection field can also type" usually implies a date picker that allows manual entry.
-                  // HTML5 date input allows this on desktop.
-                  type = "date";
-                }
+              {requiredFields
+                .map((field) => {
 
-                return (
-                  <div key={field} className="space-y-2">
-                    <Label className="capitalize">{field.replace(/_/g, ' ')}</Label>
-                    <Input
-                      type={type}
-                      className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
-                      value={detailsForm[field] || ''}
-                      onChange={(e) => setDetailsForm({ ...detailsForm, [field]: e.target.value })}
-                      placeholder={placeholder}
-                    />
-                    {field === 'date_of_birth' && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY (e.g. 11/12/2008)</p>}
-                  </div>
-                );
-              })}
-          </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            {detailsPage > 1 && (
-              <Button variant="outline" onClick={() => setDetailsPage(p => p - 1)} className="w-full sm:w-auto border-slate-600 text-slate-300 hover:bg-slate-800">
-                Back
-              </Button>
-            )}
+                  let placeholder = `Enter your ${field.replace(/_/g, ' ')}`;
+                  let type = "text";
 
-            {detailsPage < Math.ceil(requiredFields.length / 7) ? (
-              <Button onClick={() => {
-                // Validate current page fields before moving next
-                const currentFields = requiredFields.slice((detailsPage - 1) * 7, detailsPage * 7);
-                for (const field of currentFields) {
-                  if (!detailsForm[field] || !detailsForm[field].toString().trim()) {
-                    toast.error(`Please enter your ${field.replace(/_/g, ' ')}`);
-                    return;
+                  if (field === 'batch_year') placeholder = "2023 - 2026";
+                  if (field === 'date_of_birth') {
+                    placeholder = "11/12/2008";
+                    // We can use type="date" but user asked for "date selection field can also type"
+                    // Standard text input with placeholder is safest for "can also type", or type="date"
+                    // Let's use type="text" with the specific placeholder as requested, or type="date" if they want a picker.
+                    // "date selection field can also type" usually implies a date picker that allows manual entry.
+                    // HTML5 date input allows this on desktop.
+                    type = "date";
                   }
-                }
-                setDetailsPage(p => p + 1);
-              }} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">
-                Next
-              </Button>
-            ) : (
-              <Button onClick={handleDetailsSubmit} className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white">
-                Save & Continue
-              </Button>
-            )}
+
+                  return (
+                    <div key={field} className="space-y-2">
+                      <Label className="capitalize">{field.replace(/_/g, ' ')}</Label>
+                      <Input
+                        type={type}
+                        className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+                        value={detailsForm[field] || ''}
+                        onChange={(e) => setDetailsForm({ ...detailsForm, [field]: e.target.value })}
+                        placeholder={placeholder}
+                      />
+                      {field === 'date_of_birth' && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY (e.g. 11/12/2008)</p>}
+                    </div>
+                  );
+                })}
+
+            </div>
+          </div>
+          <DialogFooter className="flex-col !space-x-0 gap-2">
+            <Button onClick={handleDetailsSubmit} className="bg-green-600 hover:bg-green-700 w-full">
+              Save & Continue
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
