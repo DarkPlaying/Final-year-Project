@@ -59,7 +59,7 @@ service cloud.firestore {
     // - Read: Restricted to Admin, Owner, or Teachers accessing Students
     // - Write: Admin only
     match /users/{userId} {
-      allow read: if isAdmin() || isOwner(userId) || (isTeacher() && resource.data.role == 'student'); 
+      allow read: if isAdmin() || isOwner(userId) || (isTeacher() && resource.data.role == 'student') || (isAuthenticated() && resource.data.role == 'teacher'); 
       allow create: if isAdmin();
       allow delete: if isAdmin();
       allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role); 

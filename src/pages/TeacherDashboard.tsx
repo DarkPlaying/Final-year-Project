@@ -540,6 +540,22 @@ const TeacherDashboard = () => {
         if (userSnap.exists()) {
           const userData = userSnap.data();
 
+          // Prepare form data from current user profile
+          const initialForm: any = {
+            full_name: userData.name || '',
+            vta_no: userData.vta_no || '',
+            personal_mobile: userData.personal_mobile || '',
+            department: userData.department || '',
+            date_of_joining: userData.date_of_joining ? safeDate(userData.date_of_joining).toISOString().split('T')[0] : '',
+            date_of_birth: userData.date_of_birth ? safeDate(userData.date_of_birth).toISOString().split('T')[0] : '',
+            address: userData.address || '',
+            current_salary: userData.current_salary || '',
+            photoURL: userData.photoURL || userData.profile_picture || userData.photoUrl || ''
+          };
+
+          // Always populate state so DashboardLayout has the image
+          setTeacherProfileForm(prev => ({ ...initialForm, ...prev }));
+
           // Check if forced by system announcement
           if (!snap.empty) {
             const latestRequest = snap.docs.sort((a, b) => b.data().createdAt?.seconds - a.data().createdAt?.seconds)[0];
@@ -564,31 +580,7 @@ const TeacherDashboard = () => {
 
           if (needsUpdate) {
             setRequiredTeacherFields(activeRequiredFields);
-
-            // Pre-fill form with existing data
-            const initialForm: any = {
-              full_name: userData.name || '',
-              vta_no: userData.vta_no || '',
-              personal_mobile: userData.personal_mobile || '',
-              department: userData.department || '',
-              date_of_joining: userData.date_of_joining ? safeDate(userData.date_of_joining).toISOString().split('T')[0] : '',
-              date_of_birth: userData.date_of_birth ? safeDate(userData.date_of_birth).toISOString().split('T')[0] : '',
-              address: userData.address || '',
-              current_salary: userData.current_salary || '',
-              photoURL: userData.photoURL || ''
-            };
-
-            // Populate other dynamic fields
-            activeRequiredFields.forEach(field => {
-              if (!initialForm[field] && userData[field]) {
-                initialForm[field] = userData[field];
-              }
-            });
-
-            // Merge initial form with any previously typed values to avoid overwriting
-            setTeacherProfileForm(prev => ({ ...initialForm, ...prev }));
             setShowTeacherProfileDialog(true);
-            // Ensure pagination resets to first page
             setTeacherDetailsPage(1);
           }
         }
@@ -1799,7 +1791,7 @@ const TeacherDashboard = () => {
       if (uniqueEmails.size === 0) return;
 
       // CACHE LOGIC: Partial Cache
-      const CACHE_KEY = `student_profiles_cache_v4_${userEmail}`; // v4 to force refresh (includes all fields)
+      const CACHE_KEY = `cache_student_profiles_v5_${userEmail}`; // v5 + cache_ prefix for auto-clear on logout
       let cachedSMap = new Map<string, string>();
       let cachedIdMap = new Map<string, string>();
       let cachedDetailsMap = new Map<string, any>();
@@ -4359,6 +4351,8 @@ const TeacherDashboard = () => {
     { icon: <CheckCircle className="h-5 w-5" />, label: 'Assign Exam Marks', onClick: () => setActiveSection('assign-marks'), active: activeSection === 'assign-marks' },
     { icon: <FileText className="h-5 w-5" />, label: 'UNOM', onClick: () => setActiveSection('unom'), active: activeSection === 'unom' },
   ];
+
+
 
   const handleLogout = () => {
     SessionCache.clearAll(); // Clear all session caches
