@@ -263,6 +263,7 @@ const TeacherDashboard = () => {
   const [viewMarksWorkspace, setViewMarksWorkspace] = useState('');
   const [selectedStudentMarks, setSelectedStudentMarks] = useState<any>(null);
   const [studentMarksData, setStudentMarksData] = useState<any[]>([]);
+  const [selectedViewMarksStudents, setSelectedViewMarksStudents] = useState<string[]>([]);
 
   // Attendance State
   const [attendanceWorkspace, setAttendanceWorkspace] = useState('');
@@ -4059,6 +4060,39 @@ const TeacherDashboard = () => {
     }
   };
 
+  const handleRaiseCompulsoryFields = async () => {
+    if (selectedViewMarksStudents.length === 0) {
+      toast.error("Please select at least one student.");
+      return;
+    }
+
+    try {
+      const batch = writeBatch(db);
+      let count = 0;
+
+      selectedViewMarksStudents.forEach(email => {
+        const uid = studentIdMap.get(email);
+        if (uid) {
+          const ref = doc(db, 'users', uid);
+          batch.update(ref, { forceProfileUpdate: true });
+          count++;
+        }
+      });
+
+      if (count > 0) {
+        await batch.commit();
+        toast.success(`Raised compulsory fields for ${count} students.`);
+        setSelectedViewMarksStudents([]);
+      } else {
+        toast.error("Could not find user IDs for selected students.");
+      }
+
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to raise fields.");
+    }
+  };
+
   const handleDownloadAttendanceCsv = async () => {
     if (!viewAttendanceWorkspace || !viewAttendanceDate) return;
 
@@ -5768,14 +5802,37 @@ const TeacherDashboard = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 mb-4">
+                      <div className="flex items-center gap-2 mr-2 border-r border-slate-700 pr-4">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900"
+                          checked={(() => {
+                            const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+                            if (!ws || !ws.students) return false;
+                            const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
+                            return filtered.length > 0 && filtered.every((s: string) => selectedViewMarksStudents.includes(s));
+                          })()}
+                          onChange={(e) => {
+                            const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+                            if (!ws || !ws.students) return;
+                            const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
+                            if (e.target.checked) {
+                              setSelectedViewMarksStudents(prev => Array.from(new Set([...prev, ...filtered])));
+                            } else {
+                              setSelectedViewMarksStudents(prev => prev.filter(s => !filtered.includes(s)));
+                            }
+                          }}
+                        />
+                        <span className="text-sm text-slate-300">Select All</span>
+                      </div>
                       <Button onClick={handleDownloadStudentDetails} className="bg-green-600 hover:bg-green-700 text-white text-xs md:text-sm h-8 md:h-10">
                         <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Details
                       </Button>
                       <Button variant="outline" onClick={() => setShowDetailsConfigDialog(true)} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
                         <Edit className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Fields
                       </Button>
-                      <Button variant="outline" onClick={handleRaiseAgainAll} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Force all students to re-enter details">
-                        <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise All
+                      <Button variant="outline" onClick={handleRaiseCompulsoryFields} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Force selected students to re-enter details">
+                        <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise Compulsory Fields
                       </Button>
                       <Button variant="outline" onClick={handleDownloadMarksheet} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
                         <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Marksheet
@@ -5809,6 +5866,15 @@ const TeacherDashboard = () => {
                       .map((email: string, idx: number) => (
                         <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
                           <div className="flex items-center gap-4 w-full">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900"
+                              checked={selectedViewMarksStudents.includes(email)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedViewMarksStudents(prev => [...prev, email]);
+                                else setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
+                              }}
+                            />
                             <div className="relative">
                               <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 overflow-hidden">
                                 {(() => {
@@ -7204,39 +7270,6 @@ const TeacherDashboard = () => {
                     </div>
                   );
                 });
-              })()}
-
-              {/* Pagination Controls */}
-              {(() => {
-                const staticFields = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
-                const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
-                const total = staticFields.length + dynamicFields.length;
-
-                if (total <= 9) return null;
-
-                const totalPages = 1 + Math.ceil((total - 9) / 8);
-
-                return (
-                  <div className="flex justify-between items-center mt-4 md:col-span-2">
-                    <Button
-                      variant="ghost"
-                      disabled={teacherDetailsPage === 1}
-                      onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))}
-                      className="text-slate-400 hover:text-white"
-                    >
-                      <ChevronLeft className="h-4 w-4 mr-1" /> Back
-                    </Button>
-                    <span className="text-xs text-slate-500">Page {teacherDetailsPage} of {totalPages}</span>
-                    <Button
-                      variant="ghost"
-                      disabled={teacherDetailsPage >= totalPages}
-                      onClick={() => setTeacherDetailsPage(p => p + 1)}
-                      className="text-slate-400 hover:text-white"
-                    >
-                      Next <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                );
               })()}
             </div>
           </div>
