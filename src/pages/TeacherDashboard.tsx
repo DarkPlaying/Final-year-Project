@@ -822,14 +822,14 @@ const TeacherDashboard = () => {
       }
 
       try {
-        const countQ = query(collection(db, 'queries'));
+        const countQ = query(collection(db, 'queries'), where('userEmail', '==', userEmail));
         const countSnap = await getCountFromServer(countQ);
         if (!active) return;
 
         const total = countSnap.data().count;
         setTotalQueries(total);
 
-        const q = query(collection(db, 'queries'), limit(limitQueries));
+        const q = query(collection(db, 'queries'), where('userEmail', '==', userEmail), limit(limitQueries));
         const sub = onSnapshot(q, (snap) => {
           if (!active) return;
           const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -2287,12 +2287,12 @@ const TeacherDashboard = () => {
 
   const handleRefreshQueries = async () => {
     try {
-      const countQ = query(collection(db, 'queries'));
+      const countQ = query(collection(db, 'queries'), where('userEmail', '==', userEmail));
       const countSnap = await getCountFromServer(countQ);
       const total = countSnap.data().count;
       setTotalQueries(total);
 
-      const q = query(collection(db, 'queries'), limit(limitQueries));
+      const q = query(collection(db, 'queries'), where('userEmail', '==', userEmail), limit(limitQueries));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
