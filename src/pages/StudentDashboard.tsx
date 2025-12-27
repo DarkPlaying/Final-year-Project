@@ -3,7 +3,6 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -39,8 +38,7 @@ import {
   AlertTriangle,
   XCircle,
   Users,
-  Edit,
-  ChevronRight
+  Edit
 } from 'lucide-react';
 import { ImageCropper } from '@/components/ui/image-crop';
 import { jsPDF } from "jspdf";
@@ -72,6 +70,7 @@ import { database } from '@/lib/firebase';
 import { ref, onChildAdded, query as rtdbQuery, limitToLast, orderByChild, update } from 'firebase/database';
 import { messaging } from '@/lib/firebase';
 import { getToken, onMessage, deleteToken } from 'firebase/messaging';
+import { Textarea } from '@/components/ui/textarea';
 
 // Google Drive Config
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID; // User provided Client ID
