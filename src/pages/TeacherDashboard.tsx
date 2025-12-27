@@ -1799,7 +1799,7 @@ const TeacherDashboard = () => {
       if (uniqueEmails.size === 0) return;
 
       // CACHE LOGIC: Partial Cache
-      const CACHE_KEY = `student_profiles_cache_v3_${userEmail}`; // v3 to force refresh (includes all fields)
+      const CACHE_KEY = `student_profiles_cache_v4_${userEmail}`; // v4 to force refresh (includes all fields)
       let cachedSMap = new Map<string, string>();
       let cachedIdMap = new Map<string, string>();
       let cachedDetailsMap = new Map<string, any>();

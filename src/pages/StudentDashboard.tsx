@@ -110,7 +110,27 @@ const uploadFileToDrive = async (file: File, folderId: string) => {
           // Drive images usually require auth or are not hotlinkable easily. 
           // TeacherDashboard uses `https://lh3.googleusercontent.com/d/${val.id}` which works for authenticated users or public.
           // We will use the same strategy.
-          resolve(`https://lh3.googleusercontent.com/d/${val.id}`);
+          // Make public so teachers can view it
+          fetch(`https://www.googleapis.com/drive/v3/files/${val.id}/permissions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + accessToken,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              role: 'reader',
+              type: 'anyone'
+            })
+          })
+            .then(async () => {
+              // Return direct link
+              resolve(`https://lh3.googleusercontent.com/d/${val.id}`);
+            })
+            .catch(err => {
+              console.error("Error making file public", err);
+              // Resolve anyway, might work if user has other access
+              resolve(`https://lh3.googleusercontent.com/d/${val.id}`);
+            });
         }
       })
       .catch(reject);
