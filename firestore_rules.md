@@ -56,10 +56,10 @@ service cloud.firestore {
     // --- Collection Rules ---
 
     // Users: 
-    // - Read: Authenticated users (Restoring broad access to fix Dashboard lookups)
+    // - Read: Restricted to Admin or Owner (Prevents leaking passwords)
     // - Write: Admin only
     match /users/{userId} {
-      allow read: if isAuthenticated(); 
+      allow read: if isAdmin() || isOwner(userId); 
       allow create: if isAdmin();
       allow delete: if isAdmin();
       allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role); 
