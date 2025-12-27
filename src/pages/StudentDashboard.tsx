@@ -265,7 +265,7 @@ const StudentDashboard = () => {
   const [isCheckingPermission, setIsCheckingPermission] = useState(true);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsForm, setDetailsForm] = useState<any>({});
-  const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'date_of_birth', 'address']);
+  const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth']);
   const [detailsPage, setDetailsPage] = useState(1);
 
   useEffect(() => {
@@ -3341,7 +3341,7 @@ const StudentDashboard = () => {
                   if (field === 'address') {
                     return (
                       <div key={field} className="space-y-2 md:col-span-2">
-                        <Label className="capitalize">{field.replace(/_/g, ' ')}</Label>
+                        <Label className="capitalize">{field.replace(/_/g, ' ')} <span className="text-red-500">*</span></Label>
                         <Textarea
                           className="bg-slate-800 border-slate-700 text-white min-h-[80px]"
                           placeholder={placeholder}
@@ -3354,7 +3354,7 @@ const StudentDashboard = () => {
 
                   return (
                     <div key={field} className="space-y-2">
-                      <Label className="capitalize">{field.replace(/_/g, ' ')}</Label>
+                      <Label className="capitalize">{field.replace(/_/g, ' ')} <span className="text-red-500">*</span></Label>
                       <Input
                         type={type}
                         className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
@@ -3368,61 +3368,59 @@ const StudentDashboard = () => {
                 });
               })()}
 
+              {/* Pagination Controls - New Location (Footer handled below) */}
             </div>
 
-            {requiredFields.length > 9 && (
-              <div className="flex justify-between items-center mt-4">
-                <Button
-                  variant="ghost"
-                  disabled={detailsPage === 1}
-                  onClick={() => setDetailsPage(p => Math.max(1, p - 1))}
-                  className="text-slate-400 hover:text-white"
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" /> Back
-                </Button>
-                <span className="text-xs text-slate-500">Page {detailsPage} of {(() => {
-                  const total = requiredFields.length;
-                  if (total <= 9) return 1;
-                  return 1 + Math.ceil((total - 9) / 8);
-                })()}</span>
-                <Button
-                  variant="ghost"
-                  disabled={(() => { const total = requiredFields.length; const totalPages = total <= 9 ? 1 : 1 + Math.ceil((total - 9) / 8); return detailsPage === totalPages; })()}
-                  onClick={() => setDetailsPage(p => p + 1)}
-                  className="text-slate-400 hover:text-white"
-                >
-                  Next <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            )}
+            {/* Pagination Controls inside content for non-footer variant - REMOVED to match requested UI */}
+
           </div>
           <DialogFooter className="flex-col !space-x-0 gap-2">
             {(() => {
               const total = requiredFields.length;
               const totalPages = total <= 9 ? 1 : 1 + Math.ceil((total - 9) / 8);
-              return detailsPage === totalPages ? (
-                <Button onClick={() => {
-                  // Final Validation
-                  const missing = requiredFields.filter(f => !detailsForm[f]);
-                  if (!detailsForm.photoURL) {
-                    toast.error("Please upload your profile picture to continue.");
-                    return;
-                  }
-                  if (missing.length > 0) {
-                    toast.error(`Please fill all required fields: ${missing.join(', ')}`);
-                    return;
-                  }
-                  handleDetailsSubmit();
-                }} className="bg-green-600 hover:bg-green-700 w-full">
-                  Save & Continue
-                </Button>
-              ) : (
+
+              if (detailsPage === totalPages) {
+                return (
+                  <div className="flex gap-2 w-full">
+                    {detailsPage > 1 && (
+                      <Button variant="outline" onClick={() => setDetailsPage(p => Math.max(1, p - 1))} className="w-1/2 border-slate-600 hover:bg-slate-800 text-white">Back</Button>
+                    )}
+                    <Button onClick={() => {
+                      // Final Validation
+                      const missing = requiredFields.filter(f => !detailsForm[f]);
+                      if (!detailsForm.photoURL) {
+                        toast.error("Please upload your profile picture to continue.");
+                        return;
+                      }
+                      if (missing.length > 0) {
+                        toast.error(`Please fill all required fields`);
+                        return;
+                      }
+                      handleDetailsSubmit();
+                    }} className={`${detailsPage > 1 ? 'w-1/2' : 'w-full'} bg-green-600 hover:bg-green-700 text-white`}>
+                      Save & Continue
+                    </Button>
+                  </div>
+                );
+              }
+
+              return (
                 <div className="w-full flex gap-2">
-                  <Button variant="outline" onClick={() => setDetailsPage(p => Math.max(1, p - 1))} className="w-1/2 border-slate-600 hover:bg-slate-800 text-white">Back</Button>
-                  <Button onClick={() => setDetailsPage(p => p + 1)} className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white">Next</Button>
+                  <Button
+                    variant="outline"
+                    disabled={detailsPage === 1}
+                    onClick={() => setDetailsPage(p => Math.max(1, p - 1))}
+                    className={`w-1/2 border-slate-600 hover:bg-slate-800 text-white ${detailsPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    Back
+                  </Button>
+                  <Button onClick={() => setDetailsPage(p => p + 1)} className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white">
+                    Next
+                  </Button>
                 </div>
               );
             })()}
+
           </DialogFooter>
         </DialogContent>
       </Dialog>
