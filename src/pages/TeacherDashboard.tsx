@@ -358,7 +358,7 @@ const TeacherDashboard = () => {
   const [maintenanceCountdown, setMaintenanceCountdown] = useState<number | null>(null);
 
   // Student Details Config State
-  const [studentDetailsConfig, setStudentDetailsConfig] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'date_of_birth', 'address']);
+  const [studentDetailsConfig, setStudentDetailsConfig] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth']);
   const [showDetailsConfigDialog, setShowDetailsConfigDialog] = useState(false);
   const [newDetailField, setNewDetailField] = useState('');
 
@@ -379,7 +379,7 @@ const TeacherDashboard = () => {
         // Migration: If config is the old default, update to new default
         const oldDefault = ['name', 'va_no', 'personal_mobile'];
         if (Array.isArray(parsed) && parsed.length === 3 && parsed.every(f => oldDefault.includes(f))) {
-          const newDefault = ['name', 'va_no', 'personal_mobile', 'department', 'date_of_birth', 'address'];
+          const newDefault = ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
           setStudentDetailsConfig(newDefault);
           localStorage.setItem('studentExportConfig', JSON.stringify(newDefault));
         } else {
@@ -7059,7 +7059,7 @@ const TeacherDashboard = () => {
                 {studentDetailsConfig.map(field => (
                   <div key={field} className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
                     <span className="text-sm">{field}</span>
-                    {['name', 'va_no', 'personal_mobile', 'department', 'date_of_birth', 'address'].includes(field) ? null : (
+                    {['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'].includes(field) ? null : (
                       <button onClick={() => handleRemoveDetailField(field)} className="text-slate-400 hover:text-red-400 ml-1">
                         <X className="h-3 w-3" />
                       </button>
