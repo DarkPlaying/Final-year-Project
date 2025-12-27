@@ -3289,14 +3289,19 @@ const StudentDashboard = () => {
             {/* Profile Picture Upload Section - Always Show */}
             <div className="flex flex-col items-center gap-2 mb-4">
               <div className="relative">
-                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800">
-                  {detailsForm.photoURL ? (
-                    <img src={detailsForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center text-slate-500">
-                      <Users className="h-10 w-10" />
-                    </div>
+                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800 relative">
+                  {detailsForm.photoURL && (
+                    <img
+                      src={detailsForm.photoURL}
+                      alt="Profile"
+                      className="h-full w-full object-cover absolute inset-0 z-10"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => e.currentTarget.style.display = 'none'}
+                    />
                   )}
+                  <div className="h-full w-full flex items-center justify-center text-slate-500">
+                    <Users className="h-10 w-10" />
+                  </div>
                 </div>
 
                 {/* Bubble Notification - Only show if no photo */}
