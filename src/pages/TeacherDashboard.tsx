@@ -5933,7 +5933,7 @@ const TeacherDashboard = () => {
                                 const presenceEntry = uid ? studentPresence[uid] : null;
                                 const isOnline = presenceEntry?.state === 'online' || (presenceEntry?.connections && Object.keys(presenceEntry.connections).length > 0);
                                 return (
-                                  <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-slate-900 ${isOnline ? 'bg-green-500' : 'bg-slate-500'}`} title={isOnline ? 'Online' : 'Offline'} />
+                                  <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-slate-900 z-20 ${isOnline ? 'bg-green-500' : 'bg-slate-500'}`} title={isOnline ? 'Online' : 'Offline'} />
                                 );
                               })()}
                             </div>
