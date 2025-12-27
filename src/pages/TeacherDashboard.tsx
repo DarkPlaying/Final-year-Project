@@ -1588,9 +1588,9 @@ const TeacherDashboard = () => {
 
     toast.loading("Processing...");
     try {
-      // Get configured fields
+      // Get configured fields (normalize legacy 'batch_year' -> 'address')
       const storedConfig = localStorage.getItem('studentExportConfig');
-      const requiredFields = storedConfig ? JSON.parse(storedConfig) : ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+      const requiredFields = storedConfig ? JSON.parse(storedConfig).map((f: string) => f === 'batch_year' ? 'address' : f) : ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
 
       // Create a system announcement for compulsory update
       // This bypasses permission issues as teachers can create announcements
@@ -1623,7 +1623,7 @@ const TeacherDashboard = () => {
     toast.loading("Processing...");
     try {
       const storedConfig = localStorage.getItem('studentExportConfig');
-      const requiredFields = storedConfig ? JSON.parse(storedConfig) : ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+      const requiredFields = storedConfig ? JSON.parse(storedConfig).map((f: string) => f === 'batch_year' ? 'address' : f) : ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
 
       await addDoc(collection(db, 'announcements'), {
         title: 'SYSTEM: Compulsory Profile Update',

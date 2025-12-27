@@ -289,8 +289,9 @@ const StudentDashboard = () => {
       if (!lastUpdate || (requestTimestamp?.seconds > lastUpdate?.seconds)) {
         setShowDetailsModal(true);
 
-        // Set required fields from announcement or default
-        const fields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
+        // Set required fields from announcement or default (normalize legacy 'batch_year' -> 'address')
+        const rawFields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
+        const fields = rawFields.map((f: string) => f === 'batch_year' ? 'address' : f);
         setRequiredFields(fields);
 
         // Pre-fill form with existing data for these fields (merge with any current values)
@@ -397,7 +398,9 @@ const StudentDashboard = () => {
         // We check notifications in a separate effect, but we can also check the user doc for legacy flag
         if (!data.photoURL || !data.va_no || !data.personal_mobile || !data.name || data.forceProfileUpdate) {
           setShowDetailsModal(true);
+          // Merge existing detailsForm with incoming user data so we do not overwrite user-typed values (eg. department, date_of_birth)
           setDetailsForm(prev => ({
+            ...prev,
             name: prev.name || data.name || '',
             va_no: prev.va_no || data.va_no || '',
             personal_mobile: prev.personal_mobile || data.personal_mobile || '',
