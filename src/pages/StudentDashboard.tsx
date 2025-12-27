@@ -3315,8 +3315,8 @@ const StudentDashboard = () => {
             {/* Profile Picture Upload Section */}
             {/* Profile Picture Upload Section - Always Show */}
             {/* Profile Picture Upload Section - Always Show */}
-            <div className="flex flex-col items-center gap-2 mb-4">
-              <div className="relative">
+            <div className="flex flex-col items-center gap-6 mb-6">
+              <div className="relative z-20">
                 <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800 relative">
                   {detailsForm.photoURL && (
                     <img
@@ -3364,7 +3364,7 @@ const StudentDashboard = () => {
                   </Button>
                 )}
               </div>
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-400 mt-2">
                 {!driveAccessToken ? 'Connect Drive to Upload Profile Pic' : 'Upload Profile Picture'}
               </span>
             </div>
