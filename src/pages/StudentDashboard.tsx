@@ -123,13 +123,13 @@ const uploadFileToDrive = async (file: File, folderId: string) => {
             })
           })
             .then(async () => {
-              // Return direct link
-              resolve(`https://lh3.googleusercontent.com/d/${val.id}`);
+              // Return direct Google Drive link
+              resolve(`https://drive.google.com/file/d/${val.id}/view`);
             })
             .catch(err => {
               console.error("Error making file public", err);
-              // Resolve anyway, might work if user has other access
-              resolve(`https://lh3.googleusercontent.com/d/${val.id}`);
+              // Resolve anyway with direct Drive link
+              resolve(`https://drive.google.com/file/d/${val.id}/view`);
             });
         }
       })
@@ -2024,20 +2024,8 @@ const StudentDashboard = () => {
       body: JSON.stringify({ role: 'reader', type: 'anyone' })
     });
 
-    // Get link
-    // Get link (thumbnailLink is better for direct image display)
-    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink`, {
-      headers: { 'Authorization': 'Bearer ' + driveAccessToken }
-    });
-    const metaJson = await metaRes.json();
-    // Use the thumbnail link but try to get a larger version if possible (default is usually small)
-    // Changing the size param in the URL is a common trick with Google hosted images (e.g. =s1000)
-    let link = metaJson.thumbnailLink;
-    if (link) {
-      // Replace default size identifier (usually =s220 or similar) with a larger one
-      link = link.replace(/=s\d+/, '=s1000');
-    }
-    return link;
+    // Return direct Google Drive link
+    return `https://drive.google.com/file/d/${fileId}/view`;
   };
 
   const handleLogout = async () => {
@@ -2772,7 +2760,7 @@ const StudentDashboard = () => {
               {assignments.length === 0 ? <p className="text-slate-500">No submissions yet.</p> : (
                 <>
                   {assignments
-                    .slice((assignmentPage - 1) * 5, assignmentPage * 5)
+                    .slice(0, limitAssignments)
                     .map(a => (
                       <div key={a.id} className="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
                         <div>
@@ -2782,11 +2770,11 @@ const StudentDashboard = () => {
                         {a.marks && <div className="text-green-400 font-bold">{a.marks} Marks</div>}
                       </div>
                     ))}
-                  {assignments.length > 5 && (
-                    <div className="flex items-center justify-center gap-2 mt-6">
-                      <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.max(1, p - 1))} disabled={assignmentPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                      <span className="text-sm text-slate-400">Page {assignmentPage} of {Math.ceil(assignments.length / 5)}</span>
-                      <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.min(Math.ceil(assignments.length / 5), p + 1))} disabled={assignmentPage === Math.ceil(assignments.length / 5)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                  {assignments.length > limitAssignments && (
+                    <div className="flex justify-center mt-4">
+                      <Button variant="ghost" size="sm" className="text-indigo-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 5)}>
+                        Load More Assignments ({limitAssignments} of {assignments.length} shown)
+                      </Button>
                     </div>
                   )}
                 </>
