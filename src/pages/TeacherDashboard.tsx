@@ -145,7 +145,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const EXAM_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID;
 const SYLLABUS_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID; // Using same folder for now as per snippet
-const PROFILE_PICTURE_DRIVE_FOLDER_ID = import.meta.env.VITE_PROFILE_PICTURE_DRIVE_FOLDER_ID;
+const PROFILE_PICTURE_DRIVE_FOLDER_ID = import.meta.env.VITE_TEACHER_PROFILE_FOLDER_ID;
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 const safeDate = (date: any): Date => {

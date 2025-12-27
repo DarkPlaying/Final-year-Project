@@ -75,7 +75,7 @@ import { Textarea } from '@/components/ui/textarea';
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID; // User provided Client ID
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const ASSIGNMENT_DRIVE_FOLDER_ID = import.meta.env.VITE_ASSIGNMENT_DRIVE_FOLDER_ID; // User provided folder
-const student_profile_drive_folder_id = import.meta.env.VITE_PROFILE_PICTURE_DRIVE_FOLDER_ID;
+const student_profile_drive_folder_id = import.meta.env.VITE_STUDENT_PROFILE_FOLDER_ID;
 
 const uploadFileToDrive = async (file: File, folderId: string) => {
   return new Promise<string>((resolve, reject) => {
