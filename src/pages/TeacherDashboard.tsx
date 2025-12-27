@@ -569,8 +569,11 @@ const TeacherDashboard = () => {
               }
             });
 
-            setTeacherProfileForm(initialForm);
+            // Merge initial form with any previously typed values to avoid overwriting
+            setTeacherProfileForm(prev => ({ ...initialForm, ...prev }));
             setShowTeacherProfileDialog(true);
+            // Ensure pagination resets to first page
+            setTeacherDetailsPage(1);
           }
         }
       } catch (e) {
@@ -7213,28 +7216,88 @@ const TeacherDashboard = () => {
                 />
               </div>
 
-              {/* Dynamic Fields Section */}
-              {requiredTeacherFields
-                .filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field))
-                .map(field => (
+              {/* Dynamic Fields Section (paginated: 9 on first page, 8 thereafter) */}
+              {(() => {
+                const dynamicFields = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field));
+                // Pagination logic: page 1 -> first 9, subsequent pages -> 8 each
+                const page = teacherDetailsPage || 1;
+                let visible: string[] = [];
+                if (dynamicFields.length <= 9) {
+                  visible = dynamicFields;
+                } else if (page === 1) {
+                  visible = dynamicFields.slice(0, 9);
+                } else {
+                  const start = 9 + (page - 2) * 8;
+                  const end = start + 8;
+                  visible = dynamicFields.slice(start, end);
+                }
+
+                return visible.map(field => (
                   <div key={field} className="space-y-2">
                     <Label className="capitalize">{field.replace(/_/g, ' ')} <span className="text-red-500">*</span></Label>
-                    <Input
-                      className="bg-slate-800 border-slate-700"
-                      placeholder={`Enter ${field.replace(/_/g, ' ')}`}
-                      value={teacherProfileForm[field] || ''}
-                      onChange={e => setTeacherProfileForm({ ...teacherProfileForm, [field]: e.target.value })}
-                    />
+                    {field === 'address' ? (
+                      <Textarea
+                        className="bg-slate-800 border-slate-700"
+                        placeholder={`Enter ${field.replace(/_/g, ' ')}`}
+                        value={teacherProfileForm[field] || ''}
+                        onChange={e => setTeacherProfileForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      />
+                    ) : (
+                      <Input
+                        className="bg-slate-800 border-slate-700"
+                        placeholder={`Enter ${field.replace(/_/g, ' ')}`}
+                        value={teacherProfileForm[field] || ''}
+                        onChange={e => setTeacherProfileForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      />
+                    )}
                   </div>
-                ))}
+                ));
+              })()} 
+
+              {/* Pagination controls for dynamic fields */}
+              {requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length > 9 && (
+                <div className="flex justify-between items-center mt-4 md:col-span-2">
+                  <Button
+                    variant="ghost"
+                    disabled={teacherDetailsPage === 1}
+                    onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))}
+                    className="text-slate-400 hover:text-white"
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                  </Button>
+                  <span className="text-xs text-slate-500">Page {teacherDetailsPage} of {(() => {
+                    const total = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length;
+                    if (total <= 9) return 1;
+                    return 1 + Math.ceil((total - 9) / 8);
+                  })()}</span>
+                  <Button
+                    variant="ghost"
+                    disabled={teacherDetailsPage === (1 + Math.ceil((requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length - 9) / 8))}
+                    onClick={() => setTeacherDetailsPage(p => p + 1)}
+                    className="text-slate-400 hover:text-white"
+                  >
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
           <DialogFooter className="flex-col !space-x-0 gap-2">
-
-            <Button onClick={handleSaveTeacherProfile} className="bg-green-600 hover:bg-green-700 w-full">
-              Save & Continue
-            </Button>
+            {(() => {
+              const total = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length;
+              const totalPages = total <= 9 ? 1 : 1 + Math.ceil((total - 9) / 8);
+              return teacherDetailsPage === totalPages ? (
+                <Button onClick={handleSaveTeacherProfile} className="bg-green-600 hover:bg-green-700 w-full">
+                  Save & Continue
+                </Button>
+              ) : (
+                <div className="w-full flex gap-2">
+                  <Button variant="outline" onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))} className="w-1/2 border-slate-600 hover:bg-slate-800 text-white">Back</Button>
+                  <Button onClick={() => setTeacherDetailsPage(p => p + 1)} className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white">Next</Button>
+                </div>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>

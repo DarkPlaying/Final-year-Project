@@ -303,6 +303,7 @@ const StudentDashboard = () => {
         initialForm.photoURL = userData.photoURL || userData.profile_picture || userData.photoUrl || '';
         // Merge with existing detailsForm so user-typed values aren't overwritten
         setDetailsForm(prev => ({ ...initialForm, ...prev }));
+        setDetailsPage(1);
       }
     }
   };
@@ -3309,9 +3310,21 @@ const StudentDashboard = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
 
-              {requiredFields
-                .slice((detailsPage - 1) * 8, detailsPage * 8)
-                .map((field) => {
+              {(() => {
+                const dynamicFields = requiredFields;
+                const page = detailsPage || 1;
+                let visible: string[] = [];
+                if (dynamicFields.length <= 9) {
+                  visible = dynamicFields;
+                } else if (page === 1) {
+                  visible = dynamicFields.slice(0, 9);
+                } else {
+                  const start = 9 + (page - 2) * 8;
+                  const end = start + 8;
+                  visible = dynamicFields.slice(start, end);
+                }
+
+                return visible.map((field) => {
                   let placeholder = `Enter your ${field.replace(/_/g, ' ')}`;
                   let type = "text";
 
@@ -3328,7 +3341,7 @@ const StudentDashboard = () => {
                           className="bg-slate-800 border-slate-700 text-white min-h-[80px]"
                           placeholder={placeholder}
                           value={detailsForm[field] || ''}
-                          onChange={(e) => setDetailsForm({ ...detailsForm, [field]: e.target.value })}
+                          onChange={(e) => setDetailsForm(prev => ({ ...prev, [field]: e.target.value }))}
                         />
                       </div>
                     );
@@ -3341,30 +3354,35 @@ const StudentDashboard = () => {
                         type={type}
                         className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
                         value={detailsForm[field] || ''}
-                        onChange={(e) => setDetailsForm({ ...detailsForm, [field]: e.target.value })}
+                        onChange={(e) => setDetailsForm(prev => ({ ...prev, [field]: e.target.value }))}
                         placeholder={placeholder}
                       />
                       {field === 'date_of_birth' && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>}
                     </div>
                   );
-                })}
+                });
+              })()}
 
             </div>
 
-            {requiredFields.length > 8 && (
+            {requiredFields.length > 9 && (
               <div className="flex justify-between items-center mt-4">
                 <Button
                   variant="ghost"
                   disabled={detailsPage === 1}
-                  onClick={() => setDetailsPage(p => p - 1)}
+                  onClick={() => setDetailsPage(p => Math.max(1, p - 1))}
                   className="text-slate-400 hover:text-white"
                 >
                   <ChevronLeft className="h-4 w-4 mr-1" /> Back
                 </Button>
-                <span className="text-xs text-slate-500">Page {detailsPage} of {Math.ceil(requiredFields.length / 8)}</span>
+                <span className="text-xs text-slate-500">Page {detailsPage} of {(() => {
+                  const total = requiredFields.length;
+                  if (total <= 9) return 1;
+                  return 1 + Math.ceil((total - 9) / 8);
+                })()}</span>
                 <Button
                   variant="ghost"
-                  disabled={detailsPage === Math.ceil(requiredFields.length / 8)}
+                  disabled={detailsPage === (1 + Math.ceil((requiredFields.length - 9) / 8))}
                   onClick={() => setDetailsPage(p => p + 1)}
                   className="text-slate-400 hover:text-white"
                 >
