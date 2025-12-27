@@ -2028,6 +2028,63 @@ const StudentDashboard = () => {
     return `https://drive.google.com/file/d/${fileId}/view`;
   };
 
+  // Separate function for profile pictures - returns lh3 link for better image display
+  const uploadProfilePictureToDrive = async (file: File, folderId: string): Promise<string> => {
+    if (!driveAccessToken) throw new Error('Not authenticated');
+
+    const upload = async (parents?: string[]) => {
+      const metadata = {
+        name: file.name,
+        mimeType: file.type,
+        parents: parents
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+        body: form
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error?.message || 'Upload failed');
+      }
+      return await res.json();
+    };
+
+    let json;
+    try {
+      if (folderId) {
+        json = await upload([folderId]);
+      } else {
+        json = await upload();
+      }
+    } catch (error) {
+      console.warn("Upload to folder failed, retrying to root...", error);
+      toast.warning("Shared folder access denied. Uploading to your personal Drive.");
+      json = await upload();
+    }
+
+    const fileId = json.id;
+
+    // Make public (Viewer mode)
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + driveAccessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    });
+
+    // Return lh3 link for profile pictures (better for image display)
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
+  };
+
   const handleLogout = async () => {
     try {
       await deleteToken(messaging);
@@ -2093,7 +2150,7 @@ const StudentDashboard = () => {
     const toastId = toast.loading("Uploading profile picture...");
     try {
       const file = new File([blob], "profile_picture.png", { type: "image/png" });
-      const link = await uploadFileToDrive(file, student_profile_drive_folder_id);
+      const link = await uploadProfilePictureToDrive(file, student_profile_drive_folder_id);
       setDetailsForm((prev: any) => ({ ...prev, photoURL: link }));
       toast.success("Profile picture uploaded", { id: toastId });
       setShowImageCropper(false);

@@ -1259,6 +1259,64 @@ const TeacherDashboard = () => {
     return `https://drive.google.com/file/d/${fileId}/view`;
   };
 
+  // Separate function for profile pictures - returns lh3 link for better image display
+  const uploadProfilePictureToDrive = async (file: File, folderId: string): Promise<string> => {
+    if (!driveAccessToken) throw new Error('Not authenticated');
+
+    const upload = async (parents?: string[]) => {
+      const metadata = {
+        name: file.name,
+        mimeType: file.type,
+        parents: parents
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+        body: form
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error?.message || 'Upload failed');
+      }
+      return await res.json();
+    };
+
+    let json;
+    try {
+      // Try uploading to specified folder
+      if (folderId) {
+        json = await upload([folderId]);
+      } else {
+        json = await upload();
+      }
+    } catch (error) {
+      console.warn("Upload to folder failed, retrying to root...", error);
+      // Fallback: Upload to root
+      json = await upload();
+    }
+
+    const fileId = json.id;
+
+    // Make public
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + driveAccessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' })
+    });
+
+    // Return lh3 link for profile pictures (better for image display)
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
+  };
+
   const handleProfileImageUpload = async (blob: Blob) => {
     if (!driveAccessToken) {
       toast.error("Please sign in with Google first");
@@ -1270,7 +1328,7 @@ const TeacherDashboard = () => {
       const file = new File([blob], `profile_pic_${userId}_${Date.now()}.png`, { type: 'image/png' });
 
       // Upload to Drive
-      const link = await uploadFileToDrive(file, PROFILE_PICTURE_DRIVE_FOLDER_ID);
+      const link = await uploadProfilePictureToDrive(file, PROFILE_PICTURE_DRIVE_FOLDER_ID);
 
       // Update Firestore
       await updateDoc(doc(db, 'users', userId), {
