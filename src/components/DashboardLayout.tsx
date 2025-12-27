@@ -123,11 +123,18 @@ export const DashboardLayout = ({ children, sidebarItems, title, headerContent, 
           <div className="p-4 border-t bg-card/50">
             <div className="flex items-center gap-3 mb-3">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary overflow-hidden">
-                {user?.photoURL || user?.profile_picture ? (
-                  <img src={user.photoURL || user.profile_picture} alt="Profile" className="h-full w-full object-cover" />
-                ) : (
+                <div className="relative h-full w-full flex items-center justify-center">
+                  {(user?.photoURL || user?.profile_picture) && (
+                    <img
+                      src={user.photoURL || user.profile_picture}
+                      alt="Profile"
+                      className="h-full w-full object-cover absolute inset-0 z-10"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => e.currentTarget.style.display = 'none'}
+                    />
+                  )}
                   <UserIcon className="h-5 w-5" />
-                )}
+                </div>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user?.name}</p>

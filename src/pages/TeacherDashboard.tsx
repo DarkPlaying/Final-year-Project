@@ -984,14 +984,15 @@ const TeacherDashboard = () => {
   };
 
   useEffect(() => {
-    if (!userId) return;
-    const unsubPortal = onSnapshot(doc(db, 'users', userId), (d) => {
-      if (d.exists() && d.data().portalStatus) {
-        setPortalStatus(d.data().portalStatus);
+    if (!userEmail) return;
+    const portalDocId = `assignment_portal_${userEmail}`;
+    const unsubPortal = onSnapshot(doc(db, 'settings', portalDocId), (d) => {
+      if (d.exists() && d.data().status) {
+        setPortalStatus(d.data().status);
       }
     });
     return () => unsubPortal();
-  }, [userId]);
+  }, [userEmail]);
 
   useEffect(() => {
     if (filterFrom && filterTo && filterFrom > filterTo) {
@@ -1002,20 +1003,7 @@ const TeacherDashboard = () => {
     }
   }, [filterFrom, filterTo]);
 
-  const togglePortal = async () => {
-    const newStatus = portalStatus === 'open' ? 'closed' : 'open';
-    try {
-      await setDoc(doc(db, 'settings', `assignment_portal_${userEmail}`), {
-        status: newStatus,
-        teacherEmail: userEmail,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-      toast.success(`Portal ${newStatus}`);
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to update portal status');
-    }
-  };
+
 
   const handleBulkAssign = async () => {
     if (!bulkMark) return;
@@ -1131,11 +1119,23 @@ const TeacherDashboard = () => {
   const handleTogglePortal = async () => {
     const newStatus = portalStatus === 'open' ? 'closed' : 'open';
     try {
-      if (!userId) throw new Error("User ID not found");
-      await setDoc(doc(db, 'users', userId), {
-        portalStatus: newStatus,
+      if (!userEmail) throw new Error("User email not found");
+
+      const portalDocId = `assignment_portal_${userEmail}`;
+      await setDoc(doc(db, 'settings', portalDocId), {
+        status: newStatus,
+        teacherEmail: userEmail,
         updatedAt: serverTimestamp()
       }, { merge: true });
+
+      // Also update user doc for legacy support
+      if (userId) {
+        await setDoc(doc(db, 'users', userId), {
+          portalStatus: newStatus,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+
       setPortalStatus(newStatus);
       toast.success(`Assignment portal ${newStatus}`);
     } catch (error) {

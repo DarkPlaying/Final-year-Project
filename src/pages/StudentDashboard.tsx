@@ -1052,6 +1052,34 @@ const StudentDashboard = () => {
     fetchAttendance();
   }, [userEmail, myWorkspaces, attendanceMonth]);
 
+  // Portal Status Listener - Listen to selected teacher's portal status
+  useEffect(() => {
+    if (!selectedTeacher) {
+      setPortalStatus('closed');
+      return;
+    }
+
+    const portalDocId = `assignment_portal_${selectedTeacher}`;
+    const unsubscribe = onSnapshot(
+      doc(db, 'settings', portalDocId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setPortalStatus(data.status || 'closed');
+        } else {
+          // If no portal document exists, default to closed
+          setPortalStatus('closed');
+        }
+      },
+      (error) => {
+        console.error('Error listening to portal status:', error);
+        setPortalStatus('closed');
+      }
+    );
+
+    return () => unsubscribe();
+  }, [selectedTeacher]);
+
 
 
   const loadTeachers = async (email: string) => {
@@ -2713,13 +2741,13 @@ const StudentDashboard = () => {
                 <div className="space-y-2">
                   <Label>Select Teacher (Required)</Label>
                   <select
-                    className="w-full h-10 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="w-full h-10 px-3 rounded-md border border-blue-700 bg-blue-950/50 text-white text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     value={selectedTeacher}
                     onChange={e => setSelectedTeacher(e.target.value)}
                   >
-                    <option value="">Select Teacher</option>
+                    <option value="" className="bg-slate-900">Select Teacher</option>
                     {teachers.map(t => (
-                      <option key={t.id} value={t.email}>{t.name || t.email}</option>
+                      <option key={t.id} value={t.email} className="bg-slate-900">{t.name || t.email}</option>
                     ))}
                   </select>
                   {teachers.length === 0 && <p className="text-xs text-red-400 mt-1">No teachers found. Please contact your admin to assign a teacher to your workspace.</p>}

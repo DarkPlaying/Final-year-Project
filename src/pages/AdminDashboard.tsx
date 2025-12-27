@@ -2582,6 +2582,7 @@ const AdminDashboard = () => {
                                 src={teacher.profile_picture || teacher.photoURL || teacher.photoUrl}
                                 alt={teacher.full_name}
                                 className="h-full w-full object-cover"
+                                referrerPolicy="no-referrer"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).style.display = 'none';
                                   (e.target as HTMLImageElement).parentElement!.classList.add('bg-blue-500/20');
