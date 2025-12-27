@@ -1094,10 +1094,24 @@ const StudentDashboard = () => {
 
       console.log(`🔥 [READ] Fetching ${emailList.length} teacher profiles in ${chunks.length} chunks...`);
       await Promise.all(chunks.map(async (chunk) => {
-        const q = query(collection(db, 'users'), where('email', 'in', chunk));
-        const snap = await getDocs(q);
-        console.log(`🔥 [READ] Fetched chunk of ${snap.size} teachers`);
-        snap.forEach(d => uniqueTeachers.push({ id: d.id, ...d.data() }));
+        try {
+          const q = query(collection(db, 'users'), where('email', 'in', chunk));
+          const snap = await getDocs(q);
+          console.log(`🔥 [READ] Fetched chunk of ${snap.size} teachers`);
+          snap.forEach(d => uniqueTeachers.push({ id: d.id, ...d.data() }));
+        } catch (e: any) {
+          console.warn("Cannot fetch teacher details (restricted):", e.code);
+          // Fallback: Use email as name
+          chunk.forEach(email => {
+            uniqueTeachers.push({
+              id: email,
+              email: email,
+              name: email.split('@')[0],
+              full_name: email.split('@')[0],
+              department: 'Unknown'
+            });
+          });
+        }
       }));
 
       setTeachers(uniqueTeachers);
