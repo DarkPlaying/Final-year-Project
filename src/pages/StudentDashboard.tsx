@@ -3315,9 +3315,10 @@ const StudentDashboard = () => {
             {/* Profile Picture Upload Section */}
             {/* Profile Picture Upload Section - Always Show */}
             {/* Profile Picture Upload Section - Always Show */}
+            {/* Profile Picture Upload Section - Always Show */}
             <div className="flex flex-col items-center gap-6 mb-6">
-              <div className="relative z-20">
-                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800 relative">
+              <div className="relative">
+                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800 relative z-10">
                   {detailsForm.photoURL && (
                     <img
                       src={detailsForm.photoURL}
@@ -3347,7 +3348,7 @@ const StudentDashboard = () => {
                   <Button
                     size="icon"
                     variant="secondary"
-                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg"
+                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg z-20"
                     onClick={() => setShowImageCropper(true)}
                   >
                     <Edit className="h-4 w-4" />
@@ -3356,7 +3357,7 @@ const StudentDashboard = () => {
                   <Button
                     size="icon"
                     variant="secondary"
-                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 hover:text-white"
+                    className="absolute bottom-0 right-0 h-8 w-8 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 hover:text-white z-20"
                     onClick={handleGoogleAuth}
                     title="Connect Google Drive to upload picture"
                   >
