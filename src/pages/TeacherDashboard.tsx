@@ -7262,12 +7262,12 @@ const TeacherDashboard = () => {
             return null;
           })()}
 
-      </DialogFooter>
-    </DialogContent>
-      </Dialog >
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-  <ImageCropper
-    open={showImageCropper}
+      <ImageCropper
+        open={showImageCropper}
     onOpenChange={setShowImageCropper}
     onCropComplete={handleProfileImageUpload}
     isAuthorized={!!driveAccessToken}
