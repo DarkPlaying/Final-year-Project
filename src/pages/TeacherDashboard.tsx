@@ -1364,6 +1364,12 @@ const TeacherDashboard = () => {
       return;
     }
 
+    // Check if any students are selected
+    if (selectedViewMarksStudents.length === 0) {
+      toast.error("Please select at least one student");
+      return;
+    }
+
     toast.loading("Generating report...");
     try {
       const ws = workspaces.find(w => w.id === viewMarksWorkspace);
@@ -1374,8 +1380,9 @@ const TeacherDashboard = () => {
 
       // OPTIMIZATION: Use cached studentDetailsMap instead of fetching from Firestore
       // This eliminates ~200 reads per download
+      // Filter to only selected students
       const studentsData: any[] = [];
-      ws.students.forEach(email => {
+      selectedViewMarksStudents.forEach(email => {
         const details = studentDetailsMap.get(email);
         if (details) {
           studentsData.push({ email, ...details });
@@ -1460,6 +1467,12 @@ const TeacherDashboard = () => {
       return;
     }
 
+    // Check if any students are selected
+    if (selectedViewMarksStudents.length === 0) {
+      toast.error("Please select at least one student");
+      return;
+    }
+
     toast.loading("Generating marksheet...");
     try {
       const ws = workspaces.find(w => w.id === viewMarksWorkspace);
@@ -1468,13 +1481,12 @@ const TeacherDashboard = () => {
         return;
       }
 
-      // 1. Fetch submissions for these students (Optimized: Chunked by Student Email)
-      // Instead of fetching ALL submissions (which could be 50k+), we only fetch for the ~60 students in this workspace.
+      // 1. Fetch submissions for selected students only (Optimized: Chunked by Student Email)
       const workspaceAssignments: any[] = [];
       const studentChunks = [];
       // Firestore 'in' query limit is 30. Using 10 is safe and efficient.
-      for (let i = 0; i < ws.students.length; i += 10) {
-        studentChunks.push(ws.students.slice(i, i + 10));
+      for (let i = 0; i < selectedViewMarksStudents.length; i += 10) {
+        studentChunks.push(selectedViewMarksStudents.slice(i, i + 10));
       }
 
       await Promise.all(studentChunks.map(async (chunk) => {
@@ -1528,8 +1540,8 @@ const TeacherDashboard = () => {
       worksheet.columns = columns;
 
       // Rows
-      // Sort students by name or reg_no
-      const sortedStudents = [...ws.students].sort((a, b) => {
+      // Sort selected students by name or reg_no
+      const sortedStudents = [...selectedViewMarksStudents].sort((a, b) => {
         const nameA = studentMap.get(a) || a;
         const nameB = studentMap.get(b) || b;
         return nameA.localeCompare(nameB);

@@ -1804,6 +1804,12 @@ const AdminDashboard = () => {
       return;
     }
 
+    // Check if any teachers are selected
+    if (selectedTeacherIds.length === 0) {
+      toast.error("Please select at least one teacher");
+      return;
+    }
+
     try {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Teacher Details');
@@ -1830,8 +1836,9 @@ const AdminDashboard = () => {
 
       worksheet.columns = columns;
 
-      // Add Data
-      const sortedTeachers = [...teachers].sort((a, b) => a.full_name.localeCompare(b.full_name));
+      // Add Data - Filter to only selected teachers
+      const selectedTeachers = teachers.filter(t => selectedTeacherIds.includes(t.id));
+      const sortedTeachers = [...selectedTeachers].sort((a, b) => a.full_name.localeCompare(b.full_name));
 
       sortedTeachers.forEach(t => {
         const row: any = {};
