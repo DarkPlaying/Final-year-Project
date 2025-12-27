@@ -75,7 +75,7 @@ import { Textarea } from '@/components/ui/textarea';
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID; // User provided Client ID
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const ASSIGNMENT_DRIVE_FOLDER_ID = import.meta.env.VITE_ASSIGNMENT_DRIVE_FOLDER_ID; // User provided folder
-const PROFILE_PICTURE_DRIVE_FOLDER_ID = import.meta.env.VITE_PROFILE_PICTURE_DRIVE_FOLDER_ID;
+const student_profile_drive_folder_id = import.meta.env.VITE_PROFILE_PICTURE_DRIVE_FOLDER_ID;
 
 const uploadFileToDrive = async (file: File, folderId: string) => {
   return new Promise<string>((resolve, reject) => {
@@ -1977,11 +1977,19 @@ const StudentDashboard = () => {
     });
 
     // Get link
-    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=webViewLink`, {
+    // Get link (thumbnailLink is better for direct image display)
+    const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink`, {
       headers: { 'Authorization': 'Bearer ' + driveAccessToken }
     });
     const metaJson = await metaRes.json();
-    return metaJson.webViewLink;
+    // Use the thumbnail link but try to get a larger version if possible (default is usually small)
+    // Changing the size param in the URL is a common trick with Google hosted images (e.g. =s1000)
+    let link = metaJson.thumbnailLink;
+    if (link) {
+      // Replace default size identifier (usually =s220 or similar) with a larger one
+      link = link.replace(/=s\d+/, '=s1000');
+    }
+    return link;
   };
 
   const handleLogout = async () => {
@@ -2049,7 +2057,7 @@ const StudentDashboard = () => {
     const toastId = toast.loading("Uploading profile picture...");
     try {
       const file = new File([blob], "profile_picture.png", { type: "image/png" });
-      const link = await uploadFileToDrive(file, PROFILE_PICTURE_DRIVE_FOLDER_ID);
+      const link = await uploadFileToDrive(file, student_profile_drive_folder_id);
       setDetailsForm((prev: any) => ({ ...prev, photoURL: link }));
       toast.success("Profile picture uploaded", { id: toastId });
       setShowImageCropper(false);

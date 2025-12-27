@@ -2,7 +2,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider'; // Ensure this exists, or use standard input
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Upload, ZoomIn, RotateCw, Image as ImageIcon, X, Lock } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 
@@ -130,6 +130,9 @@ export const ImageCropper: React.FC<ImageCropperProps> = ({
             <DialogContent className="bg-slate-900 border-slate-700 text-white sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle>Upload Profile Picture</DialogTitle>
+                    <DialogDescription className="text-slate-400">
+                        Select and crop your profile image.
+                    </DialogDescription>
                 </DialogHeader>
 
                 <div className="flex flex-col items-center gap-6 py-4">
