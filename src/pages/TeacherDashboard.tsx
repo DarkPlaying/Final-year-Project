@@ -1,4 +1,4 @@
-﻿﻿import { useState, useEffect, useRef, useCallback } from 'react'; // Refreshed
+﻿import { useState, useEffect, useRef, useCallback } from 'react'; // Refreshed
 
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -37,8 +37,6 @@ import {
   UserCheck,
   Users,
   Lock,
-  ChevronLeft,
-  ChevronRight,
   Search,
   Calendar,
   Clock,
@@ -4288,7 +4286,43 @@ const TeacherDashboard = () => {
     window.location.replace('/');
   };
 
-  if (!isAuthorized) return null;
+  const handleSaveTeacherProfile = async () => {
+    // Validation
+    const validationFields = requiredTeacherFields.map(f => f === 'name' ? 'full_name' : f);
+    const missing = validationFields.filter(f => !teacherProfileForm[f]);
+
+    if (!teacherProfileForm.photoURL && !teacherProfileForm.profile_picture) {
+      toast.error("Please upload your profile picture to continue.");
+      return;
+    }
+
+    if (missing.length > 0) {
+      toast.error(`Please fill all required fields: ${missing.join(', ')}`);
+      return;
+    }
+
+    try {
+      toast.loading("Updating profile...");
+      const updateData = {
+        ...teacherProfileForm,
+        name: teacherProfileForm.full_name, // Sync
+        profileUpdatedAt: serverTimestamp(),
+        date_of_joining: teacherProfileForm.date_of_joining ? Timestamp.fromDate(new Date(teacherProfileForm.date_of_joining)) : null,
+        date_of_birth: teacherProfileForm.date_of_birth ? Timestamp.fromDate(new Date(teacherProfileForm.date_of_birth)) : null
+      };
+
+      await updateDoc(doc(db, 'users', userId), updateData);
+      toast.dismiss();
+      toast.success("Profile updated successfully");
+      setShowTeacherProfileDialog(false);
+    } catch (e) {
+      console.error(e);
+      toast.dismiss();
+      toast.error("Failed to update profile");
+    }
+  };
+
+  if (!isAuthorized) return null; 
 
   return (
     <DashboardLayout
@@ -7103,177 +7137,116 @@ const TeacherDashboard = () => {
               </span>
             </div>
 
-            {/* Dynamic Fields Section */}
-            {/* Combine static and dynamic fields into a single list to paginate properly if desired, or keep separate. 
-                  User requested "add a paging of 8 per page in both teacher and student compulosry field".
-                  Since teacher form has explicit static fields + dynamic fields, we should probably treat them as one list for pagination 
-                  OR just paginate the whole container. 
-                  However, the current code renders static fields explicitly. 
-                  To support pagination of ALL fields (static + dynamic) uniformly, we need to map them all.
-                  
-                  Let's refactor to map all fields including static ones to a unified list, then paginate.
-              */}
-            {(() => {
-              const staticFields = [
-                { key: 'full_name', label: 'Full Name', type: 'text', colSpan: 1 },
-                { key: 'vta_no', label: 'VTA Number', type: 'text', colSpan: 1 },
-                { key: 'personal_mobile', label: 'Personal Mobile', type: 'text', colSpan: 1 },
-                { key: 'department', label: 'Department', type: 'text', colSpan: 1 },
-                { key: 'date_of_joining', label: 'Date of Joining', type: 'date', colSpan: 1 },
-                { key: 'date_of_birth', label: 'Date of Birth', type: 'date', colSpan: 1 },
-                { key: 'address', label: 'Address', type: 'textarea', colSpan: 2 },
-                { key: 'current_salary', label: 'Current Salary', type: 'text', colSpan: 1 }
-              ];
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Full Name <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Full Name"
+                  value={teacherProfileForm.full_name || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, full_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>VTA Number <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="VTA Number"
+                  value={teacherProfileForm.vta_no || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, vta_no: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Personal Mobile <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Mobile Number"
+                  value={teacherProfileForm.personal_mobile || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, personal_mobile: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Department <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Department"
+                  value={teacherProfileForm.department || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, department: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Date of Joining <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+                  value={teacherProfileForm.date_of_joining || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, date_of_joining: e.target.value })}
+                />
+                <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Date of Birth <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+                  value={teacherProfileForm.date_of_birth || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, date_of_birth: e.target.value })}
+                />
+                <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Address <span className="text-red-500">*</span></Label>
+                <Textarea
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Residential Address"
+                  value={teacherProfileForm.address || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, address: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Current Salary <span className="text-red-500">*</span></Label>
+                <Input
+                  className="bg-slate-800 border-slate-700"
+                  placeholder="Current Salary"
+                  value={teacherProfileForm.current_salary || ''}
+                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, current_salary: e.target.value })}
+                />
+              </div>
 
-              // Get dynamic fields
-              const dynamicFieldKeys = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field));
-              const dynamicFields = dynamicFieldKeys.map(key => ({ key, label: key.replace(/_/g, ' '), type: 'text', colSpan: 1 }));
-
-              const allFields = [...staticFields, ...dynamicFields];
-              const totalPages = Math.ceil(allFields.length / 8);
-              const currentFields = allFields.slice((teacherDetailsPage - 1) * 8, teacherDetailsPage * 8);
-
-              return (
-                <>
-                  {currentFields.map((field) => (
-                    <div key={field.key} className={`space-y-2 ${field.colSpan === 2 ? 'md:col-span-2' : ''}`}>
-                      <Label className="capitalize">{field.label} <span className="text-red-500">*</span></Label>
-                      {field.type === 'textarea' ? (
-                        <Textarea
-                          className="bg-slate-800 border-slate-700 min-h-[80px]"
-                          placeholder={field.label}
-                          value={teacherProfileForm[field.key] || ''}
-                          onChange={e => setTeacherProfileForm({ ...teacherProfileForm, [field.key]: e.target.value })}
-                        />
-                      ) : (
-                        <Input
-                          type={field.type}
-                          className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
-                          placeholder={field.label}
-                          value={teacherProfileForm[field.key] || ''}
-                          onChange={e => setTeacherProfileForm({ ...teacherProfileForm, [field.key]: e.target.value })}
-                        />
-                      )}
-                      {(field.type === 'date') && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>}
-                    </div>
-                  ))}
-
-                  {/* Pagination Controls inside grid or below? Below grid is better */}
-                </>
-              );
-            })()}
+              {/* Dynamic Fields Section */}
+              {requiredTeacherFields
+                .filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field))
+                .map(field => (
+                  <div key={field} className="space-y-2">
+                    <Label className="capitalize">{field.replace(/_/g, ' ')} <span className="text-red-500">*</span></Label>
+                    <Input
+                      className="bg-slate-800 border-slate-700"
+                      placeholder={`Enter ${field.replace(/_/g, ' ')}`}
+                      value={teacherProfileForm[field] || ''}
+                      onChange={e => setTeacherProfileForm({ ...teacherProfileForm, [field]: e.target.value })}
+                    />
+                  </div>
+                ))}
+            </div>
           </div>
 
-          {/* Pagination Navigation */}
-          {(() => {
-            const staticCount = 8; // The 8 static fields defined above
-            const dynamicCount = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length;
-            const totalCount = staticCount + dynamicCount;
-            const totalPages = Math.ceil(totalCount / 8);
+          <DialogFooter className="flex-col !space-x-0 gap-2">
 
-            if (totalCount > 8) return (
-              <div className="flex justify-between items-center mt-4 px-1">
-                <Button
-                  variant="ghost"
-                  disabled={teacherDetailsPage === 1}
-                  onClick={() => setTeacherDetailsPage(p => p - 1)}
-                  className="text-slate-400 hover:text-white"
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" /> Back
-                </Button>
-                <span className="text-xs text-slate-500">Page {teacherDetailsPage} of {totalPages}</span>
-                <Button
-                  variant="ghost"
-                  disabled={teacherDetailsPage === totalPages}
-                  onClick={() => setTeacherDetailsPage(p => p + 1)}
-                  className="text-slate-400 hover:text-white"
-                >
-                  Next <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            );
-            return null;
-          })()}
-
-        </div>
-
-        <DialogFooter className="flex-col !space-x-0 gap-2">
-          {/* Show Save only on last page */}
-          {(() => {
-            const staticCount = 8;
-            const dynamicCount = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length;
-            const totalCount = staticCount + dynamicCount;
-            const totalPages = Math.ceil(totalCount / 8);
-
-            if (teacherDetailsPage === totalPages) {
-              return (
-                <Button onClick={async () => {
-                  // Validation
-                  const validationFields = requiredTeacherFields.map(f => f === 'name' ? 'full_name' : f);
-                  // Actually, we must validate ALL fields including the static ones which are implicitly required in this UI
-                  // The 'requiredTeacherFields' from system might not include all static ones if they weren't passed originally?
-                  // But let's assume 'requiredTeacherFields' contains the keys we need to check, OR we check the static list.
-                  // The UI shows * for all static fields.
-                  const staticKeys = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
-
-                  const missing = [...staticKeys, ...requiredTeacherFields.filter(f => !['name', ...staticKeys].includes(f))].filter(f => !teacherProfileForm[f]);
-
-                  if (!teacherProfileForm.photoURL && !teacherProfileForm.profile_picture) {
-                    toast.error("Please upload your profile picture to continue.");
-                    return;
-                  }
-
-                  if (missing.length > 0) {
-                    // Filter duplicates
-                    const uniqueMissing = Array.from(new Set(missing));
-                    toast.error(`Please fill all required fields`);
-                    return;
-                  }
-
-                  try {
-                    toast.loading("Updating profile...");
-                    const updateData = {
-                      ...teacherProfileForm,
-                      name: teacherProfileForm.full_name, // Sync
-                      profileUpdatedAt: serverTimestamp(),
-                      date_of_joining: teacherProfileForm.date_of_joining ? Timestamp.fromDate(new Date(teacherProfileForm.date_of_joining)) : null,
-                      date_of_birth: teacherProfileForm.date_of_birth ? Timestamp.fromDate(new Date(teacherProfileForm.date_of_birth)) : null,
-                    };
-
-                    await update(ref(database, `users/${userProfile?.id}`), updateData); // Realtime DB
-                    await updateDoc(doc(db, "users", userProfile?.id), updateData); // Firestore
-
-                    // Update local state
-                    setUserProfile(prev => ({ ...prev, ...updateData }));
-
-                    setShowTeacherProfileDialog(false);
-                    toast.dismiss();
-                    toast.success("Profile updated successfully");
-                  } catch (error: any) {
-                    console.error(error);
-                    toast.dismiss();
-                    toast.error(error.message || "Failed to update profile");
-                  }
-                }} className="w-full bg-green-600 hover:bg-green-700 text-white">
-                  Save & Continue
-                </Button>
-              );
-            }
-            return null;
-          })()}
-
+            <Button onClick={handleSaveTeacherProfile} className="bg-green-600 hover:bg-green-700 w-full">
+              Save & Continue
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <ImageCropper
         open={showImageCropper}
-    onOpenChange={setShowImageCropper}
-    onCropComplete={handleProfileImageUpload}
-    isAuthorized={!!driveAccessToken}
-    onAuthorize={handleGoogleAuth}
-  />
-    </DashboardLayout >
+        onOpenChange={setShowImageCropper}
+        onCropComplete={handleProfileImageUpload}
+        isAuthorized={!!driveAccessToken}
+        onAuthorize={handleGoogleAuth}
+      />
+    </DashboardLayout>
   );
 };
 
