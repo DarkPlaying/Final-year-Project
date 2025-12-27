@@ -376,16 +376,30 @@ const TeacherDashboard = () => {
     const savedConfig = localStorage.getItem('studentExportConfig');
     if (savedConfig) {
       try {
-        const parsed = JSON.parse(savedConfig);
-        // Migration: If config is the old default, update to new default
+        let parsed = JSON.parse(savedConfig);
+
+        // Migration 1: If config is the old default, update to new default
         const oldDefault = ['name', 'va_no', 'personal_mobile'];
         if (Array.isArray(parsed) && parsed.length === 3 && parsed.every(f => oldDefault.includes(f))) {
-          const newDefault = ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
-          setStudentDetailsConfig(newDefault);
-          localStorage.setItem('studentExportConfig', JSON.stringify(newDefault));
-        } else {
-          setStudentDetailsConfig(parsed);
+          parsed = ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
         }
+
+        // Migration 2: Fix order - ensure address comes before date_of_birth
+        if (Array.isArray(parsed)) {
+          const addressIndex = parsed.indexOf('address');
+          const dobIndex = parsed.indexOf('date_of_birth');
+
+          // If both exist and date_of_birth comes before address, swap them
+          if (addressIndex !== -1 && dobIndex !== -1 && dobIndex < addressIndex) {
+            const temp = [...parsed];
+            temp[dobIndex] = 'address';
+            temp[addressIndex] = 'date_of_birth';
+            parsed = temp;
+          }
+        }
+
+        setStudentDetailsConfig(parsed);
+        localStorage.setItem('studentExportConfig', JSON.stringify(parsed));
       } catch (e) {
         console.error("Error parsing saved config", e);
       }

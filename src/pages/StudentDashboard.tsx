@@ -295,7 +295,18 @@ const StudentDashboard = () => {
 
         // Set required fields from announcement or default (normalize legacy 'batch_year' -> 'address')
         const rawFields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
-        const fields = rawFields.map((f: string) => f === 'batch_year' ? 'address' : f);
+        let fields = rawFields.map((f: string) => f === 'batch_year' ? 'address' : f);
+
+        // Fix order: ensure address comes before date_of_birth
+        const addressIndex = fields.indexOf('address');
+        const dobIndex = fields.indexOf('date_of_birth');
+        if (addressIndex !== -1 && dobIndex !== -1 && dobIndex < addressIndex) {
+          const temp = [...fields];
+          temp[dobIndex] = 'address';
+          temp[addressIndex] = 'date_of_birth';
+          fields = temp;
+        }
+
         setRequiredFields(fields);
 
         // Pre-fill form with existing data for these fields (merge with any current values)
