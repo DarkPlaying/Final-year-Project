@@ -3301,13 +3301,11 @@ const StudentDashboard = () => {
 
                 {/* Bubble Notification - Only show if no photo */}
                 {(!detailsForm.photoURL) && (
-                  <div className="absolute z-20 block right-0 -bottom-10 translate-x-0 sm:left-full sm:top-[85%] sm:bottom-auto sm:translate-x-0 sm:-translate-y-1/2 sm:ml-3">
-                    <div className="bg-blue-600/90 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
+                  <div className="absolute z-20 block left-full top-[85%] -translate-y-1/2 ml-3">
+                    <div className="bg-blue-600 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap animate-pulse shadow-lg relative">
                       Click here to upload
-                      {/* Desktop Arrow (Left pointing) */}
-                      <div className="hidden sm:block absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600/90"></div>
-                      {/* Mobile Arrow (Top pointing) */}
-                      <div className="block sm:hidden absolute bottom-full right-3 border-4 border-transparent border-b-blue-600/90"></div>
+                      {/* Arrow (Left pointing) */}
+                      <div className="absolute top-1/2 right-full -translate-y-1/2 border-4 border-transparent border-r-blue-600"></div>
                     </div>
                   </div>
                 )}
