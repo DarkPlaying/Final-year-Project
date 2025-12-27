@@ -586,6 +586,11 @@ const TeacherDashboard = () => {
     return () => clearTimeout(output);
   }, [userId, userEmail]);
 
+  // Reset page when dialog opens/closes to be safe
+  useEffect(() => {
+    if (showTeacherProfileDialog) setTeacherDetailsPage(1);
+  }, [showTeacherProfileDialog]);
+
   // --- Modular Data Listeners (with Pagination, Caching & Aggregation) ---
 
   // 1. Exams Listener

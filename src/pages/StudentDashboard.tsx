@@ -267,6 +267,10 @@ const StudentDashboard = () => {
   const [detailsForm, setDetailsForm] = useState<any>({});
   const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'date_of_birth', 'address']);
   const [detailsPage, setDetailsPage] = useState(1);
+
+  useEffect(() => {
+    if (showDetailsModal) setDetailsPage(1);
+  }, [showDetailsModal]);
   const [showImageCropper, setShowImageCropper] = useState(false);
 
   // Google Drive Auth State
@@ -303,6 +307,7 @@ const StudentDashboard = () => {
         initialForm.photoURL = userData.photoURL || userData.profile_picture || userData.photoUrl || '';
         // Merge with existing detailsForm so user-typed values aren't overwritten
         setDetailsForm(prev => ({ ...initialForm, ...prev }));
+        setDetailsPage(1);
         setDetailsPage(1);
       }
     }
@@ -3382,7 +3387,7 @@ const StudentDashboard = () => {
                 })()}</span>
                 <Button
                   variant="ghost"
-                  disabled={detailsPage === (1 + Math.ceil((requiredFields.length - 9) / 8))}
+                  disabled={(() => { const total = requiredFields.length; const totalPages = total <= 9 ? 1 : 1 + Math.ceil((total - 9) / 8); return detailsPage === totalPages; })()}
                   onClick={() => setDetailsPage(p => p + 1)}
                   className="text-slate-400 hover:text-white"
                 >
@@ -3392,23 +3397,32 @@ const StudentDashboard = () => {
             )}
           </div>
           <DialogFooter className="flex-col !space-x-0 gap-2">
-            {detailsPage === Math.ceil(requiredFields.length / 8) && (
-              <Button onClick={() => {
-                // Final Validation
-                const missing = requiredFields.filter(f => !detailsForm[f]);
-                if (!detailsForm.photoURL) {
-                  toast.error("Please upload your profile picture to continue.");
-                  return;
-                }
-                if (missing.length > 0) {
-                  toast.error(`Please fill all required fields: ${missing.join(', ')}`);
-                  return;
-                }
-                handleDetailsSubmit();
-              }} className="bg-green-600 hover:bg-green-700 w-full">
-                Save & Continue
-              </Button>
-            )}
+            {(() => {
+              const total = requiredFields.length;
+              const totalPages = total <= 9 ? 1 : 1 + Math.ceil((total - 9) / 8);
+              return detailsPage === totalPages ? (
+                <Button onClick={() => {
+                  // Final Validation
+                  const missing = requiredFields.filter(f => !detailsForm[f]);
+                  if (!detailsForm.photoURL) {
+                    toast.error("Please upload your profile picture to continue.");
+                    return;
+                  }
+                  if (missing.length > 0) {
+                    toast.error(`Please fill all required fields: ${missing.join(', ')}`);
+                    return;
+                  }
+                  handleDetailsSubmit();
+                }} className="bg-green-600 hover:bg-green-700 w-full">
+                  Save & Continue
+                </Button>
+              ) : (
+                <div className="w-full flex gap-2">
+                  <Button variant="outline" onClick={() => setDetailsPage(p => Math.max(1, p - 1))} className="w-1/2 border-slate-600 hover:bg-slate-800 text-white">Back</Button>
+                  <Button onClick={() => setDetailsPage(p => p + 1)} className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white">Next</Button>
+                </div>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>
