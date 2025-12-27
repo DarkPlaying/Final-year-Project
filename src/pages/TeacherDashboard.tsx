@@ -7261,21 +7261,7 @@ const TeacherDashboard = () => {
             }
             return null;
           })()}
-          date_of_birth: teacherProfileForm.date_of_birth ? Timestamp.fromDate(new Date(teacherProfileForm.date_of_birth)) : null
-                };
 
-          await updateDoc(doc(db, 'users', userId), updateData);
-          toast.dismiss();
-          toast.success("Profile updated successfully");
-          setShowTeacherProfileDialog(false);
-              } catch (e) {
-            console.error(e);
-          toast.dismiss();
-          toast.error("Failed to update profile");
-              }
-            }} className="bg-green-600 hover:bg-green-700 w-full">
-          Save & Continue
-        </Button>
       </DialogFooter>
     </DialogContent>
       </Dialog >
