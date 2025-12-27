@@ -4097,10 +4097,10 @@ const TeacherDashboard = () => {
       toast.dismiss();
       toast.success(`Request raised for ${selectedViewMarksStudents.length} selected student(s)`);
       setSelectedViewMarksStudents([]);
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error("Error raising compulsory fields:", error);
       toast.dismiss();
-      toast.error("Failed to raise request");
+      toast.error(`Failed to raise request: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -5877,19 +5877,15 @@ const TeacherDashboard = () => {
                       .map((email: string, idx: number) => (
                         <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
                           <div className="flex items-center gap-4 w-full">
-                            <button
-                              onClick={() => {
-                                if (selectedViewMarksStudents.includes(email)) setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
-                                else setSelectedViewMarksStudents(prev => [...prev, email]);
+                            <input
+                              type="checkbox"
+                              checked={selectedViewMarksStudents.includes(email)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedViewMarksStudents(prev => [...prev, email]);
+                                else setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
                               }}
-                              className="text-slate-400 hover:text-blue-400 transition-colors"
-                            >
-                              {selectedViewMarksStudents.includes(email) ? (
-                                <CheckSquare className="h-5 w-5 text-blue-500" />
-                              ) : (
-                                <Square className="h-5 w-5" />
-                              )}
-                            </button>
+                              className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900 cursor-pointer"
+                            />
                             <div className="relative">
                               <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 overflow-hidden">
                                 {(() => {
