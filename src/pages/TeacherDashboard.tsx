@@ -7145,159 +7145,117 @@ const TeacherDashboard = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Full Name <span className="text-red-500">*</span></Label>
-                <Input
-                  className="bg-slate-800 border-slate-700"
-                  placeholder="Full Name"
-                  value={teacherProfileForm.full_name || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, full_name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>VTA Number <span className="text-red-500">*</span></Label>
-                <Input
-                  className="bg-slate-800 border-slate-700"
-                  placeholder="VTA Number"
-                  value={teacherProfileForm.vta_no || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, vta_no: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Personal Mobile <span className="text-red-500">*</span></Label>
-                <Input
-                  className="bg-slate-800 border-slate-700"
-                  placeholder="Mobile Number"
-                  value={teacherProfileForm.personal_mobile || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, personal_mobile: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Department <span className="text-red-500">*</span></Label>
-                <Input
-                  className="bg-slate-800 border-slate-700"
-                  placeholder="Department"
-                  value={teacherProfileForm.department || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, department: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Date of Joining <span className="text-red-500">*</span></Label>
-                <Input
-                  type="date"
-                  className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
-                  value={teacherProfileForm.date_of_joining || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, date_of_joining: e.target.value })}
-                />
-                <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Date of Birth <span className="text-red-500">*</span></Label>
-                <Input
-                  type="date"
-                  className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
-                  value={teacherProfileForm.date_of_birth || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, date_of_birth: e.target.value })}
-                />
-                <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Address <span className="text-red-500">*</span></Label>
-                <Textarea
-                  className="bg-slate-800 border-slate-700"
-                  placeholder="Residential Address"
-                  value={teacherProfileForm.address || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, address: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Current Salary <span className="text-red-500">*</span></Label>
-                <Input
-                  className="bg-slate-800 border-slate-700"
-                  placeholder="Current Salary"
-                  value={teacherProfileForm.current_salary || ''}
-                  onChange={e => setTeacherProfileForm({ ...teacherProfileForm, current_salary: e.target.value })}
-                />
-              </div>
-
-              {/* Dynamic Fields Section (paginated: 9 on first page, 8 thereafter) */}
+              {/* Unified Fields Rendering with Pagination (9 then 8) */}
               {(() => {
-                const dynamicFields = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field));
-                // Pagination logic: page 1 -> first 9, subsequent pages -> 8 each
+                const staticFields = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+                const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
+                const allFields = [...staticFields, ...dynamicFields];
+                
                 const page = teacherDetailsPage || 1;
-                let visible: string[] = [];
-                if (dynamicFields.length <= 9) {
-                  visible = dynamicFields;
+                let visibleFields: string[] = [];
+                
+                if (allFields.length <= 9) {
+                  visibleFields = allFields;
                 } else if (page === 1) {
-                  visible = dynamicFields.slice(0, 9);
+                  visibleFields = allFields.slice(0, 9);
                 } else {
                   const start = 9 + (page - 2) * 8;
                   const end = start + 8;
-                  visible = dynamicFields.slice(start, end);
+                  visibleFields = allFields.slice(start, end);
                 }
 
-                return visible.map(field => (
-                  <div key={field} className="space-y-2">
-                    <Label className="capitalize">{field.replace(/_/g, ' ')} <span className="text-red-500">*</span></Label>
-                    {field === 'address' ? (
-                      <Textarea
-                        className="bg-slate-800 border-slate-700"
-                        placeholder={`Enter ${field.replace(/_/g, ' ')}`}
-                        value={teacherProfileForm[field] || ''}
-                        onChange={e => setTeacherProfileForm(prev => ({ ...prev, [field]: e.target.value }))}
-                      />
-                    ) : (
-                      <Input
-                        className="bg-slate-800 border-slate-700"
-                        placeholder={`Enter ${field.replace(/_/g, ' ')}`}
-                        value={teacherProfileForm[field] || ''}
-                        onChange={e => setTeacherProfileForm(prev => ({ ...prev, [field]: e.target.value }))}
-                      />
-                    )}
-                  </div>
-                ));
-              })()} 
+                return visibleFields.map(field => {
+                  let label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                  let placeholder = label;
+                  let type = "text";
+                  
+                  // Static field overrides
+                  if (field === 'full_name') label = "Full Name";
+                  if (field === 'vta_no') label = "VTA Number";
+                  if (field === 'date_of_joining') type = "date";
+                  if (field === 'date_of_birth') type = "date";
 
-              {/* Pagination controls for dynamic fields */}
-              {requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length > 9 && (
-                <div className="flex justify-between items-center mt-4 md:col-span-2">
-                  <Button
-                    variant="ghost"
-                    disabled={teacherDetailsPage === 1}
-                    onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))}
-                    className="text-slate-400 hover:text-white"
-                  >
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Back
-                  </Button>
-                  <span className="text-xs text-slate-500">Page {teacherDetailsPage} of {(() => {
-                    const total = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length;
-                    if (total <= 9) return 1;
-                    return 1 + Math.ceil((total - 9) / 8);
-                  })()}</span>
-                  <Button
-                    variant="ghost"
-                    disabled={teacherDetailsPage === (1 + Math.ceil((requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length - 9) / 8))}
-                    onClick={() => setTeacherDetailsPage(p => p + 1)}
-                    className="text-slate-400 hover:text-white"
-                  >
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              )}
+                  if (field === 'address') {
+                    return (
+                      <div key={field} className="space-y-2 md:col-span-2">
+                        <Label>{label} <span className="text-red-500">*</span></Label>
+                        <Textarea
+                          className="bg-slate-800 border-slate-700 min-h-[80px]"
+                          placeholder={placeholder}
+                          value={teacherProfileForm[field] || ''}
+                          onChange={e => setTeacherProfileForm(prev => ({ ...prev, [field]: e.target.value }))}
+                        />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={field} className="space-y-2">
+                      <Label>{label} <span className="text-red-500">*</span></Label>
+                      <Input
+                        type={type}
+                        className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+                        placeholder={placeholder}
+                        value={teacherProfileForm[field] || ''}
+                        onChange={e => setTeacherProfileForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      />
+                      {(type === 'date') && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>}
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* Pagination Controls */}
+              {(() => {
+                const staticFields = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+                const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
+                const total = staticFields.length + dynamicFields.length;
+                
+                if (total <= 9) return null;
+
+                const totalPages = 1 + Math.ceil((total - 9) / 8);
+
+                return (
+                  <div className="flex justify-between items-center mt-4 md:col-span-2">
+                    <Button
+                      variant="ghost"
+                      disabled={teacherDetailsPage === 1}
+                      onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                    </Button>
+                    <span className="text-xs text-slate-500">Page {teacherDetailsPage} of {totalPages}</span>
+                    <Button
+                      variant="ghost"
+                      disabled={teacherDetailsPage >= totalPages}
+                      onClick={() => setTeacherDetailsPage(p => p + 1)}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
           <DialogFooter className="flex-col !space-x-0 gap-2">
             {(() => {
-              const total = requiredTeacherFields.filter(field => !['name', 'full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field)).length;
+              const staticFields = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+              const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
+              const total = staticFields.length + dynamicFields.length;
               const totalPages = total <= 9 ? 1 : 1 + Math.ceil((total - 9) / 8);
-              return teacherDetailsPage === totalPages ? (
-                <Button onClick={handleSaveTeacherProfile} className="bg-green-600 hover:bg-green-700 w-full">
-                  Save & Continue
-                </Button>
-              ) : (
-                <div className="w-full flex gap-2">
+              
+              if (teacherDetailsPage === totalPages) {
+                 return (
+                  <Button onClick={handleSaveTeacherProfile} className="bg-green-600 hover:bg-green-700 w-full">
+                    Save & Continue
+                  </Button>
+                 );
+              }
+              return (
+                 <div className="w-full flex gap-2">
                   <Button variant="outline" onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))} className="w-1/2 border-slate-600 hover:bg-slate-800 text-white">Back</Button>
                   <Button onClick={() => setTeacherDetailsPage(p => p + 1)} className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white">Next</Button>
                 </div>
@@ -7314,7 +7272,7 @@ const TeacherDashboard = () => {
         isAuthorized={!!driveAccessToken}
         onAuthorize={handleGoogleAuth}
       />
-    </DashboardLayout>
+    </DashboardLayout >
   );
 };
 
