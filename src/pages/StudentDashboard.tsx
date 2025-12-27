@@ -38,7 +38,8 @@ import {
   AlertTriangle,
   XCircle,
   Users,
-  Edit
+  Edit,
+  ChevronRight
 } from 'lucide-react';
 import { ImageCropper } from '@/components/ui/image-crop';
 import { jsPDF } from "jspdf";
@@ -265,8 +266,8 @@ const StudentDashboard = () => {
   const [isCheckingPermission, setIsCheckingPermission] = useState(true);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsForm, setDetailsForm] = useState<any>({});
-  const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth']);
-  // const [detailsPage, setDetailsPage] = useState(1); // Pagination removed for grid view
+  const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'date_of_birth', 'address']);
+  const [detailsPage, setDetailsPage] = useState(1);
   const [showImageCropper, setShowImageCropper] = useState(false);
 
   // Google Drive Auth State
@@ -3306,20 +3307,28 @@ const StudentDashboard = () => {
 
 
               {requiredFields
+                .slice((detailsPage - 1) * 8, detailsPage * 8)
                 .map((field) => {
-
                   let placeholder = `Enter your ${field.replace(/_/g, ' ')}`;
                   let type = "text";
 
-                  if (field === 'batch_year') placeholder = "2023 - 2026";
                   if (field === 'date_of_birth') {
-                    placeholder = "11/12/2008";
-                    // We can use type="date" but user asked for "date selection field can also type"
-                    // Standard text input with placeholder is safest for "can also type", or type="date"
-                    // Let's use type="text" with the specific placeholder as requested, or type="date" if they want a picker.
-                    // "date selection field can also type" usually implies a date picker that allows manual entry.
-                    // HTML5 date input allows this on desktop.
+                    placeholder = "DD/MM/YYYY";
                     type = "date";
+                  }
+
+                  if (field === 'address') {
+                    return (
+                      <div key={field} className="space-y-2 md:col-span-2">
+                        <Label className="capitalize">{field.replace(/_/g, ' ')}</Label>
+                        <Textarea
+                          className="bg-slate-800 border-slate-700 text-white min-h-[80px]"
+                          placeholder={placeholder}
+                          value={detailsForm[field] || ''}
+                          onChange={(e) => setDetailsForm({ ...detailsForm, [field]: e.target.value })}
+                        />
+                      </div>
+                    );
                   }
 
                   return (
@@ -3332,17 +3341,53 @@ const StudentDashboard = () => {
                         onChange={(e) => setDetailsForm({ ...detailsForm, [field]: e.target.value })}
                         placeholder={placeholder}
                       />
-                      {field === 'date_of_birth' && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY (e.g. 11/12/2008)</p>}
+                      {field === 'date_of_birth' && <p className="text-[10px] text-slate-500">Format: DD/MM/YYYY</p>}
                     </div>
                   );
                 })}
 
             </div>
+
+            {requiredFields.length > 8 && (
+              <div className="flex justify-between items-center mt-4">
+                <Button
+                  variant="ghost"
+                  disabled={detailsPage === 1}
+                  onClick={() => setDetailsPage(p => p - 1)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                </Button>
+                <span className="text-xs text-slate-500">Page {detailsPage} of {Math.ceil(requiredFields.length / 8)}</span>
+                <Button
+                  variant="ghost"
+                  disabled={detailsPage === Math.ceil(requiredFields.length / 8)}
+                  onClick={() => setDetailsPage(p => p + 1)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  Next <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )}
           </div>
           <DialogFooter className="flex-col !space-x-0 gap-2">
-            <Button onClick={handleDetailsSubmit} className="bg-green-600 hover:bg-green-700 w-full">
-              Save & Continue
-            </Button>
+            {detailsPage === Math.ceil(requiredFields.length / 8) && (
+              <Button onClick={() => {
+                // Final Validation
+                const missing = requiredFields.filter(f => !detailsForm[f]);
+                if (!detailsForm.photoURL) {
+                  toast.error("Please upload your profile picture to continue.");
+                  return;
+                }
+                if (missing.length > 0) {
+                  toast.error(`Please fill all required fields: ${missing.join(', ')}`);
+                  return;
+                }
+                handleDetailsSubmit();
+              }} className="bg-green-600 hover:bg-green-700 w-full">
+                Save & Continue
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

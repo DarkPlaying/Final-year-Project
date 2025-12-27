@@ -63,7 +63,9 @@ import {
   ExternalLink,
   Edit,
   PlusCircle,
-  Clock
+  Clock,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 import { db, database } from '@/lib/firebase';
@@ -154,6 +156,7 @@ const AdminDashboard = () => {
   const [teachersSort, setTeachersSort] = useState<'default' | 'online' | 'last_seen'>('default');
   const [limitTeachers, setLimitTeachers] = useState(20);
   const [teachersLoading, setTeachersLoading] = useState(false);
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
 
   // Teachers Presence & Config
   const [presenceData, setPresenceData] = useState<any>({});
@@ -1901,11 +1904,34 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleSelectTeacher = (teacherId: string) => {
+    setSelectedTeacherIds(prev => prev.includes(teacherId) ? prev.filter(id => id !== teacherId) : [...prev, teacherId]);
+  };
+
+  const handleSelectAllTeachers = () => {
+    if (selectedTeacherIds.length === teachers.length) {
+      setSelectedTeacherIds([]);
+    } else {
+      setSelectedTeacherIds(teachers.map(t => t.id));
+    }
+  };
+
   const handleRaiseAgainAllTeachers = async () => {
-    if (!confirm("Are you sure you want to raise a compulsory profile update request for ALL teachers?")) return;
+    if (teachers.length === 0) return;
+
+    // Logic: If selected, raise for selected. If NONE selected, error.
+    if (selectedTeacherIds.length === 0) {
+      toast.error("Please select at least one teacher");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to raise a compulsory profile update request for ${selectedTeacherIds.length} selected teachers?`)) return;
 
     try {
-      const teacherEmails = teachers.map(t => t.email);
+      // Filter teachers to get emails of selected IDs
+      const targetTeachers = teachers.filter(t => selectedTeacherIds.includes(t.id));
+      const teacherEmails = targetTeachers.map(t => t.email);
+
       if (teacherEmails.length === 0) return;
 
       await addDoc(collection(db, 'announcements'), {
@@ -1913,8 +1939,7 @@ const AdminDashboard = () => {
         description: 'Action Required: Please update your teacher profile details immediately (VTA, Mobile, etc).',
         link: '',
         workspaceId: 'system', // Global system announcement
-        students: teacherEmails, // Re-using 'students' field for target emails (works for teachers too if logic adapted)
-        // Ideally we should have a 'targetRoles' or 'targetEmails' field, but reusing 'students' for now as generic target
+        students: teacherEmails, // Target emails
         teacherEmail: 'admin@system.com',
         type: 'compulsory_update_request',
         targetRole: 'teacher', // Specific flag
@@ -1923,6 +1948,7 @@ const AdminDashboard = () => {
       });
 
       toast.success(`Request raised for ${teacherEmails.length} teachers`);
+      setSelectedTeacherIds([]); // Clear selection after success
     } catch (e) {
       console.error(e);
       toast.error("Failed to raise request");
@@ -2509,8 +2535,13 @@ const AdminDashboard = () => {
                   <Edit className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Fields
                 </Button>
 
-                <Button variant="outline" onClick={handleRaiseAgainAllTeachers} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Force all teachers to update fields">
-                  <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise All
+                <Button variant="outline" onClick={handleSelectAllTeachers} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
+                  {selectedTeacherIds.length === teachers.length && teachers.length > 0 ? <CheckSquare className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2 text-blue-500" /> : <Square className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />}
+                  Select All
+                </Button>
+
+                <Button variant="outline" onClick={handleRaiseAgainAllTeachers} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Raise for selected teachers">
+                  <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise All ({selectedTeacherIds.length})
                 </Button>
 
                 <Button variant="outline" onClick={async () => {
@@ -2550,8 +2581,11 @@ const AdminDashboard = () => {
                   })
                     .slice(0, limitTeachers)
                     .map((teacher, idx) => (
-                      <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
+                      <div key={idx} className={`flex flex-col md:flex-row items-start md:items-center justify-between p-4 rounded-lg border border-slate-700 gap-4 md:gap-0 ${selectedTeacherIds.includes(teacher.id) ? 'bg-blue-900/20 border-blue-500/30' : 'bg-slate-900/50'}`}>
                         <div className="flex items-center gap-4 w-full">
+                          <button onClick={() => handleSelectTeacher(teacher.id)} className="text-slate-400 hover:text-white shrink-0">
+                            {selectedTeacherIds.includes(teacher.id) ? <CheckSquare className="h-5 w-5 text-blue-500" /> : <Square className="h-5 w-5" />}
+                          </button>
                           <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 shrink-0 overflow-hidden">
                             {teacher.profile_picture || teacher.photoURL || teacher.photoUrl ? (
                               <img
