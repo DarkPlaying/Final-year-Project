@@ -7145,15 +7145,16 @@ const TeacherDashboard = () => {
               </span>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Unified Fields Rendering with Pagination (9 then 8) */}
               {(() => {
                 const staticFields = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
                 const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
                 const allFields = [...staticFields, ...dynamicFields];
-                
+
                 const page = teacherDetailsPage || 1;
                 let visibleFields: string[] = [];
-                
+
                 if (allFields.length <= 9) {
                   visibleFields = allFields;
                 } else if (page === 1) {
@@ -7168,7 +7169,7 @@ const TeacherDashboard = () => {
                   let label = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                   let placeholder = label;
                   let type = "text";
-                  
+
                   // Static field overrides
                   if (field === 'full_name') label = "Full Name";
                   if (field === 'vta_no') label = "VTA Number";
@@ -7210,7 +7211,7 @@ const TeacherDashboard = () => {
                 const staticFields = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
                 const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
                 const total = staticFields.length + dynamicFields.length;
-                
+
                 if (total <= 9) return null;
 
                 const totalPages = 1 + Math.ceil((total - 9) / 8);
@@ -7246,16 +7247,16 @@ const TeacherDashboard = () => {
               const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
               const total = staticFields.length + dynamicFields.length;
               const totalPages = total <= 9 ? 1 : 1 + Math.ceil((total - 9) / 8);
-              
+
               if (teacherDetailsPage === totalPages) {
-                 return (
+                return (
                   <Button onClick={handleSaveTeacherProfile} className="bg-green-600 hover:bg-green-700 w-full">
                     Save & Continue
                   </Button>
-                 );
+                );
               }
               return (
-                 <div className="w-full flex gap-2">
+                <div className="w-full flex gap-2">
                   <Button variant="outline" onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))} className="w-1/2 border-slate-600 hover:bg-slate-800 text-white">Back</Button>
                   <Button onClick={() => setTeacherDetailsPage(p => p + 1)} className="w-1/2 bg-blue-600 hover:bg-blue-700 text-white">Next</Button>
                 </div>
