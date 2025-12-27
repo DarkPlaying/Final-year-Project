@@ -72,7 +72,6 @@ import { messaging } from '@/lib/firebase';
 import { getToken, onMessage, deleteToken } from 'firebase/messaging';
 import { Textarea } from '@/components/ui/textarea';
 
-// Google Drive Config
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID; // User provided Client ID
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const ASSIGNMENT_DRIVE_FOLDER_ID = import.meta.env.VITE_ASSIGNMENT_DRIVE_FOLDER_ID; // User provided folder
@@ -291,17 +290,18 @@ const StudentDashboard = () => {
         setShowDetailsModal(true);
 
         // Set required fields from announcement or default
-        const fields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'batch_year', 'date_of_birth'];
+        const fields = announcementData.requiredFields || ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
         setRequiredFields(fields);
 
-        // Pre-fill form with existing data for these fields
+        // Pre-fill form with existing data for these fields (merge with any current values)
         const initialForm: any = {};
         fields.forEach((field: string) => {
           initialForm[field] = userData[field] || '';
         });
         // Ensure photoURL is preserved or loaded
         initialForm.photoURL = userData.photoURL || userData.profile_picture || userData.photoUrl || '';
-        setDetailsForm(initialForm);
+        // Merge with existing detailsForm so user-typed values aren't overwritten
+        setDetailsForm(prev => ({ ...initialForm, ...prev }));
       }
     }
   };
