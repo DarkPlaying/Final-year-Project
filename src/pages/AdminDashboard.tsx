@@ -569,10 +569,9 @@ const AdminDashboard = () => {
       });
 
       // Calculate User Growth (Group by Month)
-      // We fetch all users to calculate accurate growth over time. 
-      // specific fields are not fetched to save bandwidth if possible, but Firestore fetches full docs.
-      // Optimization: In a real large app, use valid aggregation or a stats counter doc.
-      const growthQ = query(usersRef, orderBy('createdAt', 'asc'));
+      // Optimization: Limit to recent users to avoid reading entire database
+      // Fetching last 500 users is sufficient for growth trend visualization
+      const growthQ = query(usersRef, orderBy('createdAt', 'desc'), limit(500));
       const growthSnap = await getDocs(growthQ);
 
       const growthMap = new Map<string, number>();
@@ -1674,9 +1673,9 @@ const AdminDashboard = () => {
   const loadTeachers = useCallback(async () => {
     setTeachersLoading(true);
     try {
-      // 1. Fetch all teachers
+      // 1. Fetch teachers with limit to avoid reading entire collection
       const usersRef = collection(db, 'users');
-      let q = query(usersRef, where('role', '==', 'teacher'));
+      let q = query(usersRef, where('role', '==', 'teacher'), orderBy('createdAt', 'desc'), limit(limitTeachers));
 
       const snapshot = await getDocs(q);
       const loadedTeachers: Profile[] = [];

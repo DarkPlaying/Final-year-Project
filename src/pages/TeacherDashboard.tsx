@@ -376,30 +376,16 @@ const TeacherDashboard = () => {
     const savedConfig = localStorage.getItem('studentExportConfig');
     if (savedConfig) {
       try {
-        let parsed = JSON.parse(savedConfig);
-
-        // Migration 1: If config is the old default, update to new default
+        const parsed = JSON.parse(savedConfig);
+        // Migration: If config is the old default, update to new default
         const oldDefault = ['name', 'va_no', 'personal_mobile'];
         if (Array.isArray(parsed) && parsed.length === 3 && parsed.every(f => oldDefault.includes(f))) {
-          parsed = ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
+          const newDefault = ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
+          setStudentDetailsConfig(newDefault);
+          localStorage.setItem('studentExportConfig', JSON.stringify(newDefault));
+        } else {
+          setStudentDetailsConfig(parsed);
         }
-
-        // Migration 2: Fix order - ensure address comes before date_of_birth
-        if (Array.isArray(parsed)) {
-          const addressIndex = parsed.indexOf('address');
-          const dobIndex = parsed.indexOf('date_of_birth');
-
-          // If both exist and date_of_birth comes before address, swap them
-          if (addressIndex !== -1 && dobIndex !== -1 && dobIndex < addressIndex) {
-            const temp = [...parsed];
-            temp[dobIndex] = 'address';
-            temp[addressIndex] = 'date_of_birth';
-            parsed = temp;
-          }
-        }
-
-        setStudentDetailsConfig(parsed);
-        localStorage.setItem('studentExportConfig', JSON.stringify(parsed));
       } catch (e) {
         console.error("Error parsing saved config", e);
       }
@@ -822,14 +808,14 @@ const TeacherDashboard = () => {
       }
 
       try {
-        const countQ = query(collection(db, 'queries'), where('userEmail', '==', userEmail));
+        const countQ = query(collection(db, 'queries'));
         const countSnap = await getCountFromServer(countQ);
         if (!active) return;
 
         const total = countSnap.data().count;
         setTotalQueries(total);
 
-        const q = query(collection(db, 'queries'), where('userEmail', '==', userEmail), limit(limitQueries));
+        const q = query(collection(db, 'queries'), limit(limitQueries));
         const sub = onSnapshot(q, (snap) => {
           if (!active) return;
           const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1364,12 +1350,6 @@ const TeacherDashboard = () => {
       return;
     }
 
-    // Check if any students are selected
-    if (selectedViewMarksStudents.length === 0) {
-      toast.error("Please select at least one student");
-      return;
-    }
-
     toast.loading("Generating report...");
     try {
       const ws = workspaces.find(w => w.id === viewMarksWorkspace);
@@ -1380,9 +1360,8 @@ const TeacherDashboard = () => {
 
       // OPTIMIZATION: Use cached studentDetailsMap instead of fetching from Firestore
       // This eliminates ~200 reads per download
-      // Filter to only selected students
       const studentsData: any[] = [];
-      selectedViewMarksStudents.forEach(email => {
+      ws.students.forEach(email => {
         const details = studentDetailsMap.get(email);
         if (details) {
           studentsData.push({ email, ...details });
@@ -1467,12 +1446,6 @@ const TeacherDashboard = () => {
       return;
     }
 
-    // Check if any students are selected
-    if (selectedViewMarksStudents.length === 0) {
-      toast.error("Please select at least one student");
-      return;
-    }
-
     toast.loading("Generating marksheet...");
     try {
       const ws = workspaces.find(w => w.id === viewMarksWorkspace);
@@ -1481,12 +1454,13 @@ const TeacherDashboard = () => {
         return;
       }
 
-      // 1. Fetch submissions for selected students only (Optimized: Chunked by Student Email)
+      // 1. Fetch submissions for these students (Optimized: Chunked by Student Email)
+      // Instead of fetching ALL submissions (which could be 50k+), we only fetch for the ~60 students in this workspace.
       const workspaceAssignments: any[] = [];
       const studentChunks = [];
       // Firestore 'in' query limit is 30. Using 10 is safe and efficient.
-      for (let i = 0; i < selectedViewMarksStudents.length; i += 10) {
-        studentChunks.push(selectedViewMarksStudents.slice(i, i + 10));
+      for (let i = 0; i < ws.students.length; i += 10) {
+        studentChunks.push(ws.students.slice(i, i + 10));
       }
 
       await Promise.all(studentChunks.map(async (chunk) => {
@@ -1540,8 +1514,8 @@ const TeacherDashboard = () => {
       worksheet.columns = columns;
 
       // Rows
-      // Sort selected students by name or reg_no
-      const sortedStudents = [...selectedViewMarksStudents].sort((a, b) => {
+      // Sort students by name or reg_no
+      const sortedStudents = [...ws.students].sort((a, b) => {
         const nameA = studentMap.get(a) || a;
         const nameB = studentMap.get(b) || b;
         return nameA.localeCompare(nameB);
@@ -2287,12 +2261,12 @@ const TeacherDashboard = () => {
 
   const handleRefreshQueries = async () => {
     try {
-      const countQ = query(collection(db, 'queries'), where('userEmail', '==', userEmail));
+      const countQ = query(collection(db, 'queries'));
       const countSnap = await getCountFromServer(countQ);
       const total = countSnap.data().count;
       setTotalQueries(total);
 
-      const q = query(collection(db, 'queries'), where('userEmail', '==', userEmail), limit(limitQueries));
+      const q = query(collection(db, 'queries'), limit(limitQueries));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -4087,46 +4061,35 @@ const TeacherDashboard = () => {
   };
 
   const handleRaiseCompulsoryFields = async () => {
-    if (!viewMarksWorkspace) {
-      toast.error("Please select a workspace first");
-      return;
-    }
-
     if (selectedViewMarksStudents.length === 0) {
       toast.error("Please select at least one student.");
       return;
     }
 
-    if (!confirm(`Are you sure you want to force ${selectedViewMarksStudents.length} selected student(s) to re-enter their details?`)) {
-      return;
-    }
-
-    toast.loading("Processing...");
     try {
-      // Get configured fields
-      const storedConfig = localStorage.getItem('studentExportConfig');
-      const requiredFields = storedConfig ? JSON.parse(storedConfig).map((f: string) => f === 'batch_year' ? 'address' : f) : ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
+      const batch = writeBatch(db);
+      let count = 0;
 
-      // Create a system announcement for compulsory update
-      await addDoc(collection(db, 'announcements'), {
-        title: 'SYSTEM: Compulsory Profile Update',
-        description: 'Action Required: Please update your profile details immediately.',
-        link: '',
-        workspaceId: viewMarksWorkspace,
-        students: selectedViewMarksStudents,
-        teacherEmail: userEmail,
-        type: 'compulsory_update_request',
-        requiredFields: requiredFields,
-        createdAt: serverTimestamp()
+      selectedViewMarksStudents.forEach(email => {
+        const uid = studentIdMap.get(email);
+        if (uid) {
+          const ref = doc(db, 'users', uid);
+          batch.update(ref, { forceProfileUpdate: true });
+          count++;
+        }
       });
 
-      toast.dismiss();
-      toast.success(`Request raised for ${selectedViewMarksStudents.length} selected student(s)`);
-      setSelectedViewMarksStudents([]);
-    } catch (error: any) {
-      console.error("Error raising compulsory fields:", error);
-      toast.dismiss();
-      toast.error(`Failed to raise request: ${error.message || 'Unknown error'}`);
+      if (count > 0) {
+        await batch.commit();
+        toast.success(`Raised compulsory fields for ${count} students.`);
+        setSelectedViewMarksStudents([]);
+      } else {
+        toast.error("Could not find user IDs for selected students.");
+      }
+
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to raise fields.");
     }
   };
 
@@ -5839,37 +5802,37 @@ const TeacherDashboard = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 mb-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const ws = workspaces.find(w => w.id === viewMarksWorkspace);
-                          if (!ws || !ws.students) return;
-                          const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
-                          if (filtered.length > 0 && filtered.every((s: string) => selectedViewMarksStudents.includes(s))) {
-                            setSelectedViewMarksStudents(prev => prev.filter(s => !filtered.includes(s)));
-                          } else {
-                            setSelectedViewMarksStudents(prev => Array.from(new Set([...prev, ...filtered])));
-                          }
-                        }}
-                        className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10"
-                      >
-                        <CheckSquare className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Select All
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRaiseCompulsoryFields}
-                        className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10"
-                        title="Force selected students to re-enter details"
-                      >
-                        <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise All ({selectedViewMarksStudents.length})
-                      </Button>
+                      <div className="flex items-center gap-2 mr-2 border-r border-slate-700 pr-4">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900"
+                          checked={(() => {
+                            const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+                            if (!ws || !ws.students) return false;
+                            const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
+                            return filtered.length > 0 && filtered.every((s: string) => selectedViewMarksStudents.includes(s));
+                          })()}
+                          onChange={(e) => {
+                            const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+                            if (!ws || !ws.students) return;
+                            const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
+                            if (e.target.checked) {
+                              setSelectedViewMarksStudents(prev => Array.from(new Set([...prev, ...filtered])));
+                            } else {
+                              setSelectedViewMarksStudents(prev => prev.filter(s => !filtered.includes(s)));
+                            }
+                          }}
+                        />
+                        <span className="text-sm text-slate-300">Select All</span>
+                      </div>
                       <Button onClick={handleDownloadStudentDetails} className="bg-green-600 hover:bg-green-700 text-white text-xs md:text-sm h-8 md:h-10">
                         <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Details
                       </Button>
                       <Button variant="outline" onClick={() => setShowDetailsConfigDialog(true)} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
                         <Edit className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Fields
+                      </Button>
+                      <Button variant="outline" onClick={handleRaiseCompulsoryFields} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Force selected students to re-enter details">
+                        <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise Compulsory Fields
                       </Button>
                       <Button variant="outline" onClick={handleDownloadMarksheet} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
                         <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Marksheet
@@ -5905,12 +5868,12 @@ const TeacherDashboard = () => {
                           <div className="flex items-center gap-4 w-full">
                             <input
                               type="checkbox"
+                              className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900"
                               checked={selectedViewMarksStudents.includes(email)}
                               onChange={(e) => {
                                 if (e.target.checked) setSelectedViewMarksStudents(prev => [...prev, email]);
                                 else setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
                               }}
-                              className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900 cursor-pointer"
                             />
                             <div className="relative">
                               <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 overflow-hidden">
