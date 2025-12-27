@@ -4061,35 +4061,46 @@ const TeacherDashboard = () => {
   };
 
   const handleRaiseCompulsoryFields = async () => {
+    if (!viewMarksWorkspace) {
+      toast.error("Please select a workspace first");
+      return;
+    }
+
     if (selectedViewMarksStudents.length === 0) {
       toast.error("Please select at least one student.");
       return;
     }
 
-    try {
-      const batch = writeBatch(db);
-      let count = 0;
+    if (!confirm(`Are you sure you want to force ${selectedViewMarksStudents.length} selected student(s) to re-enter their details?`)) {
+      return;
+    }
 
-      selectedViewMarksStudents.forEach(email => {
-        const uid = studentIdMap.get(email);
-        if (uid) {
-          const ref = doc(db, 'users', uid);
-          batch.update(ref, { forceProfileUpdate: true });
-          count++;
-        }
+    toast.loading("Processing...");
+    try {
+      // Get configured fields
+      const storedConfig = localStorage.getItem('studentExportConfig');
+      const requiredFields = storedConfig ? JSON.parse(storedConfig).map((f: string) => f === 'batch_year' ? 'address' : f) : ['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth'];
+
+      // Create a system announcement for compulsory update
+      await addDoc(collection(db, 'announcements'), {
+        title: 'SYSTEM: Compulsory Profile Update',
+        description: 'Action Required: Please update your profile details immediately.',
+        link: '',
+        workspaceId: viewMarksWorkspace,
+        students: selectedViewMarksStudents,
+        teacherEmail: userEmail,
+        type: 'compulsory_update_request',
+        requiredFields: requiredFields,
+        createdAt: serverTimestamp()
       });
 
-      if (count > 0) {
-        await batch.commit();
-        toast.success(`Raised compulsory fields for ${count} students.`);
-        setSelectedViewMarksStudents([]);
-      } else {
-        toast.error("Could not find user IDs for selected students.");
-      }
-
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to raise fields.");
+      toast.dismiss();
+      toast.success(`Request raised for ${selectedViewMarksStudents.length} selected student(s)`);
+      setSelectedViewMarksStudents([]);
+    } catch (error) {
+      console.error(error);
+      toast.dismiss();
+      toast.error("Failed to raise request");
     }
   };
 
@@ -5802,37 +5813,37 @@ const TeacherDashboard = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 mb-4">
-                      <div className="flex items-center gap-2 mr-2 border-r border-slate-700 pr-4">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900"
-                          checked={(() => {
-                            const ws = workspaces.find(w => w.id === viewMarksWorkspace);
-                            if (!ws || !ws.students) return false;
-                            const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
-                            return filtered.length > 0 && filtered.every((s: string) => selectedViewMarksStudents.includes(s));
-                          })()}
-                          onChange={(e) => {
-                            const ws = workspaces.find(w => w.id === viewMarksWorkspace);
-                            if (!ws || !ws.students) return;
-                            const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
-                            if (e.target.checked) {
-                              setSelectedViewMarksStudents(prev => Array.from(new Set([...prev, ...filtered])));
-                            } else {
-                              setSelectedViewMarksStudents(prev => prev.filter(s => !filtered.includes(s)));
-                            }
-                          }}
-                        />
-                        <span className="text-sm text-slate-300">Select All</span>
-                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const ws = workspaces.find(w => w.id === viewMarksWorkspace);
+                          if (!ws || !ws.students) return;
+                          const filtered = ws.students.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(marksSearch.toLowerCase()));
+                          if (filtered.length > 0 && filtered.every((s: string) => selectedViewMarksStudents.includes(s))) {
+                            setSelectedViewMarksStudents(prev => prev.filter(s => !filtered.includes(s)));
+                          } else {
+                            setSelectedViewMarksStudents(prev => Array.from(new Set([...prev, ...filtered])));
+                          }
+                        }}
+                        className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10"
+                      >
+                        <CheckSquare className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Select All
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRaiseCompulsoryFields}
+                        className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10"
+                        title="Force selected students to re-enter details"
+                      >
+                        <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise All ({selectedViewMarksStudents.length})
+                      </Button>
                       <Button onClick={handleDownloadStudentDetails} className="bg-green-600 hover:bg-green-700 text-white text-xs md:text-sm h-8 md:h-10">
                         <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Details
                       </Button>
                       <Button variant="outline" onClick={() => setShowDetailsConfigDialog(true)} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
                         <Edit className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Fields
-                      </Button>
-                      <Button variant="outline" onClick={handleRaiseCompulsoryFields} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10" title="Force selected students to re-enter details">
-                        <RotateCcw className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Raise Compulsory Fields
                       </Button>
                       <Button variant="outline" onClick={handleDownloadMarksheet} className="border-slate-600 text-slate-300 hover:bg-slate-700 text-xs md:text-sm h-8 md:h-10">
                         <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Marksheet
@@ -5866,15 +5877,19 @@ const TeacherDashboard = () => {
                       .map((email: string, idx: number) => (
                         <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
                           <div className="flex items-center gap-4 w-full">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900"
-                              checked={selectedViewMarksStudents.includes(email)}
-                              onChange={(e) => {
-                                if (e.target.checked) setSelectedViewMarksStudents(prev => [...prev, email]);
-                                else setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
+                            <button
+                              onClick={() => {
+                                if (selectedViewMarksStudents.includes(email)) setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
+                                else setSelectedViewMarksStudents(prev => [...prev, email]);
                               }}
-                            />
+                              className="text-slate-400 hover:text-blue-400 transition-colors"
+                            >
+                              {selectedViewMarksStudents.includes(email) ? (
+                                <CheckSquare className="h-5 w-5 text-blue-500" />
+                              ) : (
+                                <Square className="h-5 w-5" />
+                              )}
+                            </button>
                             <div className="relative">
                               <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 overflow-hidden">
                                 {(() => {
