@@ -1131,30 +1131,28 @@ const StudentDashboard = () => {
     }
   };
 
-  // Listen for Portal Status based on selected teacher
+  // Listen for Portal Status based on selected teacher (Now using 'settings' collection to bypass strict user security)
   useEffect(() => {
     if (!selectedTeacher) {
       setPortalStatus('closed');
       return;
     }
 
-    // Find teacher's UID
-    const teacherObj = teachers.find(t => t.email === selectedTeacher);
-    if (!teacherObj || !teacherObj.id) {
-      setPortalStatus('closed');
-      return;
-    }
-
-    const unsubPortal = onSnapshot(doc(db, 'users', teacherObj.id), (d) => {
+    const portalDocId = `assignment_portal_${selectedTeacher}`;
+    const unsubPortal = onSnapshot(doc(db, 'settings', portalDocId), (d) => {
       if (d.exists()) {
-        setPortalStatus(d.data().portalStatus || 'closed');
+        setPortalStatus(d.data().status || 'closed');
       } else {
+        // Fallback: If migration hasn't happened, default to closed (secure failover)
         setPortalStatus('closed');
       }
+    }, (error) => {
+      console.warn("Portal check failed (likely permission or missing doc):", error);
+      setPortalStatus('closed');
     });
 
     return () => unsubPortal();
-  }, [selectedTeacher, teachers]);
+  }, [selectedTeacher]);
 
   const handleDownloadUnomReport = async (report: any) => {
     try {

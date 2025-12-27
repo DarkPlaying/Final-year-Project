@@ -923,11 +923,11 @@ const TeacherDashboard = () => {
         // If it does, the user knows the "intended" password, so we try to force an update.
         if (authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
           // Check Firestore
-          const q = query(collection(db, 'users'), where('email', '==', user.email));
-          const snap = await getDocs(q);
+          const userDocRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userDocRef);
 
-          if (!snap.empty) {
-            const userDoc = snap.docs[0];
+          if (userSnap.exists()) {
+            const userDoc = userSnap;
             const userData = userDoc.data();
             const storedPassword = userData.password || '';
             let isFirestoreMatch = false;
@@ -967,11 +967,11 @@ const TeacherDashboard = () => {
         }
 
         // Step 3: Update password in Firestore (Sync)
-        const q = query(collection(db, 'users'), where('email', '==', user.email));
-        const snap = await getDocs(q);
+        const userDocRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userDocRef);
 
-        if (!snap.empty) {
-          const userDoc = snap.docs[0];
+        if (userSnap.exists()) {
+          const userDoc = userSnap;
           const newHash = await hashPassword(passwordForm.new);
           await updateDoc(doc(db, 'users', userDoc.id), {
             password: newHash,
@@ -1838,7 +1838,7 @@ const TeacherDashboard = () => {
 
       try {
         await Promise.all(chunkedEmails.map(async (chunk) => {
-          const q = query(collection(db, 'users'), where('email', 'in', chunk));
+          const q = query(collection(db, 'users'), where('email', 'in', chunk), where('role', '==', 'student'));
           const snap = await getDocs(q);
           snap.forEach(doc => {
             const d = doc.data();
