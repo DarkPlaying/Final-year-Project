@@ -53,7 +53,8 @@ import {
   RotateCcw,
   Power,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  Square
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 
@@ -5901,24 +5902,36 @@ const TeacherDashboard = () => {
                       })
                       .slice((marksPage - 1) * 20, marksPage * 20)
                       .map((email: string, idx: number) => (
-                        <div key={idx} className="flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-700 gap-4 md:gap-0">
+                        <div key={idx} className={`flex flex-col md:flex-row items-start md:items-center justify-between p-4 rounded-lg border border-slate-700 gap-4 md:gap-0 ${selectedViewMarksStudents.includes(email) ? 'bg-blue-900/20 border-blue-500/30' : 'bg-slate-900/50'}`}>
                           <div className="flex items-center gap-4 w-full">
-                            <input
-                              type="checkbox"
-                              checked={selectedViewMarksStudents.includes(email)}
-                              onChange={(e) => {
-                                if (e.target.checked) setSelectedViewMarksStudents(prev => [...prev, email]);
-                                else setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
+                            <button
+                              onClick={() => {
+                                if (selectedViewMarksStudents.includes(email)) setSelectedViewMarksStudents(prev => prev.filter(s => s !== email));
+                                else setSelectedViewMarksStudents(prev => [...prev, email]);
                               }}
-                              className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-slate-900 cursor-pointer"
-                            />
+                              className="text-slate-400 hover:text-white shrink-0"
+                            >
+                              {selectedViewMarksStudents.includes(email) ? <CheckSquare className="h-5 w-5 text-blue-500" /> : <Square className="h-5 w-5" />}
+                            </button>
                             <div className="relative">
-                              <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 overflow-hidden">
+                              <div className="h-10 w-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 overflow-hidden relative">
                                 {(() => {
                                   const details = studentDetailsMap.get(email);
                                   const photo = details?.photoURL || details?.profile_picture || details?.photoUrl;
-                                  if (photo) return <img src={photo} alt="Profile" className="h-full w-full object-cover" />;
-                                  return <UserCheck className="h-5 w-5" />;
+                                  return (
+                                    <>
+                                      {photo && (
+                                        <img
+                                          src={photo}
+                                          alt="Profile"
+                                          className="h-full w-full object-cover absolute inset-0 z-10"
+                                          referrerPolicy="no-referrer"
+                                          onError={(e) => e.currentTarget.style.display = 'none'}
+                                        />
+                                      )}
+                                      <UserCheck className="h-5 w-5" />
+                                    </>
+                                  );
                                 })()}
                               </div>
                               {(() => {
@@ -7202,14 +7215,19 @@ const TeacherDashboard = () => {
             {/* Profile Picture Section */}
             <div className="flex flex-col items-center gap-2 mb-4">
               <div className="relative">
-                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800">
-                  {teacherProfileForm.photoURL || teacherProfileForm.profile_picture ? (
-                    <img src={teacherProfileForm.photoURL || teacherProfileForm.profile_picture} alt="Profile" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center text-slate-500">
-                      <Users className="h-10 w-10" />
-                    </div>
+                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-slate-600 bg-slate-800 relative">
+                  {(teacherProfileForm.photoURL || teacherProfileForm.profile_picture) && (
+                    <img
+                      src={teacherProfileForm.photoURL || teacherProfileForm.profile_picture}
+                      alt="Profile"
+                      className="h-full w-full object-cover absolute inset-0 z-10"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => e.currentTarget.style.display = 'none'}
+                    />
                   )}
+                  <div className="h-full w-full flex items-center justify-center text-slate-500">
+                    <Users className="h-10 w-10" />
+                  </div>
                 </div>
 
                 {/* Bubble Notification - Only show if no photo */}
