@@ -102,7 +102,7 @@ export const AITestGenerator = () => {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const prompt = `
         Act as an expert teacher. Create a question paper based on the following text content.
