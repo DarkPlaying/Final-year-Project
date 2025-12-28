@@ -5792,7 +5792,7 @@ const TeacherDashboard = () => {
                           disabled={assignmentPage === 1}
                           className="border-slate-600 text-slate-300 hover:bg-slate-700"
                         >
-                          <ChevronLeft className="h-4 w-4" /> Previous
+                          <ChevronLeft className="h-4 w-4" />
                         </Button>
                         <span className="text-sm text-slate-400">
                           Page {assignmentPage} of {Math.ceil(assignments.length / 10)}
@@ -5804,7 +5804,7 @@ const TeacherDashboard = () => {
                           disabled={assignmentPage === Math.ceil(assignments.length / 10)}
                           className="border-slate-600 text-slate-300 hover:bg-slate-700"
                         >
-                          Next <ChevronRight className="h-4 w-4" />
+                          <ChevronRight className="h-4 w-4" />
                         </Button>
                       </div>
                     )}
