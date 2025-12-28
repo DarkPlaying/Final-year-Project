@@ -329,10 +329,12 @@ const StudentDashboard = () => {
 
         setRequiredFields(fields);
 
-        // Pre-fill form with existing data for these fields (merge with any current values)
-        const initialForm: any = {};
+        // Pre-fill form with existing data (load all to be safe)
+        const initialForm: any = { ...userData };
+
+        // Specifically ensure required fields are present (though ...userData handles most)
         fields.forEach((field: string) => {
-          initialForm[field] = userData[field] || '';
+          if (!initialForm[field]) initialForm[field] = '';
         });
         // Ensure photoURL is preserved or loaded
         initialForm.photoURL = userData.photoURL || userData.profile_picture || userData.photoUrl || '';
@@ -3447,7 +3449,9 @@ const StudentDashboard = () => {
 
 
               {(() => {
-                const dynamicFields = requiredFields;
+                const dynamicFields = requiredFields.filter(f =>
+                  !['uid', 'id', 'role', 'createdAt', 'updatedAt', 'email', 'email_lower', 'hashedPassword', 'password', 'salt', 'activeSessionId', 'ActiveSessionTimestamp', 'photoUrl', 'photoURL', 'profile_picture', 'PhotoId', 'UploadedViaCSV', 'ProfileUpdated', 'ProfileUpdatedAt', 'portalStatus', 'assignedWorkspaces', 'students'].includes(f)
+                );
                 const page = detailsPage || 1;
                 let visible: string[] = [];
                 if (dynamicFields.length <= 9) {
