@@ -287,6 +287,7 @@ const StudentDashboard = () => {
   const [detailsForm, setDetailsForm] = useState<any>({});
   const [requiredFields, setRequiredFields] = useState<string[]>(['name', 'va_no', 'personal_mobile', 'department', 'address', 'date_of_birth']);
   const [detailsPage, setDetailsPage] = useState(1);
+  const [filterTeacher, setFilterTeacher] = useState('all');
 
   useEffect(() => {
     if (showDetailsModal) setDetailsPage(1);
@@ -756,14 +757,13 @@ const StudentDashboard = () => {
       unsubscribe = onSnapshot(q, (snap) => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setAssignments(data);
-        setMarks(data.filter((a: any) => a.status === 'graded'));
+        // setMarks derived from assignments removed to use dedicated listener
         SessionCache.set(`assignments_${userEmail}`, { items: data, count: total }, 15);
 
         if (!isInitialLoad.current) {
           snap.docChanges().forEach(change => {
             const d = change.doc.data();
             if (change.type === 'modified' && d.status === 'graded') {
-              // Always notify for marks
               addNotification('marks', `Graded: ${d.assignmentTitle}`);
             }
           });
@@ -777,6 +777,29 @@ const StudentDashboard = () => {
       isMounted = false;
       if (unsubscribe) unsubscribe();
     };
+  }, [userEmail, limitAssignments]);
+
+  // 4b. Dedicated Marks Listener (Graded Submissions)
+  useEffect(() => {
+    if (!userEmail) return;
+
+    // We only fetch if the user visits the marks section or we want background updates
+    // But since we want to show them immediately, we should fetch.
+
+    const q = query(
+      collection(db, 'submissions'),
+      where('studentEmail', '==', userEmail),
+      where('status', '==', 'graded'),
+      orderBy('gradedAt', 'desc'),
+      limit(limitAssignments) // Re-using limitAssignments or create a new limitMarks if needed. Using limitAssignments for simplicity or create limitMarks state
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setMarks(data);
+    }, err => console.error("Marks error:", err));
+
+    return () => unsubscribe();
   }, [userEmail, limitAssignments]);
 
   // 5. Initial Load Timer & RTDB
@@ -2597,25 +2620,38 @@ const StudentDashboard = () => {
       {
         activeSection === 'syllabus' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold text-white">Review Syllabus</h2>
                 <p className="text-slate-400">Access and download your course syllabus and study materials.</p>
               </div>
-              <div className="relative w-64">
-                <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Search syllabus..."
-                  className="pl-8 bg-slate-900 border-slate-700"
-                  value={syllabusSearch}
-                  onChange={(e) => setSyllabusSearch(e.target.value)}
-                />
+              <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                <Select value={filterTeacher} onValueChange={setFilterTeacher}>
+                  <SelectTrigger className="w-full sm:w-[200px] bg-slate-900 border-slate-700">
+                    <SelectValue placeholder="Filter by Teacher" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Teachers</SelectItem>
+                    {teachers.map(t => (
+                      <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="relative w-full sm:w-64">
+                  <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search syllabus..."
+                    className="pl-8 bg-slate-900 border-slate-700"
+                    value={syllabusSearch}
+                    onChange={(e) => setSyllabusSearch(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {syllabi
-                .filter(s => String(s.title || s.name || '').toLowerCase().includes(syllabusSearch.toLowerCase()) || String(s.units || '').toLowerCase().includes(syllabusSearch.toLowerCase()))
+                .filter(s => (filterTeacher === 'all' || s.owner === filterTeacher) && (String(s.title || s.name || '').toLowerCase().includes(syllabusSearch.toLowerCase()) || String(s.units || '').toLowerCase().includes(syllabusSearch.toLowerCase())))
                 .slice((syllabusPage - 1) * 9, syllabusPage * 9)
                 .map(s => (
                   <Card key={s.id} className="bg-slate-800 border-slate-700 text-white hover:border-blue-500/50 transition-all group overflow-hidden relative">
@@ -2667,19 +2703,32 @@ const StudentDashboard = () => {
       {
         activeSection === 'exams' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold text-white">Attend Test and Assignment</h2>
                 <p className="text-slate-400">View and take upcoming or ongoing tests and assignments for your courses.</p>
               </div>
-              <div className="relative w-64">
-                <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Search tests..."
-                  className="pl-8 bg-slate-900 border-slate-700"
-                  value={examSearch}
-                  onChange={(e) => setExamSearch(e.target.value)}
-                />
+              <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                <Select value={filterTeacher} onValueChange={setFilterTeacher}>
+                  <SelectTrigger className="w-full sm:w-[200px] bg-slate-900 border-slate-700">
+                    <SelectValue placeholder="Filter by Teacher" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Teachers</SelectItem>
+                    {teachers.map(t => (
+                      <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="relative w-full sm:w-64">
+                  <SearchIcon className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search tests..."
+                    className="pl-8 bg-slate-900 border-slate-700"
+                    value={examSearch}
+                    onChange={(e) => setExamSearch(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
 
@@ -2695,7 +2744,7 @@ const StudentDashboard = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {exams
-                .filter(e => (e.title || '').toLowerCase().includes(examSearch.toLowerCase()) || (e.description || '').toLowerCase().includes(examSearch.toLowerCase()))
+                .filter(e => (filterTeacher === 'all' || e.teacherEmail === filterTeacher) && ((e.title || '').toLowerCase().includes(examSearch.toLowerCase()) || (e.description || '').toLowerCase().includes(examSearch.toLowerCase())))
                 .slice((examPage - 1) * 9, examPage * 9)
                 .map(e => (
                   <Card key={e.id} className="bg-slate-800 border-slate-700 text-white hover:border-purple-500/50 transition-all group overflow-hidden relative">
@@ -2830,10 +2879,26 @@ const StudentDashboard = () => {
             </Card>
 
             <div className="space-y-4 mt-8">
-              <h3 className="text-xl font-semibold text-white">Submitted Assignments</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-white">Submitted Assignments</h3>
+                <div className="w-[200px]">
+                  <Select value={filterTeacher} onValueChange={setFilterTeacher}>
+                    <SelectTrigger className="bg-slate-900 border-slate-700">
+                      <SelectValue placeholder="Filter by Teacher" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Teachers</SelectItem>
+                      {teachers.map(t => (
+                        <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               {assignments.length === 0 ? <p className="text-slate-500">No submissions yet.</p> : (
                 <>
                   {assignments
+                    .filter(a => filterTeacher === 'all' || a.teacherEmail === filterTeacher)
                     .slice((assignmentPage - 1) * 10, assignmentPage * 10)
                     .map(a => (
                       <div key={a.id} className="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
@@ -2862,8 +2927,25 @@ const StudentDashboard = () => {
       {
         activeSection === 'marks' && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-white">View Marks</h2>
-            <p className="text-slate-400">View your marks across assignments and tests.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-white">View Marks</h2>
+                <p className="text-slate-400">View your marks across assignments and tests.</p>
+              </div>
+              <div className="w-[200px]">
+                <Select value={filterTeacher} onValueChange={setFilterTeacher}>
+                  <SelectTrigger className="bg-slate-900 border-slate-700">
+                    <SelectValue placeholder="Filter by Teacher" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Teachers</SelectItem>
+                    {teachers.map(t => (
+                      <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
             <Card className="bg-slate-800 border-slate-700 text-white">
               <CardContent className="p-0">
@@ -2885,6 +2967,7 @@ const StudentDashboard = () => {
                       ) : (
                         <>
                           {marks
+                            .filter(m => filterTeacher === 'all' || m.teacherEmail === filterTeacher)
                             .slice((marksPage - 1) * 10, marksPage * 10)
                             .map(m => (
                               <TableRow key={m.id} className="border-slate-700 hover:bg-slate-800/50">
@@ -2931,8 +3014,25 @@ const StudentDashboard = () => {
       {
         activeSection === 'examMarks' && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-white">View Exam Marks</h2>
-            <p className="text-slate-400">View your marks for exams and tests published by teachers.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-white">View Exam Marks</h2>
+                <p className="text-slate-400">View your marks for exams and tests published by teachers.</p>
+              </div>
+              <div className="w-[200px]">
+                <Select value={filterTeacher} onValueChange={setFilterTeacher}>
+                  <SelectTrigger className="bg-slate-900 border-slate-700">
+                    <SelectValue placeholder="Filter by Teacher" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Teachers</SelectItem>
+                    {teachers.map(t => (
+                      <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
             <Card className="bg-slate-800 border-slate-700 text-white">
               <CardContent className="p-0">
@@ -2954,10 +3054,11 @@ const StudentDashboard = () => {
                       ) : (
                         <>
                           {examMarks
+                            .filter(m => filterTeacher === 'all' || m.teacherEmail === filterTeacher)
                             .slice((examMarksPage - 1) * 10, examMarksPage * 10)
                             .map(m => (
                               <TableRow key={m.id} className="border-slate-700 hover:bg-slate-800/50">
-                                <TableCell className="font-medium text-slate-200 text-xs md:text-sm p-2 md:p-4 max-w-[100px] md:max-w-none truncate">{m.sectionTitle || '-'}</TableCell>
+                                <TableCell className="font-medium text-slate-200 text-xs md:text-sm p-2 md:p-4 max-w-[100px] md:max-w-none truncate">{m.title || m.sectionTitle || '-'}</TableCell>
                                 <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4 max-w-[100px] md:max-w-none truncate">{m.subject || '-'}</TableCell>
                                 <TableCell className="text-green-400 font-bold text-xs md:text-sm p-2 md:p-4">{m.marks}</TableCell>
                                 <TableCell className="text-slate-400 text-xs md:text-sm p-2 md:p-4">

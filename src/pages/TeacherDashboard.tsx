@@ -190,7 +190,7 @@ const TeacherDashboard = () => {
   // Limits & Pagination
   const [limitExams, setLimitExams] = useState(5);
   const [limitSyllabi, setLimitSyllabi] = useState(5);
-  const [limitAssignments, setLimitAssignments] = useState(5);
+  const [limitAssignments, setLimitAssignments] = useState(10);
   const [limitAnnouncements, setLimitAnnouncements] = useState(5);
   const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);
@@ -5728,7 +5728,7 @@ const TeacherDashboard = () => {
                         }
                         return matchesSearch && matchesDate;
                       })
-                        .slice((assignmentPage - 1) * 10, assignmentPage * 10)
+
                         .map(a => (
                           <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex flex-col md:flex-row items-start md:items-center gap-4">
                             <div className="flex items-center gap-4 w-full md:w-auto flex-1">
@@ -5772,51 +5772,13 @@ const TeacherDashboard = () => {
                           </div>
                         ))}
                     </div>
-                    {assignments.filter(a => {
-                      const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-                        (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
-                      let matchesDate = true;
-                      if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                        matchesDate = matchesDate && date >= new Date(filterFrom);
-                      }
-                      if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                        const endDate = new Date(filterTo);
-                        endDate.setDate(endDate.getDate() + 1);
-                        const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                        matchesDate = matchesDate && date < endDate;
-                      }
-                      if (assignmentFilterType !== 'all') {
-                        const type = a.type || 'exam';
-                        if (type !== assignmentFilterType) return false;
-                      }
-                      return matchesSearch && matchesDate;
-                    }).length > 10 && (
-                        <div className="flex items-center justify-center gap-2 mt-6 p-4 border-t border-slate-700">
-                          <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.max(1, p - 1))} disabled={assignmentPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                          <span className="text-sm text-slate-400">Page {assignmentPage}</span>
-                          <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => p + 1)} disabled={assignments.filter(a => {
-                            const matchesSearch = (a.assignmentTitle || '').toLowerCase().includes(assignmentSearch.toLowerCase()) ||
-                              (a.studentEmail || '').toLowerCase().includes(assignmentSearch.toLowerCase());
-                            let matchesDate = true;
-                            if (filterFrom && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                              const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                              matchesDate = matchesDate && date >= new Date(filterFrom);
-                            }
-                            if (filterTo && (a.submittedAt?.toDate || a.createdAt?.toDate)) {
-                              const endDate = new Date(filterTo);
-                              endDate.setDate(endDate.getDate() + 1);
-                              const date = a.submittedAt?.toDate() || a.createdAt?.toDate();
-                              matchesDate = matchesDate && date < endDate;
-                            }
-                            if (assignmentFilterType !== 'all') {
-                              const type = a.type || 'exam';
-                              if (type !== assignmentFilterType) return false;
-                            }
-                            return matchesSearch && matchesDate;
-                          }).length <= assignmentPage * 10} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                        </div>
-                      )}
+                    {assignments.length < totalAssignments && (
+                      <div className="flex justify-center mt-4 border-t border-slate-700/50 pt-4">
+                        <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 10)}>
+                          Load More Assignments ({limitAssignments} currently loaded)
+                        </Button>
+                      </div>
+                    )}
 
                   </>
                 )}
