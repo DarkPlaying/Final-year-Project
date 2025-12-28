@@ -190,7 +190,7 @@ const TeacherDashboard = () => {
   // Limits & Pagination
   const [limitExams, setLimitExams] = useState(5);
   const [limitSyllabi, setLimitSyllabi] = useState(5);
-  const [limitAssignments, setLimitAssignments] = useState(5);
+  const [limitAssignments, setLimitAssignments] = useState(10);
   const [limitAnnouncements, setLimitAnnouncements] = useState(5);
   const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);

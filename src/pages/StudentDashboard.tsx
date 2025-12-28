@@ -2632,7 +2632,6 @@ const StudentDashboard = () => {
                     <SelectValue placeholder="Filter by Teacher" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Teachers</SelectItem>
                     {teachers.map(t => (
                       <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
                     ))}
@@ -2715,7 +2714,6 @@ const StudentDashboard = () => {
                     <SelectValue placeholder="Filter by Teacher" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Teachers</SelectItem>
                     {teachers.map(t => (
                       <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
                     ))}
@@ -2888,7 +2886,6 @@ const StudentDashboard = () => {
                       <SelectValue placeholder="Filter by Teacher" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Teachers</SelectItem>
                       {teachers.map(t => (
                         <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
                       ))}
@@ -2900,7 +2897,6 @@ const StudentDashboard = () => {
                 <>
                   {assignments
                     .filter(a => filterTeacher === 'all' || a.teacherEmail === filterTeacher)
-                    .slice((assignmentPage - 1) * 10, assignmentPage * 10)
                     .map(a => (
                       <div key={a.id} className="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
                         <div>
@@ -2910,11 +2906,11 @@ const StudentDashboard = () => {
                         {a.marks && <div className="text-green-400 font-bold">{a.marks} Marks</div>}
                       </div>
                     ))}
-                  {assignments.length > 10 && (
+                  {assignments.length < totalAssignments && (
                     <div className="flex items-center justify-center gap-2 mt-4">
-                      <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.max(1, p - 1))} disabled={assignmentPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                      <span className="text-sm text-slate-400">Page {assignmentPage} of {Math.ceil(assignments.length / 10)}</span>
-                      <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.min(Math.ceil(assignments.length / 10), p + 1))} disabled={assignmentPage === Math.ceil(assignments.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 5)}>
+                        Load 5 More Assignments ({limitAssignments} currently loaded)
+                      </Button>
                     </div>
                   )}
                 </>
@@ -2939,7 +2935,6 @@ const StudentDashboard = () => {
                     <SelectValue placeholder="Filter by Teacher" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Teachers</SelectItem>
                     {teachers.map(t => (
                       <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
                     ))}
@@ -3026,7 +3021,6 @@ const StudentDashboard = () => {
                     <SelectValue placeholder="Filter by Teacher" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Teachers</SelectItem>
                     {teachers.map(t => (
                       <SelectItem key={t.id} value={t.email}>{t.name || t.email}</SelectItem>
                     ))}
