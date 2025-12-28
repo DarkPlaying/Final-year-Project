@@ -1651,7 +1651,7 @@ const AdminDashboard = () => {
   // --- TEACHER MANAGEMENT LOGIC ---
 
   const [availableTeacherFields, setAvailableTeacherFields] = useState<string[]>([
-    'name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'
+    'name', 'email', 'department', 'vta_no', 'personal_mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'
   ]);
 
   const loadTeachers = useCallback(async () => {
@@ -1695,7 +1695,7 @@ const AdminDashboard = () => {
       });
 
       // Update available fields - ONLY standard fields (no auto discovery)
-      const stdFields = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+      const stdFields = ['name', 'email', 'department', 'vta_no', 'personal_mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
 
       // We no longer auto-add discovered fields to keep the list clean. 
       // Admin must manually add custom fields if they want them.
@@ -1721,25 +1721,28 @@ const AdminDashboard = () => {
     const savedConfig = localStorage.getItem('teacherExportConfig');
     if (savedConfig) {
       const parsed = JSON.parse(savedConfig);
-      // Migration: If config is the "Old Default", upgrade it
-      const oldDefault = ['name', 'email', 'department', 'vta_no', 'mobile'];
-      if (parsed.length === oldDefault.length && parsed.every((v: string, i: number) => v === oldDefault[i])) {
-        const newDefault = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
-        setTeacherDetailsConfig(newDefault);
-        saveTeacherConfig(newDefault);
-      } else {
-        // Auto-cleanup: Remove technical fields that might have been added by auto-discovery bugs
-        const garbage = ['uid', 'id', 'role', 'createdAt', 'updatedAt', 'email_lower', 'hashedPassword', 'password', 'salt', 'activeSessionId', 'ActiveSessionTimestamp', 'photoUrl', 'photoURL', 'profile_picture', 'PhotoId', 'UploadedViaCSV', 'ProfileUpdated', 'ProfileUpdatedAt', 'portalStatus', 'assignedWorkspaces', 'connections', 'last_changed'];
-        const cleanParsed = parsed.filter((f: string) => !garbage.includes(f));
 
-        setTeacherDetailsConfig(cleanParsed);
-        if (cleanParsed.length !== parsed.length) {
-          saveTeacherConfig(cleanParsed);
-        }
+      // Auto-cleanup: Remove technical fields and old 'mobile' field
+      const garbage = ['uid', 'id', 'role', 'createdAt', 'updatedAt', 'email_lower', 'hashedPassword', 'password', 'salt', 'activeSessionId', 'ActiveSessionTimestamp', 'photoUrl', 'photoURL', 'profile_picture', 'PhotoId', 'UploadedViaCSV', 'ProfileUpdated', 'ProfileUpdatedAt', 'portalStatus', 'assignedWorkspaces', 'connections', 'last_changed', 'mobile'];
+      const cleanParsed = parsed.filter((f: string) => !garbage.includes(f));
+
+      // Ensure specific migration: if 'mobile' was there, make sure 'personal_mobile' is added
+      if (parsed.includes('mobile') && !cleanParsed.includes('personal_mobile')) {
+        cleanParsed.push('personal_mobile');
+      }
+
+      // Ensure personal_mobile is present if it's supposed to be a standard field now
+      if (!cleanParsed.includes('personal_mobile')) {
+        cleanParsed.push('personal_mobile');
+      }
+
+      setTeacherDetailsConfig(cleanParsed);
+      if (JSON.stringify(cleanParsed) !== JSON.stringify(parsed)) {
+        saveTeacherConfig(cleanParsed);
       }
     } else {
       // First time load - set full default
-      const newDefault = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
+      const newDefault = ['name', 'email', 'department', 'vta_no', 'personal_mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
       setTeacherDetailsConfig(newDefault);
       saveTeacherConfig(newDefault);
     }
@@ -2698,7 +2701,7 @@ const AdminDashboard = () => {
                     {/* Combine config with available fields to ensure all selected are shown even if not in available */}
                     {/* Combine config with available fields to ensure all selected are shown even if not in available */}
                     {Array.from(new Set([...availableTeacherFields, ...teacherDetailsConfig])).map(field => {
-                      const isDefault = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field);
+                      const isDefault = ['name', 'email', 'department', 'vta_no', 'personal_mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field);
                       return (
                         <div key={field}
                           onClick={() => {
