@@ -105,8 +105,8 @@ export const AITestGenerator = () => {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // Use gemini-1.5-flash as it is the most stable for this task
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      // Using the latest Gemini Flash experimental model
+      const model = genAI.getGenerativeModel({ model: "ggemini-2.5-flash-lite" });
 
       const variationSeed = Math.floor(Math.random() * 1000000);
 
@@ -134,6 +134,7 @@ Generate exactly:
 
         Requirements:
         ${requirementText}
+        - Preferred Question Format: ${questionType}
 
         Additional rules:
         - Difficulty Level: ${difficulty}
@@ -286,6 +287,18 @@ Generate exactly:
                       <SelectItem value="Easy">Easy</SelectItem>
                       <SelectItem value="Medium">Medium</SelectItem>
                       <SelectItem value="Hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Question Type</Label>
+                  <Select value={questionType} onValueChange={setQuestionType}>
+                    <SelectTrigger className="bg-slate-900 border-slate-700 h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Mixed">Mixed (MCQ + Theory)</SelectItem>
+                      <SelectItem value="MCQ Only">Multiple Choice Only</SelectItem>
+                      <SelectItem value="Theory Only">Theory / Descriptive Only</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
