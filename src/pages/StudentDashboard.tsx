@@ -246,6 +246,8 @@ const StudentDashboard = () => {
   const [totalExamMarks, setTotalExamMarks] = useState(0);
   const [totalAnnouncements, setTotalAnnouncements] = useState(0);
   const [totalAssignments, setTotalAssignments] = useState(0);
+  const [limitMarks, setLimitMarks] = useState(5);
+  const [totalMarks, setTotalMarks] = useState(0);
   const [marksPage, setMarksPage] = useState(1);
   const [examMarksPage, setExamMarksPage] = useState(1);
   const [selectedUnomId, setSelectedUnomId] = useState<string | null>(null);
@@ -783,25 +785,39 @@ const StudentDashboard = () => {
   useEffect(() => {
     if (!userEmail) return;
 
-    // We only fetch if the user visits the marks section or we want background updates
-    // But since we want to show them immediately, we should fetch.
-    // Simplified query to avoid index issues
+    // Fetch total count for 'Load More' button
+    const fetchCount = async () => {
+      try {
+        const countQ = query(
+          collection(db, 'submissions'),
+          where('studentEmail', '==', userEmail),
+          where('status', '==', 'graded')
+        );
+        const snap = await getCountFromServer(countQ);
+        setTotalMarks(snap.data().count);
+      } catch (e) {
+        console.error("Error fetching marks count:", e);
+      }
+    };
+    fetchCount();
+
+    // Fetch marks with limit
     const q = query(
       collection(db, 'submissions'),
       where('studentEmail', '==', userEmail),
       where('status', '==', 'graded'),
-      limit(50) // Increased limit to ensure we get enough recent marks
+      limit(limitMarks)
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Sort client-side
-      data.sort((a: any, b: any) => (b.gradedAt?.seconds || 0) - (a.gradedAt?.seconds || 0));
+      // Sort client-side by gradedAt or submittedAt
+      data.sort((a: any, b: any) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
       setMarks(data);
     }, err => console.error("Marks error:", err));
 
     return () => unsubscribe();
-  }, [userEmail]);
+  }, [userEmail, limitMarks]);
 
   // 5. Initial Load Timer & RTDB
   useEffect(() => {
@@ -2995,12 +3011,12 @@ const StudentDashboard = () => {
                               </TableCell>
                             </TableRow>
                           )}
-                          {assignments.length === limitAssignments && (
+                          {marks.length < totalMarks && (
                             <TableRow>
                               <TableCell colSpan={4}>
                                 <div className="flex justify-center py-4">
-                                  <Button variant="ghost" size="sm" className="text-green-400 hover:text-white hover:bg-slate-800 border border-slate-700" onClick={() => setLimitAssignments(prev => prev + 5)}>
-                                    Load More Marks ({limitAssignments} submissions scanned)
+                                  <Button variant="ghost" size="sm" className="text-green-400 hover:text-white hover:bg-slate-800 border border-slate-700" onClick={() => setLimitMarks(prev => prev + 5)}>
+                                    Load More Marks ({limitMarks} currently loaded)
                                   </Button>
                                 </div>
                               </TableCell>
