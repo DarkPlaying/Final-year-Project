@@ -54,7 +54,9 @@ import {
   Power,
   ChevronRight,
   ChevronLeft,
-  Square
+  Square,
+  ScanFace,
+  Loader2
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 
@@ -372,6 +374,13 @@ const TeacherDashboard = () => {
 
   // Image Upload State
   const [showImageCropper, setShowImageCropper] = useState(false);
+
+  // Self Attendance State
+  const [showSelfAttendanceDialog, setShowSelfAttendanceDialog] = useState(false);
+  const [selfAttendanceDate, setSelfAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selfAttendanceStatus, setSelfAttendanceStatus] = useState<'P' | 'A' | 'HL'>('P');
+  const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
+
 
   // Load Config from LocalStorage
   useEffect(() => {
@@ -1791,6 +1800,203 @@ const TeacherDashboard = () => {
       toast.error("Failed to reset presence");
     }
   };
+
+  // --- Auto-Absent Logic & Biometrics ---
+
+  // Helper to check mobile
+  const isMobileDevice = () => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  };
+
+  const strToBuffer = (str: string) => {
+    return Uint8Array.from(str, c => c.charCodeAt(0));
+  };
+
+  const bufferToStr = (buffer: ArrayBuffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+  };
+
+  const base64ToBuffer = (base64: string) => {
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  };
+
+  const handleSelfAttendanceClick = async () => {
+    if (!isMobileDevice()) {
+      toast.error("Make attendance in mobile");
+      return;
+    }
+
+    setIsBiometricProcessing(true);
+    try {
+      // 1. Fetch User's Biometric ID
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const userData = userDoc.data();
+      const storedCredId = userData?.biometricCredId;
+
+      if (!storedCredId) {
+        // First Time: Register
+        if (!confirm("No fingerprint found. Do you want to add a fingerprint now?")) {
+          setIsBiometricProcessing(false);
+          return;
+        }
+
+        // Register Flow
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
+          challenge,
+          rp: {
+            name: "Edu Online",
+            id: window.location.hostname,
+          },
+          user: {
+            id: strToBuffer(userId),
+            name: userEmail,
+            displayName: userData?.name || userEmail,
+          },
+          pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+          },
+          timeout: 60000,
+          attestation: "none"
+        };
+
+        const credential = await navigator.credentials.create({
+          publicKey: publicKeyCredentialCreationOptions
+        }) as PublicKeyCredential;
+
+        if (credential) {
+          const rawId = bufferToStr(credential.rawId);
+          await updateDoc(doc(db, 'users', userId), {
+            biometricCredId: rawId
+          });
+          toast.success("Fingerprint added successfully!");
+          // Proceed to mark attendance
+          setShowSelfAttendanceDialog(true);
+        }
+      } else {
+        // Verify Flow
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
+          challenge,
+          timeout: 60000,
+          rpId: window.location.hostname,
+          allowCredentials: [{
+            id: base64ToBuffer(storedCredId),
+            type: 'public-key',
+            transports: ['internal']
+          }],
+          userVerification: "required",
+        };
+
+        try {
+          const assertion = await navigator.credentials.get({
+            publicKey: publicKeyCredentialRequestOptions
+          });
+
+          if (assertion) {
+            setShowSelfAttendanceDialog(true);
+          }
+        } catch (e) {
+          toast.error("Fingerprint verification failed");
+          console.error(e);
+        }
+      }
+    } catch (error: any) {
+      console.error("Biometric error:", error);
+      toast.error("Biometric authentication failed: " + error.message);
+    } finally {
+      setIsBiometricProcessing(false);
+    }
+  };
+
+  const submitSelfAttendance = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+
+      // Validation: P can only be for Today
+      if (selfAttendanceStatus === 'P' && selfAttendanceDate !== today) {
+        toast.error("You can mark Present (P) only for the current day.");
+        return;
+      }
+
+      // Note: "Present" for future is blocked. "Absent" for future is allowed. "Previous" days?
+      // The prompt says: "can make present at the present day only cannot make present P in future or previous day"
+      if (selfAttendanceStatus === 'P') {
+        if (selfAttendanceDate < today) {
+          toast.error("You cannot mark Present for previous days.");
+          return;
+        }
+        if (selfAttendanceDate > today) {
+          toast.error("You cannot mark Present for future days.");
+          return;
+        }
+      }
+
+      // Save to teacher_attendance
+      const docId = `${selfAttendanceDate}_${userId}`;
+      await setDoc(doc(db, 'teacher_attendance', docId), {
+        dateStr: selfAttendanceDate,
+        teacherId: userId,
+        teacherName: user?.name || userEmail, // rough check
+        status: selfAttendanceStatus,
+        markedAt: serverTimestamp(),
+        markedBy: 'self'
+      }, { merge: true });
+
+      toast.success(`Attendance marked: ${selfAttendanceStatus}`);
+      setShowSelfAttendanceDialog(false);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to mark attendance");
+    }
+  };
+
+  // Check Auto Absent on Load
+  useEffect(() => {
+    const checkAutoAbsent = async () => {
+      if (!userId) return;
+      const today = new Date();
+      // Check last 7 days
+      for (let i = 1; i <= 7; i++) {
+        const d = new Date();
+        d.setDate(today.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+
+        // Check if record exists
+        const docRef = doc(db, 'teacher_attendance', `${dateStr}_${userId}`);
+        const docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+          // Auto mark absent
+          await setDoc(docRef, {
+            dateStr,
+            teacherId: userId,
+            status: 'A',
+            markedAt: serverTimestamp(),
+            autoMarked: true
+          });
+          console.log(`Auto-marked Absent for ${dateStr}`);
+        }
+      }
+    };
+    checkAutoAbsent();
+  }, [userId]);
 
   // --- Data Loading ---
 
@@ -6853,9 +7059,19 @@ const TeacherDashboard = () => {
       {
         activeSection === 'attendance' && (
           <div className="space-y-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-2xl font-bold text-white">Attendance Register</h2>
-              <p className="text-slate-400">Mark student attendance for a specific date.</p>
+            <div className="flex flex-row justify-between items-start">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-2xl font-bold text-white">Attendance Register</h2>
+                <p className="text-slate-400">Mark student attendance for a specific date.</p>
+              </div>
+              <Button
+                onClick={handleSelfAttendanceClick}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                disabled={isBiometricProcessing}
+              >
+                {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
+                Self Attendance
+              </Button>
             </div>
 
             <Card className="bg-slate-800 border-slate-700 text-white">
@@ -7402,6 +7618,56 @@ const TeacherDashboard = () => {
         isAuthorized={!!driveAccessToken}
         onAuthorize={handleGoogleAuth}
       />
+
+      {/* Self Attendance Dialog */}
+      <Dialog open={showSelfAttendanceDialog} onOpenChange={setShowSelfAttendanceDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mark Self Attendance</DialogTitle>
+            <DialogDescription>Verify your presence.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={selfAttendanceDate}
+                onChange={(e) => setSelfAttendanceDate(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white [&::-webkit-calendar-picker-indicator]:[filter:invert(1)]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant={selfAttendanceStatus === 'P' ? 'default' : 'outline'}
+                  className={`${selfAttendanceStatus === 'P' ? 'bg-green-600 hover:bg-green-700' : 'border-slate-600 text-slate-300'}`}
+                  onClick={() => setSelfAttendanceStatus('P')}
+                >
+                  Present
+                </Button>
+                <Button
+                  variant={selfAttendanceStatus === 'HL' ? 'default' : 'outline'}
+                  className={`${selfAttendanceStatus === 'HL' ? 'bg-yellow-600 hover:bg-yellow-700' : 'border-slate-600 text-slate-300'}`}
+                  onClick={() => setSelfAttendanceStatus('HL')}
+                >
+                  Half Day
+                </Button>
+                <Button
+                  variant={selfAttendanceStatus === 'A' ? 'default' : 'outline'}
+                  className={`${selfAttendanceStatus === 'A' ? 'bg-red-600 hover:bg-red-700' : 'border-slate-600 text-slate-300'}`}
+                  onClick={() => setSelfAttendanceStatus('A')}
+                >
+                  Absent
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={submitSelfAttendance} className="bg-blue-600 hover:bg-blue-700 w-full">Mark Attendance</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout >
   );
 };
