@@ -785,22 +785,23 @@ const StudentDashboard = () => {
 
     // We only fetch if the user visits the marks section or we want background updates
     // But since we want to show them immediately, we should fetch.
-
+    // Simplified query to avoid index issues
     const q = query(
       collection(db, 'submissions'),
       where('studentEmail', '==', userEmail),
       where('status', '==', 'graded'),
-      orderBy('gradedAt', 'desc'),
-      limit(limitAssignments) // Re-using limitAssignments or create a new limitMarks if needed. Using limitAssignments for simplicity or create limitMarks state
+      limit(50) // Increased limit to ensure we get enough recent marks
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Sort client-side
+      data.sort((a: any, b: any) => (b.gradedAt?.seconds || 0) - (a.gradedAt?.seconds || 0));
       setMarks(data);
     }, err => console.error("Marks error:", err));
 
     return () => unsubscribe();
-  }, [userEmail, limitAssignments]);
+  }, [userEmail]);
 
   // 5. Initial Load Timer & RTDB
   useEffect(() => {

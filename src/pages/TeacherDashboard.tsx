@@ -190,7 +190,7 @@ const TeacherDashboard = () => {
   // Limits & Pagination
   const [limitExams, setLimitExams] = useState(5);
   const [limitSyllabi, setLimitSyllabi] = useState(5);
-  const [limitAssignments, setLimitAssignments] = useState(10);
+  const [limitAssignments, setLimitAssignments] = useState(5);
   const [limitAnnouncements, setLimitAnnouncements] = useState(5);
   const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);
@@ -5775,7 +5775,7 @@ const TeacherDashboard = () => {
                     {assignments.length < totalAssignments && (
                       <div className="flex justify-center mt-4 border-t border-slate-700/50 pt-4">
                         <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 10)}>
-                          Load More Assignments ({limitAssignments} currently loaded)
+                          Load 10 More Assignments ({limitAssignments} currently loaded)
                         </Button>
                       </div>
                     )}
