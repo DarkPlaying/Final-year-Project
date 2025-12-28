@@ -542,7 +542,8 @@ const TeacherDashboard = () => {
 
           // Prepare form data from current user profile
           const initialForm: any = {
-            full_name: userData.name || '',
+            ...userData, // Load all existing data first
+            full_name: userData.name || userData.full_name || '',
             vta_no: userData.vta_no || '',
             personal_mobile: userData.personal_mobile || '',
             department: userData.department || '',
@@ -7317,7 +7318,10 @@ const TeacherDashboard = () => {
               {/* Unified Fields Rendering with Pagination (9 then 8) */}
               {(() => {
                 const staticFields = ['full_name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
-                const dynamicFields = requiredTeacherFields.filter(field => !['name', ...staticFields].includes(field));
+                const dynamicFields = requiredTeacherFields.filter(field =>
+                  !['name', ...staticFields].includes(field) &&
+                  !['uid', 'id', 'role', 'createdAt', 'updatedAt', 'email', 'email_lower', 'hashedPassword', 'password', 'salt', 'activeSessionId', 'ActiveSessionTimestamp', 'photoUrl', 'photoURL', 'profile_picture', 'PhotoId', 'UploadedViaCSV', 'ProfileUpdated', 'ProfileUpdatedAt', 'portalStatus', 'assignedWorkspaces'].includes(field)
+                );
                 const allFields = [...staticFields, ...dynamicFields];
 
                 const page = teacherDetailsPage || 1;

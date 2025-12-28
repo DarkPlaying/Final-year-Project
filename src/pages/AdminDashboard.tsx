@@ -1933,7 +1933,8 @@ const AdminDashboard = () => {
         teacherEmail: 'admin@system.com',
         type: 'compulsory_update_request',
         targetRole: 'teacher', // Specific flag
-        requiredFields: ['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'],
+        requiredFields: Array.from(new Set(['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary', ...teacherDetailsConfig]))
+          .filter(f => !['uid', 'id', 'role', 'createdAt', 'updatedAt', 'email', 'email_lower', 'hashedPassword', 'password', 'salt', 'activeSessionId', 'ActiveSessionTimestamp', 'photoUrl', 'photoURL', 'profile_picture', 'PhotoId', 'UploadedViaCSV', 'ProfileUpdated', 'ProfileUpdatedAt', 'portalStatus', 'assignedWorkspaces'].includes(f)),
         createdAt: serverTimestamp()
       });
 
@@ -1958,7 +1959,8 @@ const AdminDashboard = () => {
         teacherEmail: 'admin@system.com',
         type: 'compulsory_update_request',
         targetRole: 'teacher',
-        requiredFields: ['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'],
+        requiredFields: Array.from(new Set(['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary', ...teacherDetailsConfig]))
+          .filter(f => !['uid', 'id', 'role', 'createdAt', 'updatedAt', 'email', 'email_lower', 'hashedPassword', 'password', 'salt', 'activeSessionId', 'ActiveSessionTimestamp', 'photoUrl', 'photoURL', 'profile_picture', 'PhotoId', 'UploadedViaCSV', 'ProfileUpdated', 'ProfileUpdatedAt', 'portalStatus', 'assignedWorkspaces'].includes(f)),
         createdAt: serverTimestamp()
       });
 
