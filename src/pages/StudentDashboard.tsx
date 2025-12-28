@@ -1121,6 +1121,12 @@ const StudentDashboard = () => {
         setWorkspaceCategory(cached.workspaceCategory);
         setTeachers(cached.teachers);
         setClassTeacherProfile(cached.classTeacherProfile);
+
+        // Auto-select the first teacher from cache if available
+        if (cached.teachers && cached.teachers.length > 0) {
+          setFilterTeacher(cached.teachers[0].email);
+        }
+
         return; // ✅ Saved 100+ reads!
       }
 
