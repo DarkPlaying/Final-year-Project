@@ -144,6 +144,8 @@ interface QueryItem {
   adminReply?: string;
 }
 
+import { AdminAttendanceManager } from '@/components/AdminAttendanceManager';
+
 const AdminDashboard = () => {
   const [activeSection, setActiveSection] = useState('overview');
   const [users, setUsers] = useState<Profile[]>([]);
@@ -2013,6 +2015,7 @@ const AdminDashboard = () => {
     { icon: <LayoutDashboard size={20} />, label: 'Overview', onClick: () => setActiveSection('overview'), active: activeSection === 'overview' },
     { icon: <Users size={20} />, label: 'Manage Users', onClick: () => setActiveSection('users'), active: activeSection === 'users' },
     { icon: <Users size={20} />, label: 'Manage Teachers', onClick: () => setActiveSection('teachers'), active: activeSection === 'teachers' },
+    { icon: <ClipboardList size={20} />, label: 'Manage Attendance', onClick: () => setActiveSection('attendance'), active: activeSection === 'attendance' },
     { icon: <Briefcase size={20} />, label: 'Workspaces', onClick: () => setActiveSection('workspaces'), active: activeSection === 'workspaces' },
     { icon: <MessageSquare size={20} />, label: 'View Queries', onClick: () => setActiveSection('queries'), active: activeSection === 'queries' },
     { icon: <Bot size={20} />, label: 'AI CSV Generator', onClick: () => setActiveSection('aiCsv'), active: activeSection === 'aiCsv' },
@@ -3052,6 +3055,13 @@ const AdminDashboard = () => {
               )}
             </div>
           </div>
+        )
+      }
+
+      {/* MANAGE ATTENDANCE */}
+      {
+        activeSection === 'attendance' && (
+          <AdminAttendanceManager />
         )
       }
 
