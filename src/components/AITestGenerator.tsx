@@ -105,8 +105,8 @@ export const AITestGenerator = () => {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // Using the latest Gemini Flash experimental model
-      const model = genAI.getGenerativeModel({ model: "ggemini-2.5-flash-lite" });
+      // Using gemini-1.5-flash as it is the stable and current flagship flash model
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const variationSeed = Math.floor(Math.random() * 1000000);
 
