@@ -5728,7 +5728,7 @@ const TeacherDashboard = () => {
                         }
                         return matchesSearch && matchesDate;
                       })
-                        .slice((assignmentPage - 1) * 9, assignmentPage * 9)
+                        .slice((assignmentPage - 1) * 10, assignmentPage * 10)
                         .map(a => (
                           <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex flex-col md:flex-row items-start md:items-center gap-4">
                             <div className="flex items-center gap-4 w-full md:w-auto flex-1">
@@ -5791,7 +5791,7 @@ const TeacherDashboard = () => {
                         if (type !== assignmentFilterType) return false;
                       }
                       return matchesSearch && matchesDate;
-                    }).length > 20 && (
+                    }).length > 10 && (
                         <div className="flex items-center justify-center gap-2 mt-6 p-4 border-t border-slate-700">
                           <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.max(1, p - 1))} disabled={assignmentPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
                           <span className="text-sm text-slate-400">Page {assignmentPage}</span>
