@@ -5554,13 +5554,13 @@ const TeacherDashboard = () => {
                 <span className={`text-xs uppercase tracking-wider px-3 font-semibold ${portalStatus === 'closed' ? 'text-orange-500' : 'text-slate-500'}`}>Portal: {portalStatus}</span>
                 <Button
                   className={`h-8 px-3 text-xs font-medium ${portalStatus === 'open' ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} transition-all border-0`}
-                  onClick={() => portalStatus === 'closed' && togglePortal()}
+                  onClick={() => portalStatus === 'closed' && handleTogglePortal()}
                 >
                   Open
                 </Button>
                 <Button
                   className={`h-8 px-3 text-xs font-medium ${portalStatus === 'closed' ? 'bg-slate-700 text-slate-300' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} transition-all border-0`}
-                  onClick={() => portalStatus === 'open' && togglePortal()}
+                  onClick={() => portalStatus === 'open' && handleTogglePortal()}
                 >
                   Close
                 </Button>
