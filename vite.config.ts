@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'report.png'],
       injectManifest: {
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4MB
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6MB
       },
       manifest: {
         name: 'Edu Online',
