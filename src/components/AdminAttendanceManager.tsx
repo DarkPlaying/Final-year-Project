@@ -8,10 +8,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Search, Download, Save, Loader2, Filter, ClipboardList } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Download, Save, Loader2, Filter, ClipboardList, Fingerprint, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, setDoc, doc, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, query, where, getDocs, setDoc, doc, Timestamp, writeBatch, deleteField } from 'firebase/firestore';
 
 interface Teacher {
     id: string;
@@ -198,6 +198,52 @@ export const AdminAttendanceManager = () => {
         halfDay: Object.values(attendance).filter(r => r.status === 'HL').length,
     };
 
+    const resetBiometric = async (teacherId: string, name: string) => {
+        if (!confirm(`Are you sure you want to reset fingerprint for ${name}?`)) return;
+        try {
+            await setDoc(doc(db, 'users', teacherId), {
+                biometricCredId: deleteField()
+            }, { merge: true });
+            toast.success(`Fingerprint reset for ${name}`);
+        } catch (error) {
+            console.error("Error resetting fingerprint:", error);
+            toast.error("Failed to reset fingerprint");
+        }
+    };
+
+    const resetAllBiometrics = async () => {
+        let targets = [];
+        if (departmentFilter === 'all') {
+            targets = teachers;
+        } else {
+            targets = teachers.filter(t => t.department === departmentFilter);
+        }
+
+        if (targets.length === 0) {
+            toast.error("No teachers found to reset.");
+            return;
+        }
+
+        if (!confirm(`WARNING: This will remove fingerprint access for ${targets.length} teachers in ${departmentFilter === 'all' ? 'All Departments' : departmentFilter}. Continue?`)) return;
+
+        setSaving(true);
+        try {
+            const batch = writeBatch(db);
+            targets.forEach(t => {
+                const ref = doc(db, 'users', t.id);
+                // updating with deleteField inside a set({merge:true}) or update()
+                batch.update(ref, { biometricCredId: deleteField() });
+            });
+            await batch.commit();
+            toast.success("All selected fingerprints reset successfully");
+        } catch (error) {
+            console.error("Error resetting all:", error);
+            toast.error("Failed to reset all fingerprints");
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
         <div className="space-y-6 w-full">
             <div className="flex flex-col gap-2">
@@ -271,15 +317,27 @@ export const AdminAttendanceManager = () => {
                             </div>
                         </div>
 
-                        <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={saveAttendance} disabled={saving}>
-                            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save Changes
-                        </Button>
+                        <div className="pt-4 space-y-3 border-t border-slate-700">
+                            <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={saveAttendance} disabled={saving}>
+                                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                Save Changes
+                            </Button>
 
-                        <Button variant="outline" className="w-full border-slate-700" onClick={downloadCSV}>
-                            <Download className="mr-2 h-4 w-4" />
-                            Download Report
-                        </Button>
+                            <Button variant="outline" className="w-full border-slate-700" onClick={downloadCSV}>
+                                <Download className="mr-2 h-4 w-4" />
+                                Download Report
+                            </Button>
+
+                            <Button
+                                variant="destructive"
+                                className="w-full bg-red-900/50 hover:bg-red-900 border border-red-800 text-red-200"
+                                onClick={resetAllBiometrics}
+                                disabled={saving}
+                            >
+                                <Fingerprint className="mr-2 h-4 w-4" />
+                                Reset {departmentFilter === 'all' ? 'All' : departmentFilter} Biometrics
+                            </Button>
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -305,18 +363,19 @@ export const AdminAttendanceManager = () => {
                                         <TableHead className="text-slate-400">Teacher</TableHead>
                                         <TableHead className="text-slate-400">Department</TableHead>
                                         <TableHead className="text-center text-slate-400">Status</TableHead>
+                                        <TableHead className="text-center text-slate-400">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {loading ? (
                                         <TableRow>
-                                            <TableCell colSpan={3} className="h-24 text-center">
+                                            <TableCell colSpan={4} className="h-24 text-center">
                                                 <Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-500" />
                                             </TableCell>
                                         </TableRow>
                                     ) : filteredTeachers.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={3} className="h-24 text-center text-slate-500">
+                                            <TableCell colSpan={4} className="h-24 text-center text-slate-500">
                                                 No teachers found
                                             </TableCell>
                                         </TableRow>
@@ -363,6 +422,18 @@ export const AdminAttendanceManager = () => {
                                                                 HL
                                                             </button>
                                                         </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-center">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="text-slate-400 hover:text-red-400 hover:bg-red-400/10"
+                                                            onClick={() => resetBiometric(teacher.id, teacher.name)}
+                                                            title="Reset Fingerprint"
+                                                        >
+                                                            <Fingerprint className="h-4 w-4" />
+                                                            <span className="sr-only">Reset</span>
+                                                        </Button>
                                                     </TableCell>
                                                 </TableRow>
                                             );

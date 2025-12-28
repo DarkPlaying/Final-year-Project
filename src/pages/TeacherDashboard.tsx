@@ -1837,20 +1837,10 @@ const TeacherDashboard = () => {
     }
 
     setIsBiometricProcessing(true);
-    try {
-      // 1. Fetch User's Biometric ID
-      const userDoc = await getDoc(doc(db, 'users', userId));
-      const userData = userDoc.data();
-      const storedCredId = userData?.biometricCredId;
 
-      if (!storedCredId) {
-        // First Time: Register
-        if (!confirm("No fingerprint found. Do you want to add a fingerprint now?")) {
-          setIsBiometricProcessing(false);
-          return;
-        }
-
-        // Register Flow
+    // Helper: Register Biometric
+    const registerBiometric = async () => {
+      try {
         const challenge = new Uint8Array(32);
         window.crypto.getRandomValues(challenge);
 
@@ -1862,8 +1852,8 @@ const TeacherDashboard = () => {
           },
           user: {
             id: strToBuffer(userId),
-            name: userEmail,
-            displayName: userData?.name || userEmail,
+            name: userEmail || "user",
+            displayName: teacherProfileForm?.name || userEmail || "User",
           },
           pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
           authenticatorSelection: {
@@ -1883,10 +1873,28 @@ const TeacherDashboard = () => {
           await updateDoc(doc(db, 'users', userId), {
             biometricCredId: rawId
           });
-          toast.success("Fingerprint added successfully!");
-          // Proceed to mark attendance
+          toast.success("Fingerprint registered successfully!");
           setShowSelfAttendanceDialog(true);
         }
+      } catch (regError: any) {
+        console.error("Registration failed:", regError);
+        toast.error("Failed to register: " + regError.message);
+      }
+    };
+
+    try {
+      // 1. Fetch User's Biometric ID
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const userData = userDoc.data();
+      const storedCredId = userData?.biometricCredId;
+
+      if (!storedCredId) {
+        // First Time: Register
+        if (!confirm("No fingerprint found. Do you want to add a fingerprint now?")) {
+          setIsBiometricProcessing(false);
+          return;
+        }
+        await registerBiometric();
       } else {
         // Verify Flow
         const challenge = new Uint8Array(32);
@@ -1913,8 +1921,13 @@ const TeacherDashboard = () => {
             setShowSelfAttendanceDialog(true);
           }
         } catch (e) {
-          toast.error("Fingerprint verification failed");
-          console.error(e);
+          console.error("Verification failed:", e);
+          // 2. Handle New Device Scenario
+          if (confirm("Fingerprint not recognized on this device. Do you want to register this device strictly for attendance?")) {
+            await registerBiometric();
+          } else {
+            toast.error("Authentication failed");
+          }
         }
       }
     } catch (error: any) {
@@ -1953,7 +1966,7 @@ const TeacherDashboard = () => {
       await setDoc(doc(db, 'teacher_attendance', docId), {
         dateStr: selfAttendanceDate,
         teacherId: userId,
-        teacherName: user?.name || userEmail, // rough check
+        teacherName: teacherProfileForm?.name || userEmail || "Unknown", // Fixed undefined error
         status: selfAttendanceStatus,
         markedAt: serverTimestamp(),
         markedBy: 'self'

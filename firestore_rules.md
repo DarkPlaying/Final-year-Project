@@ -148,6 +148,14 @@ service cloud.firestore {
       allow update: if isAuthenticated(); // Reverted to allow students to submit marks
     }
 
+    // Teacher Attendance:
+    // Teachers can only sign for themselves. Admins have full access.
+    // Doc ID format: {dateStr}_{teacherId}
+    match /teacher_attendance/{docId} {
+      allow read: if isAdmin() || (isTeacher() && (resource == null || resource.data.teacherId == request.auth.uid || docId.matches('.*_' + request.auth.uid)));
+      allow write: if isAdmin() || (isTeacher() && request.resource.data.teacherId == request.auth.uid);
+    }
+
     // Archived Users:
     match /deleted_users/{docId} {
       allow read, write: if isAdmin();
