@@ -335,7 +335,6 @@ const TeacherDashboard = () => {
   const [announceSearch, setAnnounceSearch] = useState('');
   const [queryPage, setQueryPage] = useState(1);
   const [querySearch, setQuerySearch] = useState('');
-  const [assignmentPage, setAssignmentPage] = useState(1);
   const [marksPage, setMarksPage] = useState(1);
   const [marksSearch, setMarksSearch] = useState('');
   const [onlineSort, setOnlineSort] = useState<'default' | 'newest' | 'oldest'>('default');
