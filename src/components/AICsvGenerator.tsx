@@ -173,7 +173,7 @@ Requirements:
     };
 
     return (
-        <div className="space-y-6 max-w-5xl mx-auto">
+        <div className="space-y-6 w-full">
             <div className="flex flex-col gap-2">
                 <h1 className="text-3xl font-bold text-white flex items-center gap-2">
                     <TableIcon className="h-8 w-8 text-blue-500" />
