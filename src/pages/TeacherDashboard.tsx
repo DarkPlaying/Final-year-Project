@@ -5814,16 +5814,10 @@ const TeacherDashboard = () => {
                               if (type !== assignmentFilterType) return false;
                             }
                             return matchesSearch && matchesDate;
-                          }).length <= assignmentPage * 9} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
+                          }).length <= assignmentPage * 10} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                         </div>
                       )}
-                    {assignments.length === limitAssignments && (
-                      <div className="flex justify-center mt-4">
-                        <Button variant="ghost" size="sm" className="text-indigo-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 5)}>
-                          Load More Submissions ({limitAssignments} currently loaded)
-                        </Button>
-                      </div>
-                    )}
+
                   </>
                 )}
               </CardContent>

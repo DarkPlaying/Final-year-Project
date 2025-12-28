@@ -2226,17 +2226,32 @@ const StudentDashboard = () => {
         toast.dismiss();
       }
 
-      await addDoc(collection(db, 'submissions'), {
+      const docRef = await addDoc(collection(db, 'submissions'), {
         assignmentTitle: assignmentTitle.toLowerCase(),
         type: assignmentType,
         googleDriveLink: finalLink,
         studentEmail: userEmail,
         studentId: userId,
         status: 'pending',
-        createdAt: serverTimestamp(), // FIX: Changed from submittedAt to match teacher query
-        submittedAt: serverTimestamp(), // Keep for backward compatibility
-        teacherEmail: selectedTeacher // Optional
+        createdAt: serverTimestamp(),
+        submittedAt: serverTimestamp(),
+        teacherEmail: selectedTeacher
       });
+
+      // Real-time update for student
+      setAssignments(prev => [{
+        id: docRef.id,
+        assignmentTitle: assignmentTitle.toLowerCase(),
+        type: assignmentType,
+        googleDriveLink: finalLink,
+        studentEmail: userEmail,
+        studentId: userId,
+        status: 'pending',
+        createdAt: { seconds: Date.now() / 1000 },
+        teacherEmail: selectedTeacher,
+        marks: null
+      }, ...prev]);
+
       toast.success('Assignment submitted');
       setShowSubmitDialog(false);
       setAssignmentTitle('');
@@ -2819,7 +2834,7 @@ const StudentDashboard = () => {
               {assignments.length === 0 ? <p className="text-slate-500">No submissions yet.</p> : (
                 <>
                   {assignments
-                    .slice(0, limitAssignments)
+                    .slice((assignmentPage - 1) * 10, assignmentPage * 10)
                     .map(a => (
                       <div key={a.id} className="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
                         <div>
@@ -2829,11 +2844,11 @@ const StudentDashboard = () => {
                         {a.marks && <div className="text-green-400 font-bold">{a.marks} Marks</div>}
                       </div>
                     ))}
-                  {assignments.length > limitAssignments && (
-                    <div className="flex justify-center mt-4">
-                      <Button variant="ghost" size="sm" className="text-indigo-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 5)}>
-                        Load More Assignments ({limitAssignments} of {assignments.length} shown)
-                      </Button>
+                  {assignments.length > 10 && (
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.max(1, p - 1))} disabled={assignmentPage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
+                      <span className="text-sm text-slate-400">Page {assignmentPage} of {Math.ceil(assignments.length / 10)}</span>
+                      <Button variant="outline" size="sm" onClick={() => setAssignmentPage(p => Math.min(Math.ceil(assignments.length / 10), p + 1))} disabled={assignmentPage === Math.ceil(assignments.length / 10)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
                     </div>
                   )}
                 </>
