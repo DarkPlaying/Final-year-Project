@@ -195,6 +195,8 @@ const TeacherDashboard = () => {
   const [limitViewMarks, setLimitViewMarks] = useState(10);
   const [limitQueries, setLimitQueries] = useState(5);
 
+  const [assignmentPage, setAssignmentPage] = useState(1);
+
   const [totalExams, setTotalExams] = useState(0);
   const [totalSyllabi, setTotalSyllabi] = useState(0);
   const [totalAssignments, setTotalAssignments] = useState(0);
@@ -5729,6 +5731,7 @@ const TeacherDashboard = () => {
                         return matchesSearch && matchesDate;
                       })
 
+                        .slice((assignmentPage - 1) * 10, assignmentPage * 10)
                         .map(a => (
                           <div key={a.id} className="p-4 hover:bg-slate-700/50 transition-colors flex flex-col md:flex-row items-start md:items-center gap-4">
                             <div className="flex items-center gap-4 w-full md:w-auto flex-1">
@@ -5775,7 +5778,34 @@ const TeacherDashboard = () => {
                     {assignments.length < totalAssignments && (
                       <div className="flex justify-center mt-4 border-t border-slate-700/50 pt-4">
                         <Button variant="ghost" size="sm" className="text-blue-400 hover:text-white hover:bg-slate-800 border border-slate-700 w-full md:w-auto" onClick={() => setLimitAssignments(prev => prev + 10)}>
-                          Load 10 More Assignments ({limitAssignments} currently loaded)
+                          Load 10 More Assignments from Database ({limitAssignments} currently loaded)
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Client-Side Pagination Controls */}
+                    {assignments.length > 10 && (
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAssignmentPage(p => Math.max(1, p - 1))}
+                          disabled={assignmentPage === 1}
+                          className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                        >
+                          <ChevronLeft className="h-4 w-4" /> Previous
+                        </Button>
+                        <span className="text-sm text-slate-400">
+                          Page {assignmentPage} of {Math.ceil(assignments.length / 10)}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAssignmentPage(p => Math.min(Math.ceil(assignments.length / 10), p + 1))}
+                          disabled={assignmentPage === Math.ceil(assignments.length / 10)}
+                          className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                        >
+                          Next <ChevronRight className="h-4 w-4" />
                         </Button>
                       </div>
                     )}

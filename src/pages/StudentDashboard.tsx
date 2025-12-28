@@ -1190,6 +1190,11 @@ const StudentDashboard = () => {
 
       setTeachers(uniqueTeachers);
 
+      // Auto-select the first teacher for filtering if available
+      if (uniqueTeachers.length > 0) {
+        setFilterTeacher(uniqueTeachers[0].email);
+      }
+
       // Set Class Teacher Profile
       let classTeacher = null;
       if (wsClassTeacherEmail) {
