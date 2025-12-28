@@ -1694,12 +1694,12 @@ const AdminDashboard = () => {
         });
       });
 
-      // Update available fields - merge standard with discovered
+      // Update available fields - ONLY standard fields (no auto discovery)
       const stdFields = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'];
-      const discovered = Array.from(allKeys).filter(k => !stdFields.includes(k) && k !== 'name' && k !== 'full_name');
-      // Note: 'name' is mapped to 'full_name' usually, 'mobile' to 'personal_mobile'
 
-      setAvailableTeacherFields([...stdFields, ...discovered]);
+      // We no longer auto-add discovered fields to keep the list clean. 
+      // Admin must manually add custom fields if they want them.
+      setAvailableTeacherFields([...stdFields]);
       setTeachers(loadedTeachers);
 
     } catch (error) {
@@ -1728,7 +1728,14 @@ const AdminDashboard = () => {
         setTeacherDetailsConfig(newDefault);
         saveTeacherConfig(newDefault);
       } else {
-        setTeacherDetailsConfig(parsed);
+        // Auto-cleanup: Remove technical fields that might have been added by auto-discovery bugs
+        const garbage = ['uid', 'id', 'role', 'createdAt', 'updatedAt', 'email_lower', 'hashedPassword', 'password', 'salt', 'activeSessionId', 'ActiveSessionTimestamp', 'photoUrl', 'photoURL', 'profile_picture', 'PhotoId', 'UploadedViaCSV', 'ProfileUpdated', 'ProfileUpdatedAt', 'portalStatus', 'assignedWorkspaces', 'connections', 'last_changed'];
+        const cleanParsed = parsed.filter((f: string) => !garbage.includes(f));
+
+        setTeacherDetailsConfig(cleanParsed);
+        if (cleanParsed.length !== parsed.length) {
+          saveTeacherConfig(cleanParsed);
+        }
       }
     } else {
       // First time load - set full default
@@ -2689,25 +2696,38 @@ const AdminDashboard = () => {
                   <Label>Active & Available Fields</Label>
                   <div className="flex flex-wrap gap-2">
                     {/* Combine config with available fields to ensure all selected are shown even if not in available */}
-                    {Array.from(new Set([...availableTeacherFields, ...teacherDetailsConfig])).map(field => (
-                      <div key={field}
-                        onClick={() => {
-                          let newConfig;
-                          if (teacherDetailsConfig.includes(field)) {
-                            newConfig = teacherDetailsConfig.filter(f => f !== field);
-                          } else {
-                            newConfig = [...teacherDetailsConfig, field];
-                          }
-                          setTeacherDetailsConfig(newConfig);
-                          saveTeacherConfig(newConfig);
-                        }}
-                        className={`flex items-center gap-1 px-3 py-1 rounded-full border cursor-pointer select-none transition-colors
-                                ${teacherDetailsConfig.includes(field) ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}
-                      >
-                        <span className="text-sm capitalize">{field.replace(/_/g, ' ')}</span>
-                        {teacherDetailsConfig.includes(field) ? <X className="h-3 w-3" /> : <PlusCircle className="h-3 w-3" />}
-                      </div>
-                    ))}
+                    {/* Combine config with available fields to ensure all selected are shown even if not in available */}
+                    {Array.from(new Set([...availableTeacherFields, ...teacherDetailsConfig])).map(field => {
+                      const isDefault = ['name', 'email', 'department', 'vta_no', 'mobile', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'].includes(field);
+                      return (
+                        <div key={field}
+                          onClick={() => {
+                            if (isDefault) return; // Prevent removing default fields
+
+                            let newConfig;
+                            if (teacherDetailsConfig.includes(field)) {
+                              newConfig = teacherDetailsConfig.filter(f => f !== field);
+                            } else {
+                              newConfig = [...teacherDetailsConfig, field];
+                            }
+                            setTeacherDetailsConfig(newConfig);
+                            saveTeacherConfig(newConfig);
+                          }}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-full border select-none transition-colors
+                                  ${teacherDetailsConfig.includes(field)
+                              ? 'bg-blue-600 border-blue-500 text-white'
+                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}
+                                  ${!isDefault ? 'cursor-pointer' : 'cursor-default opacity-80'}`}
+                        >
+                          <span className="text-sm capitalize">{field.replace(/_/g, ' ')}</span>
+                          {teacherDetailsConfig.includes(field) ? (
+                            isDefault ? <Lock className="h-3 w-3 ml-1" /> : <X className="h-3 w-3 ml-1" />
+                          ) : (
+                            <PlusCircle className="h-3 w-3 ml-1" />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
