@@ -58,6 +58,8 @@ import {
   CloudUpload,
   Save,
   Lock,
+  ClipboardList,
+
   RotateCcw,
   Power,
   ExternalLink,
