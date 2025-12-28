@@ -7385,9 +7385,14 @@ const TeacherDashboard = () => {
 
               if (teacherDetailsPage === totalPages) {
                 return (
-                  <Button onClick={handleSaveTeacherProfile} className="bg-green-600 hover:bg-green-700 w-full">
-                    Save & Continue
-                  </Button>
+                  <div className="w-full flex gap-2">
+                    {totalPages > 1 && (
+                      <Button variant="outline" onClick={() => setTeacherDetailsPage(p => Math.max(1, p - 1))} className="w-1/3 border-slate-600 hover:bg-slate-800 text-white">Back</Button>
+                    )}
+                    <Button onClick={handleSaveTeacherProfile} className={`bg-green-600 hover:bg-green-700 ${totalPages > 1 ? 'w-2/3' : 'w-full'}`}>
+                      Save & Continue
+                    </Button>
+                  </div>
                 );
               }
               return (

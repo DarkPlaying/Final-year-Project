@@ -1933,7 +1933,7 @@ const AdminDashboard = () => {
         teacherEmail: 'admin@system.com',
         type: 'compulsory_update_request',
         targetRole: 'teacher', // Specific flag
-        requiredFields: Array.from(new Set(['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary', ...teacherDetailsConfig])),
+        requiredFields: ['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'],
         createdAt: serverTimestamp()
       });
 
@@ -1958,7 +1958,7 @@ const AdminDashboard = () => {
         teacherEmail: 'admin@system.com',
         type: 'compulsory_update_request',
         targetRole: 'teacher',
-        requiredFields: Array.from(new Set(['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary', ...teacherDetailsConfig])),
+        requiredFields: ['name', 'vta_no', 'personal_mobile', 'department', 'date_of_joining', 'date_of_birth', 'address', 'current_salary'],
         createdAt: serverTimestamp()
       });
 
