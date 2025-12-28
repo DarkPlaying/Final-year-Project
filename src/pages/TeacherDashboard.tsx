@@ -133,7 +133,8 @@ import {
   setDoc,
   getDoc,
   increment,
-  deleteField
+  deleteField,
+  arrayUnion
 } from 'firebase/firestore';
 import { database } from '@/lib/firebase';
 import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update, remove } from 'firebase/database';
@@ -1838,8 +1839,8 @@ const TeacherDashboard = () => {
 
     setIsBiometricProcessing(true);
 
-    // Helper: Register Biometric
-    const registerBiometric = async () => {
+    // Helper: Register/Add Biometric
+    const registerBiometric = async (isNew: boolean = false) => {
       try {
         const challenge = new Uint8Array(32);
         window.crypto.getRandomValues(challenge);
@@ -1870,10 +1871,23 @@ const TeacherDashboard = () => {
 
         if (credential) {
           const rawId = bufferToStr(credential.rawId);
-          await updateDoc(doc(db, 'users', userId), {
-            biometricCredId: rawId
-          });
-          toast.success("Fingerprint registered successfully!");
+          // Standardize on using the array 'biometricCredIds'
+          // If it's the very first time, we can still set the legacy field for backward compat, but key is the array.
+
+          if (isNew) {
+            // Append to list
+            await updateDoc(doc(db, 'users', userId), {
+              biometricCredIds: arrayUnion(rawId)
+            });
+            toast.success("New device fingerprint added!");
+          } else {
+            // First time registration
+            await updateDoc(doc(db, 'users', userId), {
+              biometricCredId: rawId, // Legacy support
+              biometricCredIds: arrayUnion(rawId)
+            });
+            toast.success("Fingerprint registered successfully!");
+          }
           setShowSelfAttendanceDialog(true);
         }
       } catch (regError: any) {
@@ -1883,32 +1897,40 @@ const TeacherDashboard = () => {
     };
 
     try {
-      // 1. Fetch User's Biometric ID
+      // 1. Fetch User's Biometric IDs
       const userDoc = await getDoc(doc(db, 'users', userId));
       const userData = userDoc.data();
-      const storedCredId = userData?.biometricCredId;
 
-      if (!storedCredId) {
+      const legacyId = userData?.biometricCredId;
+      const idList: string[] = userData?.biometricCredIds || [];
+
+      const allCredIds = new Set<string>();
+      if (legacyId) allCredIds.add(legacyId);
+      idList.forEach(id => allCredIds.add(id));
+
+      if (allCredIds.size === 0) {
         // First Time: Register
         if (!confirm("No fingerprint found. Do you want to add a fingerprint now?")) {
           setIsBiometricProcessing(false);
           return;
         }
-        await registerBiometric();
+        await registerBiometric(false);
       } else {
-        // Verify Flow
+        // Verify Flow - Allow ANY registered credential
         const challenge = new Uint8Array(32);
         window.crypto.getRandomValues(challenge);
+
+        const allowedCredentials = Array.from(allCredIds).map(id => ({
+          id: base64ToBuffer(id),
+          type: 'public-key' as const,
+          transports: ['internal'] as AuthenticatorTransport[]
+        }));
 
         const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
           challenge,
           timeout: 60000,
           rpId: window.location.hostname,
-          allowCredentials: [{
-            id: base64ToBuffer(storedCredId),
-            type: 'public-key',
-            transports: ['internal']
-          }],
+          allowCredentials: allowedCredentials,
           userVerification: "required",
         };
 
@@ -1922,11 +1944,12 @@ const TeacherDashboard = () => {
           }
         } catch (e) {
           console.error("Verification failed:", e);
-          // 2. Handle New Device Scenario
-          if (confirm("Fingerprint not recognized on this device. Do you want to register this device strictly for attendance?")) {
-            await registerBiometric();
+          // 2. Handle New Device Scenario - PROMPT TO ADD
+          // Previously we reset/overwrote. Now we ADD.
+          if (confirm("Fingerprint not recognized on this device. Do you want to ADD this device to your trusted list? (Requires Fingerprint)")) {
+            await registerBiometric(true);
           } else {
-            toast.error("Authentication failed");
+            toast.error("Authentication failed. Please use a registered device.");
           }
         }
       }

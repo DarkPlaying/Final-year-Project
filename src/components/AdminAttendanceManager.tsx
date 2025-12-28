@@ -202,7 +202,8 @@ export const AdminAttendanceManager = () => {
         if (!confirm(`Are you sure you want to reset fingerprint for ${name}?`)) return;
         try {
             await setDoc(doc(db, 'users', teacherId), {
-                biometricCredId: deleteField()
+                biometricCredId: deleteField(),
+                biometricCredIds: deleteField()
             }, { merge: true });
             toast.success(`Fingerprint reset for ${name}`);
         } catch (error) {
@@ -232,7 +233,10 @@ export const AdminAttendanceManager = () => {
             targets.forEach(t => {
                 const ref = doc(db, 'users', t.id);
                 // updating with deleteField inside a set({merge:true}) or update()
-                batch.update(ref, { biometricCredId: deleteField() });
+                batch.update(ref, {
+                    biometricCredId: deleteField(),
+                    biometricCredIds: deleteField()
+                });
             });
             await batch.commit();
             toast.success("All selected fingerprints reset successfully");
