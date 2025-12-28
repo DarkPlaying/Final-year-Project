@@ -13,8 +13,8 @@ import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 
 // Initialize PDF.js worker
-// We use a CDN to avoid complex build configuration for the worker file
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Using unpkg as it more reliably serves the .mjs worker for modern pdfjs-dist versions
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 export const AITestGenerator = () => {
   const [file, setFile] = useState<File | null>(null);
