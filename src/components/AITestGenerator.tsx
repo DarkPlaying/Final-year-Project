@@ -24,7 +24,10 @@ export const AITestGenerator = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [apiKey, setApiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || '');
   const [difficulty, setDifficulty] = useState('Medium');
-  const [questionCount, setQuestionCount] = useState('10');
+  const [numTwo, setNumTwo] = useState('10');
+  const [numFive, setNumFive] = useState('5');
+  const [numTen, setNumTen] = useState('2');
+  const [teacherComment, setTeacherComment] = useState('');
   const [questionType, setQuestionType] = useState('Mixed'); // Mixed, MCQ, Theory
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -102,25 +105,58 @@ export const AITestGenerator = () => {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
+      // Use gemini-1.5-flash as it is the most stable for this task
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
+      const variationSeed = Math.floor(Math.random() * 1000000);
+
+      let requirementText = "";
+      if (teacherComment.trim()) {
+        requirementText = `Follow these teacher instructions when deciding the number of questions, marks and style:\n${teacherComment.trim()}\n`;
+      } else {
+        requirementText = `
+Generate exactly:
+- ${numTwo} questions of 2 marks
+- ${numFive} questions of 5 marks
+- ${numTen} questions of 10 marks
+        `;
+      }
+
       const prompt = `
-        Act as an expert teacher. Create a question paper based on the following text content.
-        
-        Configuration:
-        - Difficulty: ${difficulty}
-        - Number of Questions: Approximate ${questionCount} marks worth or count.
-        - Question Type: ${questionType} (If Mixed, include MCQs, Short Answers, and Long Answers).
-        
-        Format the output clearly with:
-        - Title (Test Name)
-        - Instructions
-        - Sections (e.g., Section A: MCQ, Section B: Short Answer)
-        - Marking Scheme (indicate marks for each question)
-        
-        Content to base questions on:
-        "${extractedText.substring(0, 30000)}" 
-        (Note: Content truncated to fit limits if too long)
+        You are an expert university question paper setter.
+        You must create different sets of questions each time you are called,
+        avoiding reusing previous questions as much as possible.
+
+        Study material:
+        --- Document Content Start ---
+        ${extractedText.substring(0, 15000)}
+        --- Document Content End ---
+
+        Requirements:
+        ${requirementText}
+
+        Additional rules:
+        - Difficulty Level: ${difficulty}
+        - Do NOT repeat questions or wording from any previous paper you might have created.
+        - Vary phrasing, ordering and subtopics so each paper feels different.
+        - Use clear, exam-style questions only.
+
+        Random variation id: ${variationSeed}
+
+        Format the output clearly exactly like this:
+        📘 **Question Paper**
+        ---
+        **Section A (2 Marks Questions)**
+        1. ...
+        2. ...
+
+        **Section B (5 Marks Questions)**
+        1. ...
+        2. ...
+
+        **Section C (10 Marks Questions)**
+        1. ...
+        2. ...
       `;
 
       const result = await model.generateContent(prompt);
@@ -241,45 +277,68 @@ export const AITestGenerator = () => {
               <CardTitle>2. Configuration</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Difficulty Level</Label>
-                <Select value={difficulty} onValueChange={setDifficulty}>
-                  <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Easy">Easy</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="Hard">Hard</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label>Difficulty Level</Label>
+                  <Select value={difficulty} onValueChange={setDifficulty}>
+                    <SelectTrigger className="bg-slate-900 border-slate-700 h-9 transition-all hover:bg-slate-800"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Easy">Easy</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="Hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>2-Mark Questions</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="20"
+                    value={numTwo}
+                    onChange={e => setNumTwo(e.target.value)}
+                    className="bg-slate-900 border-slate-700 h-9"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>5-Mark Questions</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="10"
+                    value={numFive}
+                    onChange={e => setNumFive(e.target.value)}
+                    className="bg-slate-900 border-slate-700 h-9"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>10-Mark Questions</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="5"
+                    value={numTen}
+                    onChange={e => setNumTen(e.target.value)}
+                    className="bg-slate-900 border-slate-700 h-9"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Question Type</Label>
-                <Select value={questionType} onValueChange={setQuestionType}>
-                  <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Mixed">Mixed (MCQ + Theory)</SelectItem>
-                    <SelectItem value="MCQ Only">Multiple Choice Only</SelectItem>
-                    <SelectItem value="Theory Only">Theory / Descriptive Only</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Number of Questions / Marks</Label>
-                <Select value={questionCount} onValueChange={setQuestionCount}>
-                  <SelectTrigger className="bg-slate-900 border-slate-700"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">Short (10 Marks / ~5 Qs)</SelectItem>
-                    <SelectItem value="25">Medium (25 Marks / ~10 Qs)</SelectItem>
-                    <SelectItem value="50">Long (50 Marks)</SelectItem>
-                    <SelectItem value="100">Full Paper (100 Marks)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Extra Instructions (Optional)</Label>
+                <Textarea
+                  placeholder="e.g. Include one question about DBMS..."
+                  value={teacherComment}
+                  onChange={e => setTeacherComment(e.target.value)}
+                  className="bg-slate-900 border-slate-700 min-h-[80px] text-sm"
+                />
               </div>
 
               <Button
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
                 disabled={!file || !extractedText || isGenerating}
                 onClick={handleGenerate}
               >
