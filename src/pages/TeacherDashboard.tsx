@@ -2011,7 +2011,13 @@ const TeacherDashboard = () => {
     } catch (error: any) {
       if (error.name === 'AbortError') return;
       console.error("Biometric error:", error);
-      toast.error("Biometric operation failed: " + error.message);
+
+      let friendlyMessage = error.message;
+      if (error.code === 'permission-denied' || (typeof error.message === 'string' && error.message.includes('permission'))) {
+        friendlyMessage = "Security Rule Violation: Teachers must have 'read' access to 'users' collection for identity verification.";
+      }
+
+      toast.error("Biometric operation failed: " + friendlyMessage);
       setIsBiometricProcessing(false);
       setShowBiometricOverlay(false);
     } finally {
