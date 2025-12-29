@@ -57,6 +57,8 @@ import {
   Square,
   ScanFace,
   Smartphone,
+  Fingerprint,
+  ShieldCheck,
   Loader2
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
