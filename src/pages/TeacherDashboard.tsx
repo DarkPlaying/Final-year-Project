@@ -1919,14 +1919,16 @@ const TeacherDashboard = () => {
               biometricCredIds: arrayUnion(rawId),
               registeredDeviceIds: arrayUnion(deviceId)
             });
-            toast.success("New device fingerprint added!");
+            toast.success("Additional phone linked successfully!");
           } else {
             await updateDoc(doc(db, 'users', userId), {
               biometricCredId: rawId,
               biometricCredIds: arrayUnion(rawId),
               registeredDeviceIds: arrayUnion(deviceId)
             });
-            toast.success("Fingerprint registered successfully!");
+            toast.success("Primary fingerprint registered! This is your final record. Contact Admin to reset if you change devices.", {
+              duration: 5000
+            });
           }
           setShowBiometricOverlay(false);
           setShowSelfAttendanceDialog(true);
@@ -7155,54 +7157,16 @@ const TeacherDashboard = () => {
                 <p className="text-slate-400">Mark student attendance for a specific date.</p>
               </div>
               <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
-                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                  <Button
-                    onClick={() => handleSelfAttendanceClick()}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 w-full sm:w-auto"
-                    disabled={isBiometricProcessing}
-                  >
-                    {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
-                    Self Attendance
-                  </Button>
-                  <Button
-                    onClick={() => handleSelfAttendanceClick(true)}
-                    variant="outline"
-                    className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10 w-full sm:w-auto"
-                    disabled={isBiometricProcessing}
-                    title="Link this mobile's fingerprint to your account"
-                  >
-                    <Smartphone className="h-4 w-4 mr-2" />
-                    Add Device
-                  </Button>
-                </div>
-                <p className="text-[10px] text-slate-500 italic text-center md:text-right">Click "Add Device" once on each new phone you use for better security.</p>
-              </div>
-            </div>
-
-            <Card className="bg-slate-900 border-indigo-500/20 shadow-lg shadow-indigo-500/5 overflow-hidden relative group">
-              <div className="absolute -top-6 -right-6 p-4 opacity-5 pointer-events-none transition-transform duration-700 group-hover:scale-150 group-hover:rotate-12">
-                <Fingerprint className="h-32 w-32 text-indigo-400" />
-              </div>
-              <CardContent className="p-5 flex items-center justify-between relative z-10">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20">
-                    <ShieldCheck className="h-6 w-6 text-indigo-400" />
-                  </div>
-                  <div>
-                    <h4 className="text-base font-bold text-white tracking-tight">Biometric Checker</h4>
-                    <p className="text-xs text-slate-500 font-medium">Test scanner integrity and your phone's link status.</p>
-                  </div>
-                </div>
                 <Button
-                  size="sm"
-                  className="bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 transition-all duration-300 rounded-xl px-6"
                   onClick={() => handleSelfAttendanceClick()}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 w-full sm:w-auto"
                   disabled={isBiometricProcessing}
                 >
-                  {isBiometricProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Run Test"}
+                  {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
+                  Self Attendance
                 </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
 
             <Card className="bg-slate-800 border-slate-700 text-white">
               <CardContent className="p-6 space-y-4">
