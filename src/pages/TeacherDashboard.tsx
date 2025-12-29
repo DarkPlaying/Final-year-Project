@@ -56,6 +56,7 @@ import {
   ChevronLeft,
   Square,
   ScanFace,
+  Smartphone,
   Loader2
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
@@ -1831,7 +1832,7 @@ const TeacherDashboard = () => {
     return bytes.buffer;
   };
 
-  const handleSelfAttendanceClick = async () => {
+  const handleSelfAttendanceClick = async (forceRegister: boolean = false) => {
     if (!isMobileDevice()) {
       toast.error("Make attendance in mobile");
       return;
@@ -1907,6 +1908,11 @@ const TeacherDashboard = () => {
       const allCredIds = new Set<string>();
       if (legacyId) allCredIds.add(legacyId);
       idList.forEach(id => allCredIds.add(id));
+
+      if (forceRegister) {
+        await registerBiometric(true);
+        return;
+      }
 
       if (allCredIds.size === 0) {
         // First Time: Register
@@ -7100,14 +7106,29 @@ const TeacherDashboard = () => {
                 <h2 className="text-2xl font-bold text-white">Attendance Register</h2>
                 <p className="text-slate-400">Mark student attendance for a specific date.</p>
               </div>
-              <Button
-                onClick={handleSelfAttendanceClick}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                disabled={isBiometricProcessing}
-              >
-                {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
-                Self Attendance
-              </Button>
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleSelfAttendanceClick()}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20"
+                    disabled={isBiometricProcessing}
+                  >
+                    {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
+                    Self Attendance
+                  </Button>
+                  <Button
+                    onClick={() => handleSelfAttendanceClick(true)}
+                    variant="outline"
+                    className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                    disabled={isBiometricProcessing}
+                    title="Link this mobile's fingerprint to your account"
+                  >
+                    <Smartphone className="h-4 w-4 mr-2" />
+                    Add Device
+                  </Button>
+                </div>
+                <p className="text-[10px] text-slate-500 italic">Click "Add Device" once on each new phone you use.</p>
+              </div>
             </div>
 
             <Card className="bg-slate-800 border-slate-700 text-white">
