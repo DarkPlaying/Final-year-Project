@@ -140,6 +140,7 @@ import {
 import { database } from '@/lib/firebase';
 import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update, remove } from 'firebase/database';
 import { AITestGenerator } from '@/components/AITestGenerator';
+import { BiometricScanner } from '@/components/BiometricScanner';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ImageCropper } from '@/components/ui/image-crop';
 import { storage } from '@/lib/firebase';
@@ -408,6 +409,8 @@ const TeacherDashboard = () => {
   // Self Attendance State
   const [showSelfAttendanceDialog, setShowSelfAttendanceDialog] = useState(false);
   const [showBiometricPasswordDialog, setShowBiometricPasswordDialog] = useState(false);
+  const [showBiometricOverlay, setShowBiometricOverlay] = useState(false);
+  const [biometricOverlayMode, setBiometricOverlayMode] = useState<'verify' | 'register'>('verify');
   const [biometricAuthPassword, setBiometricAuthPassword] = useState('');
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const [forceRegisterPending, setForceRegisterPending] = useState(false);
@@ -1870,6 +1873,8 @@ const TeacherDashboard = () => {
       return;
     }
 
+    setBiometricOverlayMode(forceRegister ? 'register' : 'verify');
+    setShowBiometricOverlay(true);
     setIsBiometricProcessing(true);
 
     const validateSecurity = async (): Promise<boolean> => {
@@ -1917,6 +1922,7 @@ const TeacherDashboard = () => {
 
     if (!(await validateSecurity())) {
       setIsBiometricProcessing(false);
+      setShowBiometricOverlay(false);
       return;
     }
 
@@ -1955,26 +1961,28 @@ const TeacherDashboard = () => {
           const deviceId = getDeviceIdentity();
 
           if (isNew) {
-            // Append to list
             await updateDoc(doc(db, 'users', userId), {
               biometricCredIds: arrayUnion(rawId),
               registeredDeviceIds: arrayUnion(deviceId)
             });
             toast.success("New device fingerprint added!");
           } else {
-            // First time registration
             await updateDoc(doc(db, 'users', userId), {
-              biometricCredId: rawId, // Legacy support
+              biometricCredId: rawId,
               biometricCredIds: arrayUnion(rawId),
               registeredDeviceIds: arrayUnion(deviceId)
             });
             toast.success("Fingerprint registered successfully!");
           }
+          setShowBiometricOverlay(false);
           setShowSelfAttendanceDialog(true);
         }
       } catch (regError: any) {
         console.error("Registration failed:", regError);
         toast.error("Failed to register: " + regError.message);
+        setShowBiometricOverlay(false);
+      } finally {
+        setIsBiometricProcessing(false);
       }
     };
 
@@ -2029,13 +2037,18 @@ const TeacherDashboard = () => {
           });
 
           if (assertion) {
+            setShowBiometricOverlay(false);
             setShowSelfAttendanceDialog(true);
           }
         } catch (e) {
           console.error("Verification failed:", e);
+          setShowBiometricOverlay(false);
           // 2. Handle New Device Scenario - PROMPT TO ADD
-          // Previously we reset/overwrote. Now we ADD.
           if (confirm("Fingerprint not recognized on this device. Do you want to ADD this device to your trusted list? (Requires Fingerprint)")) {
+            // Re-open overlay for registration
+            setBiometricOverlayMode('register');
+            setShowBiometricOverlay(true);
+            setIsBiometricProcessing(true);
             await registerBiometric(true);
           } else {
             toast.error("Authentication failed. Please use a registered device.");
@@ -7307,6 +7320,31 @@ const TeacherDashboard = () => {
               </div>
             </div>
 
+            <Card className="bg-slate-900 border-indigo-500/20 shadow-lg shadow-indigo-500/5 overflow-hidden relative group">
+              <div className="absolute -top-6 -right-6 p-4 opacity-5 pointer-events-none transition-transform duration-700 group-hover:scale-150 group-hover:rotate-12">
+                <Fingerprint className="h-32 w-32 text-indigo-400" />
+              </div>
+              <CardContent className="p-5 flex items-center justify-between relative z-10">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20">
+                    <ShieldCheck className="h-6 w-6 text-indigo-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-white tracking-tight">Biometric Checker</h4>
+                    <p className="text-xs text-slate-500 font-medium">Test scanner integrity and your phone's link status.</p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  className="bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/30 transition-all duration-300 rounded-xl px-6"
+                  onClick={() => handleSelfAttendanceClick()}
+                  disabled={isBiometricProcessing}
+                >
+                  {isBiometricProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Run Test"}
+                </Button>
+              </CardContent>
+            </Card>
+
             <Card className="bg-slate-800 border-slate-700 text-white">
               <CardContent className="p-6 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -7934,6 +7972,22 @@ const TeacherDashboard = () => {
               Verify & Continue
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showBiometricOverlay} onOpenChange={(open) => !isBiometricProcessing && setShowBiometricOverlay(open)}>
+        <DialogContent className="bg-slate-900/90 border-slate-700 p-0 overflow-hidden max-w-sm backdrop-blur-2xl">
+          <BiometricScanner
+            mode={biometricOverlayMode}
+            isProcessing={isBiometricProcessing}
+            userName={teacherProfileForm?.name || "Teacher"}
+            onCancel={() => {
+              setShowBiometricOverlay(false);
+              setIsBiometricProcessing(false);
+            }}
+            onComplete={() => {
+              // This is a dummy trigger, actual logic is linked via isBiometricProcessing hook inside component
+            }}
+          />
         </DialogContent>
       </Dialog>
     </DashboardLayout >
