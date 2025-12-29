@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Fingerprint, CheckCircle2, XCircle, ShieldCheck, Smartphone, Loader2, MapPin } from 'lucide-react';
+import { Fingerprint, CheckCircle2, XCircle, ShieldCheck, Smartphone, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -110,9 +110,6 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
                 <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/80 rounded-full border border-slate-700 text-[10px] text-slate-300 backdrop-blur-md">
                     <Smartphone className="h-3 w-3 text-emerald-400" /> Device Locked
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800/80 rounded-full border border-slate-700 text-[10px] text-slate-300 backdrop-blur-md">
-                    <MapPin className="h-3 w-3 text-red-400" /> Geofenced
-                </div>
             </div>
 
             {/* Progress Bar (Visible during scan) */}
@@ -130,15 +127,14 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
             <div className="flex gap-4 w-full pt-4">
                 <Button
                     variant="ghost"
-                    className="flex-1 text-slate-400 hover:text-white hover:bg-slate-800"
+                    className="flex-1 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
                     onClick={onCancel}
-                    disabled={isProcessing}
                 >
                     Cancel
                 </Button>
                 {status === 'error' && (
                     <Button
-                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/20"
                         onClick={() => setStatus('idle')}
                     >
                         Retry

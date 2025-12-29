@@ -396,7 +396,8 @@ const TeacherDashboard = () => {
   const [selfAttendanceDate, setSelfAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [selfAttendanceStatus, setSelfAttendanceStatus] = useState<'P' | 'A' | 'HL'>('P');
   const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
-
+  const [hasFingerprint, setHasFingerprint] = useState(false);
+  const biometricAbortRef = useRef<AbortController | null>(null);
 
   // Load Config from LocalStorage
   useEffect(() => {
@@ -522,6 +523,7 @@ const TeacherDashboard = () => {
           toast.error('You have been logged out because your account was logged in from another device.');
           handleLogout();
         }
+        setHasFingerprint(!!(data.biometricCredId || (data.biometricCredIds && data.biometricCredIds.length > 0)));
       }
     });
 
@@ -1846,6 +1848,15 @@ const TeacherDashboard = () => {
     return bytes.buffer;
   };
 
+  const cancelBiometric = () => {
+    if (biometricAbortRef.current) {
+      biometricAbortRef.current.abort();
+    }
+    setIsBiometricProcessing(false);
+    setShowBiometricOverlay(false);
+    biometricAbortRef.current = null;
+  };
+
   const handleSelfAttendanceClick = async (forceRegister: boolean = false) => {
     if (!isMobileDevice()) {
       toast.error("Make attendance in mobile");
@@ -1856,29 +1867,9 @@ const TeacherDashboard = () => {
     setShowBiometricOverlay(true);
     setIsBiometricProcessing(true);
 
-    const validateSecurity = async (): Promise<boolean> => {
-      // Device Identity Check (One Device per Teacher)
-      const deviceId = getDeviceIdentity();
-      const usersRef = collection(db, 'users');
-      // Check if this device ID is already registered to ANOTHER teacher
-      const q = query(usersRef, where('registeredDeviceIds', 'array-contains', deviceId));
-      const querySnap = await getDocs(q);
-
-      const otherTeachers = querySnap.docs.filter(d => d.id !== userId);
-      if (otherTeachers.length > 0) {
-        const ownerName = otherTeachers[0].data().name || "another staff member";
-        toast.error(`Security Alert: This device is already linked to ${ownerName}. Shared devices are not allowed for staff attendance.`);
-        return false;
-      }
-
-      return true;
-    };
-
-    if (!(await validateSecurity())) {
-      setIsBiometricProcessing(false);
-      setShowBiometricOverlay(false);
-      return;
-    }
+    // Initialize AbortController to allow user to cancel
+    biometricAbortRef.current = new AbortController();
+    const signal = biometricAbortRef.current.signal;
 
     // Helper: Register/Add Biometric
     const registerBiometric = async (isNew: boolean = false) => {
@@ -1888,26 +1879,21 @@ const TeacherDashboard = () => {
 
         const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
           challenge,
-          rp: {
-            name: "Edu Online",
-            id: window.location.hostname,
-          },
+          rp: { name: "Edu Online", id: window.location.hostname },
           user: {
             id: strToBuffer(userId),
             name: userEmail || "user",
             displayName: teacherProfileForm?.name || userEmail || "User",
           },
           pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
-          authenticatorSelection: {
-            authenticatorAttachment: "platform",
-            userVerification: "required",
-          },
+          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
           timeout: 60000,
           attestation: "none"
         };
 
         const credential = await navigator.credentials.create({
-          publicKey: publicKeyCredentialCreationOptions
+          publicKey: publicKeyCredentialCreationOptions,
+          signal
         }) as PublicKeyCredential;
 
         if (credential) {
@@ -1934,6 +1920,7 @@ const TeacherDashboard = () => {
           setShowSelfAttendanceDialog(true);
         }
       } catch (regError: any) {
+        if (regError.name === 'AbortError') return;
         console.error("Registration failed:", regError);
         toast.error("Failed to register: " + regError.message);
         setShowBiometricOverlay(false);
@@ -1943,10 +1930,26 @@ const TeacherDashboard = () => {
     };
 
     try {
-      // 1. Fetch User's Biometric IDs
+      // 1. Device Identity Check (One Device per Teacher)
+      const deviceId = getDeviceIdentity();
+      const usersRef = collection(db, 'users');
+      // Check if this device ID is already registered to ANOTHER teacher
+      const q = query(usersRef, where('registeredDeviceIds', 'array-contains', deviceId));
+      const querySnap = await getDocs(q);
+
+      const otherTeachers = querySnap.docs.filter(d => d.id !== userId);
+      if (otherTeachers.length > 0) {
+        const ownerName = otherTeachers[0].data().name || "another staff member";
+        toast.error(`Security Alert: This device is already linked to ${ownerName}. Shared devices are not allowed for staff attendance.`);
+        setIsBiometricProcessing(false);
+        setShowBiometricOverlay(false);
+        biometricAbortRef.current = null;
+        return;
+      }
+
+      // 2. Fetch User's Biometric IDs
       const userDoc = await getDoc(doc(db, 'users', userId));
       const userData = userDoc.data();
-
       const legacyId = userData?.biometricCredId;
       const idList: string[] = userData?.biometricCredIds || [];
 
@@ -1954,20 +1957,16 @@ const TeacherDashboard = () => {
       if (legacyId) allCredIds.add(legacyId);
       idList.forEach(id => allCredIds.add(id));
 
-      if (forceRegister) {
-        await registerBiometric(true);
-        return;
-      }
-
-      if (allCredIds.size === 0) {
-        // First Time: Register
-        if (!confirm("No fingerprint found. Do you want to add a fingerprint now?")) {
+      if (forceRegister || allCredIds.size === 0) {
+        if (allCredIds.size === 0 && !confirm("No fingerprint found. Do you want to add a fingerprint now?")) {
           setIsBiometricProcessing(false);
+          setShowBiometricOverlay(false);
+          biometricAbortRef.current = null;
           return;
         }
-        await registerBiometric(false);
+        await registerBiometric(forceRegister);
       } else {
-        // Verify Flow - Allow ANY registered credential
+        // Verify Flow
         const challenge = new Uint8Array(32);
         window.crypto.getRandomValues(challenge);
 
@@ -1987,19 +1986,19 @@ const TeacherDashboard = () => {
 
         try {
           const assertion = await navigator.credentials.get({
-            publicKey: publicKeyCredentialRequestOptions
+            publicKey: publicKeyCredentialRequestOptions,
+            signal
           });
 
           if (assertion) {
             setShowBiometricOverlay(false);
             setShowSelfAttendanceDialog(true);
           }
-        } catch (e) {
+        } catch (e: any) {
+          if (e.name === 'AbortError') return;
           console.error("Verification failed:", e);
           setShowBiometricOverlay(false);
-          // 2. Handle New Device Scenario - PROMPT TO ADD
           if (confirm("Fingerprint not recognized on this device. Do you want to ADD this device to your trusted list? (Requires Fingerprint)")) {
-            // Re-open overlay for registration
             setBiometricOverlayMode('register');
             setShowBiometricOverlay(true);
             setIsBiometricProcessing(true);
@@ -2010,10 +2009,14 @@ const TeacherDashboard = () => {
         }
       }
     } catch (error: any) {
+      if (error.name === 'AbortError') return;
       console.error("Biometric error:", error);
-      toast.error("Biometric authentication failed: " + error.message);
+      toast.error("Biometric operation failed: " + error.message);
+      setIsBiometricProcessing(false);
+      setShowBiometricOverlay(false);
     } finally {
       setIsBiometricProcessing(false);
+      biometricAbortRef.current = null;
     }
   };
 
@@ -7157,14 +7160,25 @@ const TeacherDashboard = () => {
                 <p className="text-slate-400">Mark student attendance for a specific date.</p>
               </div>
               <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
-                <Button
-                  onClick={() => handleSelfAttendanceClick()}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 w-full sm:w-auto"
-                  disabled={isBiometricProcessing}
-                >
-                  {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
-                  Self Attendance
-                </Button>
+                {!hasFingerprint ? (
+                  <Button
+                    onClick={() => handleSelfAttendanceClick()}
+                    className="bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-900/20 w-full sm:w-auto animate-pulse"
+                    disabled={isBiometricProcessing}
+                  >
+                    {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Fingerprint className="h-4 w-4 mr-2" />}
+                    Register Biometric
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => handleSelfAttendanceClick()}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 w-full sm:w-auto"
+                    disabled={isBiometricProcessing}
+                  >
+                    {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
+                    Self Attendance
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -7762,18 +7776,17 @@ const TeacherDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={showBiometricOverlay} onOpenChange={(open) => !isBiometricProcessing && setShowBiometricOverlay(open)}>
+      <Dialog open={showBiometricOverlay} onOpenChange={(open) => {
+        if (!open) cancelBiometric();
+      }}>
         <DialogContent className="bg-slate-900/90 border-slate-700 p-0 overflow-hidden max-w-sm backdrop-blur-2xl">
           <BiometricScanner
             mode={biometricOverlayMode}
             isProcessing={isBiometricProcessing}
             userName={teacherProfileForm?.name || "Teacher"}
-            onCancel={() => {
-              setShowBiometricOverlay(false);
-              setIsBiometricProcessing(false);
-            }}
+            onCancel={cancelBiometric}
             onComplete={() => {
-              // This is a dummy trigger, actual logic is linked via isBiometricProcessing hook inside component
+              // Internal transitions handled by hooks
             }}
           />
         </DialogContent>
