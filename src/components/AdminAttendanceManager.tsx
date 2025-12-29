@@ -203,7 +203,8 @@ export const AdminAttendanceManager = () => {
         try {
             await setDoc(doc(db, 'users', teacherId), {
                 biometricCredId: deleteField(),
-                biometricCredIds: deleteField()
+                biometricCredIds: deleteField(),
+                registeredDeviceIds: deleteField()
             }, { merge: true });
             toast.success(`Fingerprint reset for ${name}`);
         } catch (error) {
@@ -235,7 +236,8 @@ export const AdminAttendanceManager = () => {
                 // updating with deleteField inside a set({merge:true}) or update()
                 batch.update(ref, {
                     biometricCredId: deleteField(),
-                    biometricCredIds: deleteField()
+                    biometricCredIds: deleteField(),
+                    registeredDeviceIds: deleteField()
                 });
             });
             await batch.commit();

@@ -152,6 +152,34 @@ const SYLLABUS_DRIVE_FOLDER_ID = import.meta.env.VITE_DRIVE_FOLDER_ID; // Using 
 const PROFILE_PICTURE_DRIVE_FOLDER_ID = import.meta.env.VITE_TEACHER_PROFILE_FOLDER_ID;
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
+// Anti-Proxy Config
+const CAMPUS_COORDINATES = { lat: 13.0642, lng: 80.2458 }; // Default: Chennai/UNOM area - CHANGE AS NEEDED
+const ALLOWED_RADIUS_METERS = 200; // Allow 200m radius
+
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // in metres
+};
+
+const getDeviceIdentity = () => {
+  let id = localStorage.getItem('edu_device_identity');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('edu_device_identity', id);
+  }
+  return id;
+};
+
 const safeDate = (date: any): Date => {
   if (!date) return new Date(0);
   if (date.toDate) return date.toDate(); // Firestore Timestamp
@@ -379,6 +407,10 @@ const TeacherDashboard = () => {
 
   // Self Attendance State
   const [showSelfAttendanceDialog, setShowSelfAttendanceDialog] = useState(false);
+  const [showBiometricPasswordDialog, setShowBiometricPasswordDialog] = useState(false);
+  const [biometricAuthPassword, setBiometricAuthPassword] = useState('');
+  const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
+  const [forceRegisterPending, setForceRegisterPending] = useState(false);
   const [selfAttendanceDate, setSelfAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [selfAttendanceStatus, setSelfAttendanceStatus] = useState<'P' | 'A' | 'HL'>('P');
   const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
@@ -1840,6 +1872,54 @@ const TeacherDashboard = () => {
 
     setIsBiometricProcessing(true);
 
+    const validateSecurity = async (): Promise<boolean> => {
+      // 1. Geolocation Check
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000
+          });
+        });
+
+        const distance = calculateDistance(
+          position.coords.latitude,
+          position.coords.longitude,
+          CAMPUS_COORDINATES.lat,
+          CAMPUS_COORDINATES.lng
+        );
+
+        if (distance > ALLOWED_RADIUS_METERS) {
+          toast.error(`Location Error: You are ${Math.round(distance)}m away from campus. Please mark attendance while inside the building.`);
+          return false;
+        }
+      } catch (err) {
+        toast.error("Geolocation failed. Please enable GPS and allow location access.");
+        return false;
+      }
+
+      // 2. Device Identity Check (One Device per Teacher)
+      const deviceId = getDeviceIdentity();
+      const usersRef = collection(db, 'users');
+      // Check if this device ID is already registered to ANOTHER teacher
+      const q = query(usersRef, where('registeredDeviceIds', 'array-contains', deviceId));
+      const querySnap = await getDocs(q);
+
+      const otherTeachers = querySnap.docs.filter(d => d.id !== userId);
+      if (otherTeachers.length > 0) {
+        const ownerName = otherTeachers[0].data().name || "another staff member";
+        toast.error(`Security Alert: This device is already linked to ${ownerName}. Shared devices are not allowed for staff attendance.`);
+        return false;
+      }
+
+      return true;
+    };
+
+    if (!(await validateSecurity())) {
+      setIsBiometricProcessing(false);
+      return;
+    }
+
     // Helper: Register/Add Biometric
     const registerBiometric = async (isNew: boolean = false) => {
       try {
@@ -1872,20 +1952,21 @@ const TeacherDashboard = () => {
 
         if (credential) {
           const rawId = bufferToStr(credential.rawId);
-          // Standardize on using the array 'biometricCredIds'
-          // If it's the very first time, we can still set the legacy field for backward compat, but key is the array.
+          const deviceId = getDeviceIdentity();
 
           if (isNew) {
             // Append to list
             await updateDoc(doc(db, 'users', userId), {
-              biometricCredIds: arrayUnion(rawId)
+              biometricCredIds: arrayUnion(rawId),
+              registeredDeviceIds: arrayUnion(deviceId)
             });
             toast.success("New device fingerprint added!");
           } else {
             // First time registration
             await updateDoc(doc(db, 'users', userId), {
               biometricCredId: rawId, // Legacy support
-              biometricCredIds: arrayUnion(rawId)
+              biometricCredIds: arrayUnion(rawId),
+              registeredDeviceIds: arrayUnion(deviceId)
             });
             toast.success("Fingerprint registered successfully!");
           }
@@ -1910,7 +1991,9 @@ const TeacherDashboard = () => {
       idList.forEach(id => allCredIds.add(id));
 
       if (forceRegister) {
-        await registerBiometric(true);
+        setShowBiometricPasswordDialog(true);
+        setForceRegisterPending(true);
+        setIsBiometricProcessing(false);
         return;
       }
 
@@ -1964,6 +2047,99 @@ const TeacherDashboard = () => {
       toast.error("Biometric authentication failed: " + error.message);
     } finally {
       setIsBiometricProcessing(false);
+    }
+  };
+
+  const handleVerifyPasswordForBiometric = async () => {
+    if (!biometricAuthPassword) {
+      toast.error("Please enter your password");
+      return;
+    }
+
+    setIsVerifyingPassword(true);
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const userData = userDoc.data();
+      const storedPassword = userData?.password || '';
+
+      let isValid = false;
+      if (storedPassword.startsWith('$2')) {
+        isValid = await verifyPassword(biometricAuthPassword, storedPassword);
+      } else {
+        isValid = biometricAuthPassword === storedPassword;
+      }
+
+      if (isValid) {
+        setShowBiometricPasswordDialog(false);
+        setBiometricAuthPassword('');
+        setIsBiometricProcessing(true);
+        // Helper: Register/Add Biometric
+        const registerBiometric = async (isNew: boolean = false) => {
+          try {
+            const challenge = new Uint8Array(32);
+            window.crypto.getRandomValues(challenge);
+
+            const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
+              challenge,
+              rp: {
+                name: "Edu Online",
+                id: window.location.hostname,
+              },
+              user: {
+                id: strToBuffer(userId),
+                name: userEmail || "user",
+                displayName: teacherProfileForm?.name || userEmail || "User",
+              },
+              pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
+              authenticatorSelection: {
+                authenticatorAttachment: "platform",
+                userVerification: "required",
+              },
+              timeout: 60000,
+              attestation: "none"
+            };
+
+            const credential = await navigator.credentials.create({
+              publicKey: publicKeyCredentialCreationOptions
+            }) as PublicKeyCredential;
+
+            if (credential) {
+              const rawId = bufferToStr(credential.rawId);
+              const deviceId = getDeviceIdentity();
+
+              if (isNew) {
+                await updateDoc(doc(db, 'users', userId), {
+                  biometricCredIds: arrayUnion(rawId),
+                  registeredDeviceIds: arrayUnion(deviceId)
+                });
+                toast.success("New device fingerprint added!");
+              } else {
+                await updateDoc(doc(db, 'users', userId), {
+                  biometricCredId: rawId,
+                  biometricCredIds: arrayUnion(rawId),
+                  registeredDeviceIds: arrayUnion(deviceId)
+                });
+                toast.success("Fingerprint registered successfully!");
+              }
+              setShowSelfAttendanceDialog(true);
+            }
+          } catch (regError: any) {
+            console.error("Registration failed:", regError);
+            toast.error("Failed to register: " + regError.message);
+          } finally {
+            setIsBiometricProcessing(false);
+          }
+        };
+
+        await registerBiometric(true);
+      } else {
+        toast.error("Incorrect password for security verification");
+      }
+    } catch (error) {
+      console.error("Verification error:", error);
+      toast.error("An error occurred during verification");
+    } finally {
+      setIsVerifyingPassword(false);
     }
   };
 
@@ -7101,16 +7277,16 @@ const TeacherDashboard = () => {
       {
         activeSection === 'attendance' && (
           <div className="space-y-6">
-            <div className="flex flex-row justify-between items-start">
+            <div className="flex flex-col md:flex-row justify-between items-start gap-4">
               <div className="flex flex-col gap-1">
                 <h2 className="text-2xl font-bold text-white">Attendance Register</h2>
                 <p className="text-slate-400">Mark student attendance for a specific date.</p>
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <div className="flex gap-2">
+              <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                   <Button
                     onClick={() => handleSelfAttendanceClick()}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 w-full sm:w-auto"
                     disabled={isBiometricProcessing}
                   >
                     {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
@@ -7119,7 +7295,7 @@ const TeacherDashboard = () => {
                   <Button
                     onClick={() => handleSelfAttendanceClick(true)}
                     variant="outline"
-                    className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                    className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10 w-full sm:w-auto"
                     disabled={isBiometricProcessing}
                     title="Link this mobile's fingerprint to your account"
                   >
@@ -7127,7 +7303,7 @@ const TeacherDashboard = () => {
                     Add Device
                   </Button>
                 </div>
-                <p className="text-[10px] text-slate-500 italic">Click "Add Device" once on each new phone you use.</p>
+                <p className="text-[10px] text-slate-500 italic text-center md:text-right">Click "Add Device" once on each new phone you use for better security.</p>
               </div>
             </div>
 
@@ -7722,6 +7898,41 @@ const TeacherDashboard = () => {
           </div>
           <DialogFooter>
             <Button onClick={submitSelfAttendance} className="bg-blue-600 hover:bg-blue-700 w-full">Mark Attendance</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showBiometricPasswordDialog} onOpenChange={setShowBiometricPasswordDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Security Verification</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Please enter your account password to authorize adding a new biometric device.
+              Only you should have access to this device.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Enter Password</Label>
+              <Input
+                type="password"
+                className="bg-slate-800 border-slate-700"
+                placeholder="Your account password"
+                value={biometricAuthPassword}
+                onChange={e => setBiometricAuthPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleVerifyPasswordForBiometric()}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowBiometricPasswordDialog(false)}>Cancel</Button>
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={handleVerifyPasswordForBiometric}
+              disabled={isVerifyingPassword}
+            >
+              {isVerifyingPassword ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
+              Verify & Continue
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
