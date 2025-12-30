@@ -369,7 +369,13 @@ const TeacherDashboard = () => {
   const tokenClient = useRef<any>(null);
 
   // Session & Security State
-  const [timeRemaining, setTimeRemaining] = useState<number>(8 * 60 * 60); // 8 hours in seconds
+  const [timeRemaining, setTimeRemaining] = useState<number>(() => {
+    const expiresAt = localStorage.getItem('loginExpiresAt');
+    if (expiresAt) {
+      return Math.max(0, Math.floor((parseInt(expiresAt) - Date.now()) / 1000));
+    }
+    return 8 * 60 * 60;
+  });
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
   const [maintenanceMode, setMaintenanceMode] = useState(false);
@@ -397,12 +403,13 @@ const TeacherDashboard = () => {
   const [selfAttendanceStatus, setSelfAttendanceStatus] = useState<'P' | 'A' | 'HL'>('P');
   const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
   const [hasFingerprint, setHasFingerprint] = useState(false);
+  const [userDataLoaded, setUserDataLoaded] = useState(false);
   const biometricAbortRef = useRef<AbortController | null>(null);
   const hasCheckedFingerprintOnLoad = useRef(false);
 
   // Auto-prompt biometric setup if missing
   useEffect(() => {
-    if (isAuthorized && !hasFingerprint && !hasCheckedFingerprintOnLoad.current && activeSection === 'overview') {
+    if (isAuthorized && userDataLoaded && !hasFingerprint && !hasCheckedFingerprintOnLoad.current && activeSection === 'overview') {
       hasCheckedFingerprintOnLoad.current = true;
       // Small delay to ensure UI is ready
       setTimeout(() => {
@@ -410,7 +417,7 @@ const TeacherDashboard = () => {
         handleSelfAttendanceClick(false);
       }, 1500);
     }
-  }, [isAuthorized, hasFingerprint, activeSection]);
+  }, [isAuthorized, userDataLoaded, hasFingerprint, activeSection]);
 
   // Load Config from LocalStorage
   useEffect(() => {
@@ -537,6 +544,7 @@ const TeacherDashboard = () => {
           handleLogout();
         }
         setHasFingerprint(!!(data.biometricCredId || (data.biometricCredIds && data.biometricCredIds.length > 0)));
+        setUserDataLoaded(true);
       }
     });
 
@@ -1899,7 +1907,11 @@ const TeacherDashboard = () => {
             displayName: teacherProfileForm?.name || userEmail || "User",
           },
           pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
-          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+            residentKey: "discouraged"
+          },
           timeout: 60000,
           attestation: "none"
         };
