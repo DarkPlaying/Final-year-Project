@@ -4,19 +4,22 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface FaceScannerProps {
-    onComplete: () => void;
+    mode: 'register' | 'verify';
+    onComplete: (faceData?: string) => void;
     onCancel: () => void;
     userName: string;
 }
 
 export const FaceScanner: React.FC<FaceScannerProps> = ({
+    mode,
     onComplete,
     onCancel,
     userName
 }) => {
     const [status, setStatus] = useState<'idle' | 'initializing' | 'scanning' | 'success' | 'error'>('initializing');
-    const [message, setMessage] = useState('Position your face in the frame');
+    const [message, setMessage] = useState(mode === 'register' ? 'Look into the camera for registration' : 'Position your face in the frame');
     const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
 
     useEffect(() => {
@@ -31,15 +34,28 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 }
                 setStatus('scanning');
 
-                // Simulate "AI" face verification
+                // Simulate "AI" face verification/registration
                 setTimeout(() => {
-                    setMessage('Verifying facial features...');
+                    setMessage(mode === 'register' ? 'Capturing facial features...' : 'Verifying facial features...');
+
                     setTimeout(() => {
-                        setStatus('success');
-                        setMessage('Face verified successfully');
-                        setTimeout(() => {
-                            onComplete();
-                        }, 1500);
+                        // Take a snapshot
+                        if (videoRef.current && canvasRef.current) {
+                            const canvas = canvasRef.current;
+                            const video = videoRef.current;
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            const ctx = canvas.getContext('2d');
+                            if (ctx) {
+                                ctx.drawImage(video, 0, 0);
+                                const faceData = canvas.toDataURL('image/jpeg', 0.5);
+                                setStatus('success');
+                                setMessage(mode === 'register' ? 'Face registered successfully' : 'Face verified successfully');
+                                setTimeout(() => {
+                                    onComplete(faceData);
+                                }, 1500);
+                            }
+                        }
                     }, 2500);
                 }, 2000);
 
@@ -57,7 +73,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 stream.getTracks().forEach(track => track.stop());
             }
         };
-    }, []);
+    }, [mode, onComplete, stream]);
 
     const stopCamera = () => {
         if (stream) {
@@ -75,6 +91,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
         <div className="flex flex-col items-center justify-center p-8 space-y-8 animate-in fade-in zoom-in duration-300">
             {/* Camera View */}
             <div className="relative group">
+                <canvas ref={canvasRef} className="hidden" />
                 {/* Glow Effect */}
                 <div className={cn(
                     "absolute -inset-4 rounded-full blur-2xl opacity-20 transition-all duration-500",
@@ -130,11 +147,11 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
             <div className="text-center space-y-2 max-w-xs">
                 <div className="flex flex-col items-center gap-2">
                     <div className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[10px] uppercase font-bold tracking-tighter flex items-center gap-1">
-                        <Scan className="h-3 w-3" /> Step 2: Facial ID
+                        <Scan className="h-3 w-3" /> Step 2: Facial ID ({mode === 'register' ? 'Reg' : 'Check'})
                     </div>
                     <h3 className="text-xl font-bold text-white tracking-tight">
-                        {status === 'scanning' ? 'Scanning Face...' :
-                            status === 'success' ? 'Face Verified' :
+                        {status === 'scanning' ? (mode === 'register' ? 'Registering Face...' : 'Scanning Face...') :
+                            status === 'success' ? (mode === 'register' ? 'Face Registered' : 'Face Verified') :
                                 status === 'error' ? 'Scan Failed' : 'Initializing Camera'}
                     </h3>
                 </div>

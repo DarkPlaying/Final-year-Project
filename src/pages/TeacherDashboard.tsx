@@ -1914,7 +1914,7 @@ const TeacherDashboard = () => {
           authenticatorSelection: {
             authenticatorAttachment: "platform",
             userVerification: "required",
-            residentKey: "preferred",
+            residentKey: "required",
             requireResidentKey: true
           },
           timeout: 60000,
@@ -1942,12 +1942,15 @@ const TeacherDashboard = () => {
               biometricCredIds: arrayUnion(rawId),
               registeredDeviceIds: arrayUnion(deviceId)
             });
-            toast.success("Primary fingerprint registered! This is your final record. Contact Admin to reset if you change devices.", {
+            toast.success("Passkey registered successfully!", {
               duration: 5000
             });
           }
           setShowBiometricOverlay(false);
-          setShowSelfAttendanceDialog(true);
+          // NEW: Prompt for Face Registration after Fingerprint
+          setTimeout(() => {
+            setShowFaceOverlay(true);
+          }, 500);
         }
       } catch (regError: any) {
         if (regError.name === 'AbortError') return;
@@ -7859,9 +7862,26 @@ const TeacherDashboard = () => {
       <Dialog open={showFaceOverlay} onOpenChange={setShowFaceOverlay}>
         <DialogContent className="bg-slate-900/90 border-slate-700 p-0 overflow-hidden max-w-sm backdrop-blur-2xl">
           <FaceScanner
+            mode={biometricOverlayMode === 'register' ? 'register' : 'verify'}
             userName={teacherProfileForm?.name || "Teacher"}
             onCancel={() => setShowFaceOverlay(false)}
-            onComplete={() => {
+            onComplete={async (faceData) => {
+              if (biometricOverlayMode === 'register' && faceData) {
+                // Save face reference to Firestore
+                await updateDoc(doc(db, 'users', userId), {
+                  registeredFace: faceData
+                });
+                toast.success("Face registered successfully!");
+              } else if (biometricOverlayMode === 'verify') {
+                // Basic check: Ensure user has a registered face
+                const userDoc = await getDoc(doc(db, 'users', userId));
+                if (!userDoc.data()?.registeredFace) {
+                  toast.error("No registered face found. Please re-register your biometrics.");
+                  setShowFaceOverlay(false);
+                  return;
+                }
+              }
+
               setShowFaceOverlay(false);
               setShowSelfAttendanceDialog(true);
             }}
