@@ -42,7 +42,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
             try {
                 // Ensure models are loaded from /models directory in public folder
                 await Promise.all([
-                    faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+                    faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
                     faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                     faceapi.nets.faceRecognitionNet.loadFromUri('/models')
                 ]);
@@ -73,19 +73,19 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 setStatus('scanning');
                 setMessage(mode === 'register' ? 'Look directly at the camera' : 'Position your face for verification');
 
-                // Start Detection Loop - Optimized for Mobile Performance
+                // Start Detection Loop - Using SSD for accuracy with controlled frequency for performance
                 let lastDetectionTime = 0;
                 const detect = async (time: number) => {
                     if (!videoRef.current || hasTriggered.current || !isMounted) return;
 
-                    // Only run detection every 300ms on mobile to prevent main thread lag
-                    if (time - lastDetectionTime > 300) {
+                    // Run detection every 600ms to prevent lag on mobile
+                    if (time - lastDetectionTime > 600) {
                         lastDetectionTime = time;
 
-                        // Use TinyFaceDetector for significantly better mobile performance
+                        // SSD is more accurate but heavier than Tiny
                         const detection = await faceapi.detectSingleFace(
                             videoRef.current,
-                            new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.5 })
+                            new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
                         )
                             .withFaceLandmarks()
                             .withFaceDescriptor();
@@ -94,21 +94,26 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                             if (mode === 'register') {
                                 handleSuccess(detection.descriptor);
                             } else if (expectedDescriptor) {
-                                const saved = JSON.parse(expectedDescriptor);
-                                const current = Array.from(detection.descriptor);
+                                try {
+                                    const saved = JSON.parse(expectedDescriptor);
+                                    const current = Array.from(detection.descriptor);
 
-                                let distance = 0;
-                                for (let i = 0; i < saved.length; i++) {
-                                    distance += Math.pow(saved[i] - current[i], 2);
-                                }
-                                distance = Math.sqrt(distance);
+                                    let distance = 0;
+                                    for (let i = 0; i < saved.length; i++) {
+                                        distance += Math.pow(saved[i] - current[i], 2);
+                                    }
+                                    distance = Math.sqrt(distance);
 
-                                // Relaxed threshold from 0.45 to 0.55 for better mobile reliability
-                                if (distance <= 0.55) {
-                                    handleVerification(detection.descriptor, true);
-                                } else {
-                                    setStatus('error');
-                                    setMessage(`Verification failed. Please look closer.`);
+                                    // Balanced threshold for mobile front cameras
+                                    if (distance <= 0.55) {
+                                        handleVerification(detection.descriptor, true);
+                                    } else {
+                                        setStatus('error');
+                                        setMessage(`Identity Mismatch. Please center your face.`);
+                                    }
+                                } catch (e) {
+                                    console.error("Comparison Error:", e);
+                                    handleVerification(detection.descriptor);
                                 }
                             } else {
                                 handleVerification(detection.descriptor);
