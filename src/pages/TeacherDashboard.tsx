@@ -407,7 +407,8 @@ const TeacherDashboard = () => {
   const biometricAbortRef = useRef<AbortController | null>(null);
   const hasCheckedFingerprintOnLoad = useRef(false);
 
-  // Auto-prompt biometric setup if missing
+  // Auto-prompt biometric setup removed as per user request
+  /*
   useEffect(() => {
     if (isAuthorized && userDataLoaded && !hasFingerprint && !hasCheckedFingerprintOnLoad.current && activeSection === 'overview') {
       hasCheckedFingerprintOnLoad.current = true;
@@ -418,6 +419,7 @@ const TeacherDashboard = () => {
       }, 1500);
     }
   }, [isAuthorized, userDataLoaded, hasFingerprint, activeSection]);
+  */
 
   // Load Config from LocalStorage
   useEffect(() => {
@@ -4919,7 +4921,7 @@ const TeacherDashboard = () => {
                     className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-8 h-12 shadow-lg shadow-amber-500/20"
                   >
                     <PlusCircle className="h-5 w-5 mr-2" />
-                    REGISTER FINGERPRINT NOW
+                    REGISTER PASSKEY (FINGERPRINT)
                   </Button>
                 </div>
               </CardContent>
@@ -7215,25 +7217,38 @@ const TeacherDashboard = () => {
                 <p className="text-slate-400">Mark student attendance for a specific date.</p>
               </div>
               <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
-                {!hasFingerprint ? (
-                  <Button
-                    onClick={() => handleSelfAttendanceClick()}
-                    className="bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-900/20 w-full sm:w-auto animate-pulse"
-                    disabled={isBiometricProcessing}
-                  >
-                    {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Fingerprint className="h-4 w-4 mr-2" />}
-                    Register Biometric
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => handleSelfAttendanceClick()}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 w-full sm:w-auto"
-                    disabled={isBiometricProcessing}
-                  >
-                    {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
-                    Self Attendance
-                  </Button>
-                )}
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  {!hasFingerprint ? (
+                    <Button
+                      onClick={() => handleSelfAttendanceClick()}
+                      className="bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-900/20 flex-1 sm:flex-none animate-pulse"
+                      disabled={isBiometricProcessing}
+                    >
+                      {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Fingerprint className="h-4 w-4 mr-2" />}
+                      Register Passkey/Fingerprint
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        onClick={() => handleSelfAttendanceClick()}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 flex-1 sm:flex-none"
+                        disabled={isBiometricProcessing}
+                      >
+                        {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
+                        Self Attendance (Passkey)
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleSelfAttendanceClick(true)}
+                        className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white flex-1 sm:flex-none shadow-md"
+                        disabled={isBiometricProcessing}
+                      >
+                        {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Smartphone className="h-4 w-4 mr-2 text-indigo-400" />}
+                        Add Devices
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
