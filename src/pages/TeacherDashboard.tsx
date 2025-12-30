@@ -7017,14 +7017,6 @@ const TeacherDashboard = () => {
                         <ScanFace className="h-4 w-4 mr-2" />
                         Mark Attendance (Face ID)
                       </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleSelfAttendanceClick(true)}
-                        className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white flex-1 sm:flex-none"
-                      >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Reset Face ID
-                      </Button>
                     </div>
                   )}
                 </div>

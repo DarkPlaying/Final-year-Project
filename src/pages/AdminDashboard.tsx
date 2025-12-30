@@ -2013,6 +2013,24 @@ const AdminDashboard = () => {
     toast.info("Reset presence triggered (same as student logic)");
   };
 
+  const handleResetFaceID = async (teacher: Profile) => {
+    if (!confirm(`Are you sure you want to reset Face ID for ${teacher.full_name}? They will need to register their face again.`)) return;
+
+    try {
+      await updateDoc(doc(db, 'users', teacher.id), {
+        faceDescriptor: null,
+        hasFace: false
+      });
+
+      toast.success(`Face ID reset for ${teacher.full_name}`);
+      logOperation(`Reset Face ID: ${teacher.full_name}`, 'warning');
+      loadTeachers();
+    } catch (error: any) {
+      console.error("Reset Face ID Error:", error);
+      toast.error(`Failed to reset Face ID: ${error.message}`);
+    }
+  };
+
   const sidebarItems = [
     { icon: <LayoutDashboard size={20} />, label: 'Overview', onClick: () => setActiveSection('overview'), active: activeSection === 'overview' },
     { icon: <Users size={20} />, label: 'Manage Users', onClick: () => setActiveSection('users'), active: activeSection === 'users' },
@@ -2663,6 +2681,9 @@ const AdminDashboard = () => {
                             handleRaiseRequestForTeacher(teacher.email);
                           }} title="Raise Request">
                             <RotateCcw className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => handleResetFaceID(teacher)} title="Reset Face ID">
+                            <RefreshCw className="h-4 w-4" />
                           </Button>
                           <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => {
                             toast.info("Coming soon");
