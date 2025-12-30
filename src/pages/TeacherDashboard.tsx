@@ -1914,7 +1914,8 @@ const TeacherDashboard = () => {
           authenticatorSelection: {
             authenticatorAttachment: "platform",
             userVerification: "required",
-            residentKey: "discouraged"
+            residentKey: "preferred",
+            requireResidentKey: true
           },
           timeout: 60000,
           attestation: "none"
