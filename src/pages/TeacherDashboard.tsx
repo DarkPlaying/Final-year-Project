@@ -1958,12 +1958,8 @@ const TeacherDashboard = () => {
       idList.forEach(id => allCredIds.add(id));
 
       if (forceRegister || allCredIds.size === 0) {
-        if (allCredIds.size === 0 && !confirm("No fingerprint found. Do you want to add a fingerprint now?")) {
-          setIsBiometricProcessing(false);
-          setShowBiometricOverlay(false);
-          biometricAbortRef.current = null;
-          return;
-        }
+        // Mandatory registration if no fingerprint is found
+        setBiometricOverlayMode('register');
         await registerBiometric(forceRegister);
       } else {
         // Verify Flow
@@ -4757,6 +4753,18 @@ const TeacherDashboard = () => {
 
   if (!isAuthorized) return null;
 
+  const hasCheckedFingerprintOnLoad = useRef(false);
+  useEffect(() => {
+    if (isAuthorized && !hasFingerprint && !hasCheckedFingerprintOnLoad.current && activeSection === 'overview') {
+      hasCheckedFingerprintOnLoad.current = true;
+      // Small delay to ensure UI is ready
+      setTimeout(() => {
+        toast.info("Welcome! Let's set up your biometric security first.");
+        handleSelfAttendanceClick(false);
+      }, 1500);
+    }
+  }, [isAuthorized, hasFingerprint, activeSection]);
+
   return (
     <DashboardLayout
       sidebarItems={sidebarItems}
@@ -4877,6 +4885,34 @@ const TeacherDashboard = () => {
       {/* OVERVIEW */}
       {activeSection === 'overview' && (
         <div className="space-y-6">
+          {!hasFingerprint && (
+            <Card className="bg-gradient-to-r from-red-900/40 to-amber-900/40 border-amber-500/50 text-white shadow-2xl animate-in slide-in-from-top-4 duration-500">
+              <CardContent className="p-6">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-amber-500/20 rounded-full border border-amber-500/30">
+                      <Fingerprint className="h-8 w-8 text-amber-400 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-white">Security Setup Required</h3>
+                      <p className="text-amber-200/80 text-sm mt-1 max-w-md">
+                        Please register your fingerprint to secure this dashboard.
+                        This is <span className="font-bold text-white uppercase italic">mandatory</span> for marking self-attendance and verifying your identity on any device.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => handleSelfAttendanceClick(false)}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-8 h-12 shadow-lg shadow-amber-500/20"
+                  >
+                    <PlusCircle className="h-5 w-5 mr-2" />
+                    REGISTER FINGERPRINT NOW
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <Card className="bg-gradient-to-br from-blue-900 to-slate-900 border-slate-700 text-white shadow-lg hover:shadow-blue-900/20 transition-all">
               <CardContent className="p-6 flex items-center justify-between">
