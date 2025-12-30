@@ -56,8 +56,6 @@ import {
   ChevronLeft,
   Square,
   ScanFace,
-  Smartphone,
-  Fingerprint,
   ShieldCheck,
   Loader2
 } from 'lucide-react';
@@ -142,7 +140,6 @@ import {
 import { database } from '@/lib/firebase';
 import { ref, onValue, push, set, serverTimestamp as rtdbServerTimestamp, update, remove } from 'firebase/database';
 import { AITestGenerator } from '@/components/AITestGenerator';
-import { BiometricScanner } from '@/components/BiometricScanner';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ImageCropper } from '@/components/ui/image-crop';
 import { storage } from '@/lib/firebase';
@@ -398,32 +395,17 @@ const TeacherDashboard = () => {
 
   // Self Attendance State
   const [showSelfAttendanceDialog, setShowSelfAttendanceDialog] = useState(false);
-  const [showBiometricOverlay, setShowBiometricOverlay] = useState(false);
   const [biometricOverlayMode, setBiometricOverlayMode] = useState<'verify' | 'register'>('verify');
   const [showFaceOverlay, setShowFaceOverlay] = useState(false);
   const [selfAttendanceDate, setSelfAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [selfAttendanceStatus, setSelfAttendanceStatus] = useState<'P' | 'A' | 'HL'>('P');
-  const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
-  const [hasFingerprint, setHasFingerprint] = useState(false);
   const [hasFace, setHasFace] = useState(false);
+  const [registeredFaceDescriptor, setRegisteredFaceDescriptor] = useState<string | null>(null);
   const [userDataLoaded, setUserDataLoaded] = useState(false);
-  const biometricAbortRef = useRef<AbortController | null>(null);
-  const hasCheckedFingerprintOnLoad = useRef(false);
   const faceProcessRef = useRef(false);
 
   // Auto-prompt biometric setup removed as per user request
-  /*
-  useEffect(() => {
-    if (isAuthorized && userDataLoaded && !hasFingerprint && !hasCheckedFingerprintOnLoad.current && activeSection === 'overview') {
-      hasCheckedFingerprintOnLoad.current = true;
-      // Small delay to ensure UI is ready
-      setTimeout(() => {
-        toast.info("Welcome! Let's set up your biometric security first.");
-        handleSelfAttendanceClick(false);
-      }, 1500);
-    }
-  }, [isAuthorized, userDataLoaded, hasFingerprint, activeSection]);
-  */
+
 
   // Load Config from LocalStorage
   useEffect(() => {
@@ -549,8 +531,8 @@ const TeacherDashboard = () => {
           toast.error('You have been logged out because your account was logged in from another device.');
           handleLogout();
         }
-        setHasFingerprint(!!(data.biometricCredId || (data.biometricCredIds && data.biometricCredIds.length > 0)));
         setHasFace(!!data.faceDescriptor);
+        setRegisteredFaceDescriptor(data.faceDescriptor || null);
         setUserDataLoaded(true);
       }
     });
@@ -1854,235 +1836,25 @@ const TeacherDashboard = () => {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   };
 
-  const strToBuffer = (str: string) => {
-    return Uint8Array.from(str, c => c.charCodeAt(0));
-  };
-
-  const bufferToStr = (buffer: ArrayBuffer) => {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return window.btoa(binary);
-  };
-
-  const base64ToBuffer = (base64: string) => {
-    const binary = window.atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
-  };
-
-  const cancelBiometric = () => {
-    if (biometricAbortRef.current) {
-      biometricAbortRef.current.abort();
-    }
-    setIsBiometricProcessing(false);
-    setShowBiometricOverlay(false);
-    biometricAbortRef.current = null;
-  };
-
   const handleSelfAttendanceClick = async (forceRegister: boolean = false) => {
     if (!isMobileDevice()) {
       toast.error("Make attendance in mobile");
       return;
     }
 
-    setBiometricOverlayMode(forceRegister ? 'register' : 'verify');
-    setShowBiometricOverlay(true);
-    setIsBiometricProcessing(true);
-
-    // Initialize AbortController to allow user to cancel
-    biometricAbortRef.current = new AbortController();
-    const signal = biometricAbortRef.current.signal;
-
-    // Helper: Register/Add Biometric
-    const registerBiometric = async (isNew: boolean = false) => {
-      try {
-        const challenge = new Uint8Array(32);
-        window.crypto.getRandomValues(challenge);
-
-        const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
-          challenge,
-          rp: { name: "Edu Online", id: window.location.hostname },
-          user: {
-            id: strToBuffer(userId),
-            name: userEmail || "user",
-            displayName: teacherProfileForm?.name || userEmail || "User",
-          },
-          pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
-          authenticatorSelection: {
-            authenticatorAttachment: "platform",
-            userVerification: "required",
-            residentKey: "required",
-            requireResidentKey: true
-          },
-          timeout: 60000,
-          attestation: "none"
-        };
-
-        const credential = await navigator.credentials.create({
-          publicKey: publicKeyCredentialCreationOptions,
-          signal
-        }) as PublicKeyCredential;
-
-        if (credential) {
-          const rawId = bufferToStr(credential.rawId);
-          const deviceId = getDeviceIdentity();
-
-          if (isNew) {
-            await updateDoc(doc(db, 'users', userId), {
-              biometricCredIds: arrayUnion(rawId),
-              registeredDeviceIds: arrayUnion(deviceId)
-            });
-            toast.success("Additional phone linked successfully!");
-          } else {
-            await updateDoc(doc(db, 'users', userId), {
-              biometricCredId: rawId,
-              biometricCredIds: arrayUnion(rawId),
-              registeredDeviceIds: arrayUnion(deviceId)
-            });
-            toast.success("Passkey registered successfully!", {
-              duration: 5000
-            });
-          }
-          setShowBiometricOverlay(false);
-          // NEW: Prompt for Face Registration after Fingerprint
-          setTimeout(() => {
-            setShowFaceOverlay(true);
-          }, 500);
-        }
-      } catch (regError: any) {
-        if (regError.name === 'AbortError') return;
-        console.error("Registration failed:", regError);
-        toast.error("Failed to register: " + regError.message);
-        setShowBiometricOverlay(false);
-      } finally {
-        setIsBiometricProcessing(false);
-      }
-    };
-
-    try {
-      // 1. Device Identity Check (One Device per Teacher)
-      const deviceId = getDeviceIdentity();
-      const usersRef = collection(db, 'users');
-      // Check if this device ID is already registered to ANOTHER teacher
-      const q = query(usersRef, where('registeredDeviceIds', 'array-contains', deviceId));
-      const querySnap = await getDocs(q);
-
-      const otherTeachers = querySnap.docs.filter(d => d.id !== userId);
-      if (otherTeachers.length > 0) {
-        const ownerName = otherTeachers[0].data().name || "another staff member";
-        toast.error(`Security Alert: This device is already linked to ${ownerName}. Shared devices are not allowed for staff attendance.`);
-        setIsBiometricProcessing(false);
-        setShowBiometricOverlay(false);
-        biometricAbortRef.current = null;
-        return;
-      }
-
-      // 2. Fetch User's Biometric IDs
+    if (forceRegister || !hasFace) {
+      setBiometricOverlayMode('register');
+      toast.info("Preparing AI Facial Registration...");
+    } else {
+      // Pre-fetch latest descriptor just in case it was updated elsewhere
       const userDoc = await getDoc(doc(db, 'users', userId));
-      const userData = userDoc.data();
+      const descriptor = userDoc.data()?.faceDescriptor;
+      if (descriptor) setRegisteredFaceDescriptor(descriptor);
 
-      // Enforce Device-Specific Passkey Link
-      const isDeviceRegistered = userData?.registeredDeviceIds?.includes(deviceId);
-      if (!forceRegister && !isDeviceRegistered && userData?.biometricCredIds?.length > 0) {
-        if (confirm("This device is not registered to your account. You must register it first using your passkey. Register this device now?")) {
-          setBiometricOverlayMode('register');
-          await registerBiometric(true);
-          return;
-        } else {
-          setIsBiometricProcessing(false);
-          setShowBiometricOverlay(false);
-          return;
-        }
-      }
-      const legacyId = userData?.biometricCredId;
-      const idList: string[] = userData?.biometricCredIds || [];
-
-      const allCredIds = new Set<string>();
-      if (legacyId) allCredIds.add(legacyId);
-      idList.forEach(id => allCredIds.add(id));
-
-      if (forceRegister || allCredIds.size === 0) {
-        // Mandatory registration if no fingerprint is found
-        setBiometricOverlayMode('register');
-        await registerBiometric(forceRegister);
-      } else {
-        // Verify Flow
-        const challenge = new Uint8Array(32);
-        window.crypto.getRandomValues(challenge);
-
-        const allowedCredentials = Array.from(allCredIds).map(id => ({
-          id: base64ToBuffer(id),
-          type: 'public-key' as const,
-          transports: ['internal'] as AuthenticatorTransport[]
-        }));
-
-        const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
-          challenge,
-          timeout: 60000,
-          rpId: window.location.hostname,
-          allowCredentials: allowedCredentials,
-          userVerification: "required",
-        };
-
-        try {
-          const assertion = await navigator.credentials.get({
-            publicKey: publicKeyCredentialRequestOptions,
-            signal
-          });
-
-          if (assertion) {
-            setShowBiometricOverlay(false);
-
-            // Re-fetch to check face existence
-            const userDoc = await getDoc(doc(db, 'users', userId));
-            const faceExists = !!userDoc.data()?.registeredFace;
-
-            if (!faceExists) {
-              setBiometricOverlayMode('register');
-              toast.info("Passkey verified. Now, let's register your face for dual-secutity.");
-            }
-
-            // Transition to Face Checking/Registration after Fingerprint
-            setTimeout(() => {
-              setShowFaceOverlay(true);
-            }, 300);
-          }
-        } catch (e: any) {
-          if (e.name === 'AbortError') return;
-          console.error("Verification failed:", e);
-          setShowBiometricOverlay(false);
-          if (confirm("Fingerprint not recognized on this device. Do you want to ADD this device to your trusted list? (Requires Fingerprint)")) {
-            setBiometricOverlayMode('register');
-            setShowBiometricOverlay(true);
-            setIsBiometricProcessing(true);
-            await registerBiometric(true);
-          } else {
-            toast.error("Authentication failed. Please use a registered device.");
-          }
-        }
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') return;
-      console.error("Biometric error:", error);
-
-      let friendlyMessage = error.message;
-      if (error.code === 'permission-denied' || (typeof error.message === 'string' && error.message.includes('permission'))) {
-        friendlyMessage = "Security Rule Violation: Teachers must have 'read' access to 'users' collection for identity verification.";
-      }
-
-      toast.error("Biometric operation failed: " + friendlyMessage);
-      setIsBiometricProcessing(false);
-      setShowBiometricOverlay(false);
-    } finally {
-      setIsBiometricProcessing(false);
-      biometricAbortRef.current = null;
+      setBiometricOverlayMode('verify');
     }
+
+    setShowFaceOverlay(true);
   };
 
   const submitSelfAttendance = async () => {
@@ -7228,35 +7000,32 @@ const TeacherDashboard = () => {
               </div>
               <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
                 <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-                  {!hasFingerprint ? (
+                  {!hasFace ? (
                     <Button
                       onClick={() => handleSelfAttendanceClick()}
                       className="bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-900/20 flex-1 sm:flex-none animate-pulse"
-                      disabled={isBiometricProcessing}
                     >
-                      {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Fingerprint className="h-4 w-4 mr-2" />}
-                      Register Passkey/Fingerprint
+                      <ScanFace className="h-4 w-4 mr-2" />
+                      Setup Face ID Lock
                     </Button>
                   ) : (
-                    <>
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                       <Button
                         onClick={() => handleSelfAttendanceClick()}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/20 flex-1 sm:flex-none"
-                        disabled={isBiometricProcessing}
                       >
-                        {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
-                        {!hasFace ? "Setup Face & Attendance" : "Self Attendance (Passkey)"}
+                        <ScanFace className="h-4 w-4 mr-2" />
+                        Mark Attendance (Face ID)
                       </Button>
                       <Button
                         variant="outline"
                         onClick={() => handleSelfAttendanceClick(true)}
-                        className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white flex-1 sm:flex-none shadow-md"
-                        disabled={isBiometricProcessing}
+                        className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white flex-1 sm:flex-none"
                       >
-                        {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Smartphone className="h-4 w-4 mr-2 text-indigo-400" />}
-                        Add Devices
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Reset Face ID
                       </Button>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
@@ -7856,28 +7625,16 @@ const TeacherDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={showBiometricOverlay} onOpenChange={(open) => {
-        if (!open) cancelBiometric();
+      <Dialog open={showFaceOverlay} onOpenChange={(open) => {
+        setShowFaceOverlay(open);
+        if (!open) faceProcessRef.current = false;
       }}>
-        <DialogContent className="bg-slate-900/90 border-slate-700 p-0 overflow-hidden max-w-sm backdrop-blur-2xl">
-          <BiometricScanner
-            mode={biometricOverlayMode}
-            isProcessing={isBiometricProcessing}
-            userName={teacherProfileForm?.name || "Teacher"}
-            onCancel={cancelBiometric}
-            onComplete={() => {
-              // Handled by manual transition to FaceScanner
-            }}
-          />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showFaceOverlay} onOpenChange={setShowFaceOverlay}>
         <DialogContent className="bg-slate-900/90 border-slate-700 p-0 overflow-hidden max-w-sm backdrop-blur-2xl">
           <FaceScanner
             key={showFaceOverlay ? 'active' : 'inactive'}
             mode={biometricOverlayMode === 'register' ? 'register' : 'verify'}
             userName={teacherProfileForm?.name || "Teacher"}
+            expectedDescriptor={biometricOverlayMode === 'verify' ? registeredFaceDescriptor || undefined : undefined}
             onCancel={() => {
               setShowFaceOverlay(false);
               faceProcessRef.current = false;
@@ -7887,9 +7644,6 @@ const TeacherDashboard = () => {
               faceProcessRef.current = true;
 
               try {
-                const userDoc = await getDoc(doc(db, 'users', userId));
-                const userData = userDoc.data();
-
                 if (biometricOverlayMode === 'register') {
                   // Save face descriptor to Firestore
                   await updateDoc(doc(db, 'users', userId), {
@@ -7897,38 +7651,26 @@ const TeacherDashboard = () => {
                   });
                   toast.success("AI Face Profile registered successfully!");
                   setHasFace(true);
+                  setRegisteredFaceDescriptor(newDescriptorStr);
                 } else if (biometricOverlayMode === 'verify') {
-                  const savedDescriptorStr = userData?.faceDescriptor;
+                  // The scanner already checked the distance if expectedDescriptor was passed
+                  // but we do a final dry run check here if it wasn't or just to be safe.
 
-                  if (!savedDescriptorStr) {
-                    toast.error("No registered face profile found. Please re-register.");
-                    setShowFaceOverlay(false);
-                    faceProcessRef.current = false;
-                    return;
-                  }
+                  if (registeredFaceDescriptor) {
+                    const saved = JSON.parse(registeredFaceDescriptor);
+                    const current = JSON.parse(newDescriptorStr);
+                    let distance = 0;
+                    for (let i = 0; i < saved.length; i++) {
+                      distance += Math.pow(saved[i] - current[i], 2);
+                    }
+                    distance = Math.sqrt(distance);
 
-                  // Face Matching Logic (Euclidean Distance)
-                  const savedDescriptor = JSON.parse(savedDescriptorStr);
-                  const currentDescriptor = JSON.parse(newDescriptorStr);
-
-                  // Calculate distance
-                  let distance = 0;
-                  for (let i = 0; i < savedDescriptor.length; i++) {
-                    distance += Math.pow(savedDescriptor[i] - currentDescriptor[i], 2);
-                  }
-                  distance = Math.sqrt(distance);
-
-                  console.log("Face Match Distance:", distance);
-
-                  // Threshold 0.6 is standard for face-api.js recognition
-                  if (distance > 0.55) {
-                    toast.error("Face Identity Mismatch! Attendance denied.", {
-                      description: "The person in front of the camera does not match the registered profile.",
-                      duration: 5000
-                    });
-                    setShowFaceOverlay(false);
-                    faceProcessRef.current = false;
-                    return;
+                    if (distance > 0.45) {
+                      toast.error("Identity Lock: Face Mismatch!");
+                      setShowFaceOverlay(false);
+                      faceProcessRef.current = false;
+                      return;
+                    }
                   }
 
                   toast.success("Identity Confirmed: Face Matched!");
@@ -7938,7 +7680,7 @@ const TeacherDashboard = () => {
                 setTimeout(() => {
                   setShowSelfAttendanceDialog(true);
                   faceProcessRef.current = false;
-                }, 300);
+                }, 150);
               } catch (err) {
                 console.error("Face matching error:", err);
                 toast.error("An error occurred during facial analysis.");

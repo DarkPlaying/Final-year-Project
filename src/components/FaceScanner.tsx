@@ -10,13 +10,15 @@ interface FaceScannerProps {
     onComplete: (faceData?: string) => void;
     onCancel: () => void;
     userName: string;
+    expectedDescriptor?: string; // Add this
 }
 
 export const FaceScanner: React.FC<FaceScannerProps> = ({
     mode,
     onComplete,
     onCancel,
-    userName
+    userName,
+    expectedDescriptor
 }) => {
     const [status, setStatus] = useState<'idle' | 'initializing' | 'scanning' | 'success' | 'error'>('initializing');
     const [message, setMessage] = useState('Loading facial recognition models...');
@@ -68,10 +70,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                     videoRef.current.srcObject = mediaStream;
                 }
 
-                setStatus('scanning');
-                setMessage(mode === 'register' ? 'Look directly at the camera' : 'Position your face for verification');
-
-                // Start Detection Loop
+                // Start Detection Loop - Much faster polling (200ms) for real-time feel
                 interval = setInterval(async () => {
                     if (!videoRef.current || hasTriggered.current || !isMounted) return;
 
@@ -84,12 +83,36 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                         if (mode === 'register') {
                             handleSuccess(detection.descriptor);
                         } else {
-                            handleVerification(detection.descriptor);
+                            // Check if we have an expected descriptor for fast-fail/fast-success
+                            if (expectedDescriptor) {
+                                const saved = JSON.parse(expectedDescriptor);
+                                const current = Array.from(detection.descriptor);
+
+                                let distance = 0;
+                                for (let i = 0; i < saved.length; i++) {
+                                    distance += Math.pow(saved[i] - current[i], 2);
+                                }
+                                distance = Math.sqrt(distance);
+
+                                if (distance <= 0.45) {
+                                    handleVerification(detection.descriptor, true);
+                                } else {
+                                    // It's a face, but not the right one. 
+                                    // We show mismatch quickly instead of waiting.
+                                    setStatus('error');
+                                    setMessage('Face Identity Mismatch! Not ' + userName);
+
+                                    // Don't trigger onComplete immediately, allow them to retry or fail after a short duration
+                                    // but we mark it as error so the UI shows it.
+                                }
+                            } else {
+                                handleVerification(detection.descriptor);
+                            }
                         }
-                    } else if (isMounted) {
-                        setMessage('Keep your face steady in the frame');
+                    } else if (isMounted && status === 'scanning') {
+                        setMessage('Searching for face...');
                     }
-                }, 1000);
+                }, 200);
 
             } catch (err) {
                 if (isMounted) {
@@ -118,25 +141,27 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
             }, 1500);
         };
 
-        const handleVerification = async (currentDescriptor: Float32Array) => {
+        const handleVerification = async (currentDescriptor: Float32Array, isMatch: boolean = true) => {
             if (hasTriggered.current) return;
-
-            // Fetch registered face from parent context (passed via some hidden means or re-read from props if we had them)
-            // But wait, the parent actually handles the mismatch normally. 
-            // Here, we provide the NEW descriptor to the parent for comparison.
-
             hasTriggered.current = true;
-            setStatus('success');
-            setMessage('Scanning Complete');
+
+            if (isMatch) {
+                setStatus('success');
+                setMessage('Identity Confirmed');
+            } else {
+                setStatus('error');
+                setMessage('Identity Mismatch');
+            }
 
             const descriptorStr = JSON.stringify(Array.from(currentDescriptor));
 
+            // Fast transition (200ms) for better UX
             setTimeout(() => {
                 if (isMounted) {
                     onCompleteRef.current(descriptorStr);
                     stopEverything();
                 }
-            }, 1000);
+            }, 200);
         };
 
         const stopEverything = () => {
