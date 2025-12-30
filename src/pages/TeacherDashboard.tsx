@@ -550,7 +550,7 @@ const TeacherDashboard = () => {
           handleLogout();
         }
         setHasFingerprint(!!(data.biometricCredId || (data.biometricCredIds && data.biometricCredIds.length > 0)));
-        setHasFace(!!data.registeredFace);
+        setHasFace(!!data.faceDescriptor);
         setUserDataLoaded(true);
       }
     });
@@ -7882,26 +7882,56 @@ const TeacherDashboard = () => {
               setShowFaceOverlay(false);
               faceProcessRef.current = false;
             }}
-            onComplete={async (faceData) => {
-              if (faceProcessRef.current) return;
+            onComplete={async (newDescriptorStr) => {
+              if (faceProcessRef.current || !newDescriptorStr) return;
               faceProcessRef.current = true;
 
               try {
-                if (biometricOverlayMode === 'register' && faceData) {
-                  // Save face reference to Firestore
+                const userDoc = await getDoc(doc(db, 'users', userId));
+                const userData = userDoc.data();
+
+                if (biometricOverlayMode === 'register') {
+                  // Save face descriptor to Firestore
                   await updateDoc(doc(db, 'users', userId), {
-                    registeredFace: faceData
+                    faceDescriptor: newDescriptorStr
                   });
-                  toast.success("Face registered successfully!");
+                  toast.success("AI Face Profile registered successfully!");
+                  setHasFace(true);
                 } else if (biometricOverlayMode === 'verify') {
-                  // Basic check: Ensure user has a registered face
-                  const userDoc = await getDoc(doc(db, 'users', userId));
-                  if (!userDoc.data()?.registeredFace) {
-                    toast.error("No registered face found. Please re-register your biometrics.");
+                  const savedDescriptorStr = userData?.faceDescriptor;
+
+                  if (!savedDescriptorStr) {
+                    toast.error("No registered face profile found. Please re-register.");
                     setShowFaceOverlay(false);
                     faceProcessRef.current = false;
                     return;
                   }
+
+                  // Face Matching Logic (Euclidean Distance)
+                  const savedDescriptor = JSON.parse(savedDescriptorStr);
+                  const currentDescriptor = JSON.parse(newDescriptorStr);
+
+                  // Calculate distance
+                  let distance = 0;
+                  for (let i = 0; i < savedDescriptor.length; i++) {
+                    distance += Math.pow(savedDescriptor[i] - currentDescriptor[i], 2);
+                  }
+                  distance = Math.sqrt(distance);
+
+                  console.log("Face Match Distance:", distance);
+
+                  // Threshold 0.6 is standard for face-api.js recognition
+                  if (distance > 0.55) {
+                    toast.error("Face Identity Mismatch! Attendance denied.", {
+                      description: "The person in front of the camera does not match the registered profile.",
+                      duration: 5000
+                    });
+                    setShowFaceOverlay(false);
+                    faceProcessRef.current = false;
+                    return;
+                  }
+
+                  toast.success("Identity Confirmed: Face Matched!");
                 }
 
                 setShowFaceOverlay(false);
@@ -7910,7 +7940,8 @@ const TeacherDashboard = () => {
                   faceProcessRef.current = false;
                 }, 300);
               } catch (err) {
-                console.error("Face complete error:", err);
+                console.error("Face matching error:", err);
+                toast.error("An error occurred during facial analysis.");
                 faceProcessRef.current = false;
               }
             }}
