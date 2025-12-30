@@ -398,6 +398,19 @@ const TeacherDashboard = () => {
   const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
   const [hasFingerprint, setHasFingerprint] = useState(false);
   const biometricAbortRef = useRef<AbortController | null>(null);
+  const hasCheckedFingerprintOnLoad = useRef(false);
+
+  // Auto-prompt biometric setup if missing
+  useEffect(() => {
+    if (isAuthorized && !hasFingerprint && !hasCheckedFingerprintOnLoad.current && activeSection === 'overview') {
+      hasCheckedFingerprintOnLoad.current = true;
+      // Small delay to ensure UI is ready
+      setTimeout(() => {
+        toast.info("Welcome! Let's set up your biometric security first.");
+        handleSelfAttendanceClick(false);
+      }, 1500);
+    }
+  }, [isAuthorized, hasFingerprint, activeSection]);
 
   // Load Config from LocalStorage
   useEffect(() => {
@@ -4752,18 +4765,6 @@ const TeacherDashboard = () => {
   };
 
   if (!isAuthorized) return null;
-
-  const hasCheckedFingerprintOnLoad = useRef(false);
-  useEffect(() => {
-    if (isAuthorized && !hasFingerprint && !hasCheckedFingerprintOnLoad.current && activeSection === 'overview') {
-      hasCheckedFingerprintOnLoad.current = true;
-      // Small delay to ensure UI is ready
-      setTimeout(() => {
-        toast.info("Welcome! Let's set up your biometric security first.");
-        handleSelfAttendanceClick(false);
-      }, 1500);
-    }
-  }, [isAuthorized, hasFingerprint, activeSection]);
 
   return (
     <DashboardLayout
