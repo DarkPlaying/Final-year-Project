@@ -405,6 +405,7 @@ const TeacherDashboard = () => {
   const [selfAttendanceStatus, setSelfAttendanceStatus] = useState<'P' | 'A' | 'HL'>('P');
   const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
   const [hasFingerprint, setHasFingerprint] = useState(false);
+  const [hasFace, setHasFace] = useState(false);
   const [userDataLoaded, setUserDataLoaded] = useState(false);
   const biometricAbortRef = useRef<AbortController | null>(null);
   const hasCheckedFingerprintOnLoad = useRef(false);
@@ -548,6 +549,7 @@ const TeacherDashboard = () => {
           handleLogout();
         }
         setHasFingerprint(!!(data.biometricCredId || (data.biometricCredIds && data.biometricCredIds.length > 0)));
+        setHasFace(!!data.registeredFace);
         setUserDataLoaded(true);
       }
     });
@@ -2035,7 +2037,17 @@ const TeacherDashboard = () => {
 
           if (assertion) {
             setShowBiometricOverlay(false);
-            // Transition to Face Checking after Fingerprint
+
+            // Re-fetch to check face existence
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const faceExists = !!userDoc.data()?.registeredFace;
+
+            if (!faceExists) {
+              setBiometricOverlayMode('register');
+              toast.info("Passkey verified. Now, let's register your face for dual-secutity.");
+            }
+
+            // Transition to Face Checking/Registration after Fingerprint
             setTimeout(() => {
               setShowFaceOverlay(true);
             }, 300);
@@ -7232,7 +7244,7 @@ const TeacherDashboard = () => {
                         disabled={isBiometricProcessing}
                       >
                         {isBiometricProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <ScanFace className="h-4 w-4 mr-2" />}
-                        Self Attendance (Passkey)
+                        {!hasFace ? "Setup Face & Attendance" : "Self Attendance (Passkey)"}
                       </Button>
                       <Button
                         variant="outline"
