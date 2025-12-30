@@ -42,7 +42,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
             try {
                 // Ensure models are loaded from /models directory in public folder
                 await Promise.all([
-                    faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
+                    faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
                     faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
                     faceapi.nets.faceRecognitionNet.loadFromUri('/models')
                 ]);
@@ -70,21 +70,30 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                     videoRef.current.srcObject = mediaStream;
                 }
 
-                // Start Detection Loop - Much faster polling (200ms) for real-time feel
-                interval = setInterval(async () => {
+                setStatus('scanning');
+                setMessage(mode === 'register' ? 'Look directly at the camera' : 'Position your face for verification');
+
+                // Start Detection Loop - Optimized for Mobile Performance
+                let lastDetectionTime = 0;
+                const detect = async (time: number) => {
                     if (!videoRef.current || hasTriggered.current || !isMounted) return;
 
-                    const detection = await faceapi.detectSingleFace(videoRef.current)
-                        .withFaceLandmarks()
-                        .withFaceDescriptor();
+                    // Only run detection every 300ms on mobile to prevent main thread lag
+                    if (time - lastDetectionTime > 300) {
+                        lastDetectionTime = time;
 
-                    if (detection && isMounted && !hasTriggered.current) {
-                        // We found a face!
-                        if (mode === 'register') {
-                            handleSuccess(detection.descriptor);
-                        } else {
-                            // Check if we have an expected descriptor for fast-fail/fast-success
-                            if (expectedDescriptor) {
+                        // Use TinyFaceDetector for significantly better mobile performance
+                        const detection = await faceapi.detectSingleFace(
+                            videoRef.current,
+                            new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.5 })
+                        )
+                            .withFaceLandmarks()
+                            .withFaceDescriptor();
+
+                        if (detection && isMounted && !hasTriggered.current) {
+                            if (mode === 'register') {
+                                handleSuccess(detection.descriptor);
+                            } else if (expectedDescriptor) {
                                 const saved = JSON.parse(expectedDescriptor);
                                 const current = Array.from(detection.descriptor);
 
@@ -94,25 +103,27 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                                 }
                                 distance = Math.sqrt(distance);
 
-                                if (distance <= 0.45) {
+                                // Relaxed threshold from 0.45 to 0.55 for better mobile reliability
+                                if (distance <= 0.55) {
                                     handleVerification(detection.descriptor, true);
                                 } else {
-                                    // It's a face, but not the right one. 
-                                    // We show mismatch quickly instead of waiting.
                                     setStatus('error');
-                                    setMessage('Face Identity Mismatch! Not ' + userName);
-
-                                    // Don't trigger onComplete immediately, allow them to retry or fail after a short duration
-                                    // but we mark it as error so the UI shows it.
+                                    setMessage(`Verification failed. Please look closer.`);
                                 }
                             } else {
                                 handleVerification(detection.descriptor);
                             }
+                        } else if (isMounted && status === 'scanning') {
+                            setMessage('Analyzing camera feed...');
                         }
-                    } else if (isMounted && status === 'scanning') {
-                        setMessage('Searching for face...');
                     }
-                }, 200);
+
+                    if (!hasTriggered.current && isMounted) {
+                        requestAnimationFrame(detect);
+                    }
+                };
+
+                requestAnimationFrame(detect);
 
             } catch (err) {
                 if (isMounted) {
