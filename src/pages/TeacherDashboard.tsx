@@ -147,6 +147,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { ImageCropper } from '@/components/ui/image-crop';
 import { storage } from '@/lib/firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { FaceScanner } from '@/components/FaceScanner';
 
 // Google Drive Config
 const EXAM_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -399,6 +400,7 @@ const TeacherDashboard = () => {
   const [showSelfAttendanceDialog, setShowSelfAttendanceDialog] = useState(false);
   const [showBiometricOverlay, setShowBiometricOverlay] = useState(false);
   const [biometricOverlayMode, setBiometricOverlayMode] = useState<'verify' | 'register'>('verify');
+  const [showFaceOverlay, setShowFaceOverlay] = useState(false);
   const [selfAttendanceDate, setSelfAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [selfAttendanceStatus, setSelfAttendanceStatus] = useState<'P' | 'A' | 'HL'>('P');
   const [isBiometricProcessing, setIsBiometricProcessing] = useState(false);
@@ -1977,6 +1979,20 @@ const TeacherDashboard = () => {
       // 2. Fetch User's Biometric IDs
       const userDoc = await getDoc(doc(db, 'users', userId));
       const userData = userDoc.data();
+
+      // Enforce Device-Specific Passkey Link
+      const isDeviceRegistered = userData?.registeredDeviceIds?.includes(deviceId);
+      if (!forceRegister && !isDeviceRegistered && userData?.biometricCredIds?.length > 0) {
+        if (confirm("This device is not registered to your account. You must register it first using your passkey. Register this device now?")) {
+          setBiometricOverlayMode('register');
+          await registerBiometric(true);
+          return;
+        } else {
+          setIsBiometricProcessing(false);
+          setShowBiometricOverlay(false);
+          return;
+        }
+      }
       const legacyId = userData?.biometricCredId;
       const idList: string[] = userData?.biometricCredIds || [];
 
@@ -2015,7 +2031,10 @@ const TeacherDashboard = () => {
 
           if (assertion) {
             setShowBiometricOverlay(false);
-            setShowSelfAttendanceDialog(true);
+            // Transition to Face Checking after Fingerprint
+            setTimeout(() => {
+              setShowFaceOverlay(true);
+            }, 300);
           }
         } catch (e: any) {
           if (e.name === 'AbortError') return;
@@ -7830,7 +7849,20 @@ const TeacherDashboard = () => {
             userName={teacherProfileForm?.name || "Teacher"}
             onCancel={cancelBiometric}
             onComplete={() => {
-              // Internal transitions handled by hooks
+              // Handled by manual transition to FaceScanner
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showFaceOverlay} onOpenChange={setShowFaceOverlay}>
+        <DialogContent className="bg-slate-900/90 border-slate-700 p-0 overflow-hidden max-w-sm backdrop-blur-2xl">
+          <FaceScanner
+            userName={teacherProfileForm?.name || "Teacher"}
+            onCancel={() => setShowFaceOverlay(false)}
+            onComplete={() => {
+              setShowFaceOverlay(false);
+              setShowSelfAttendanceDialog(true);
             }}
           />
         </DialogContent>
