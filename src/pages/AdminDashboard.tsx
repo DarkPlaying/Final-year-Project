@@ -97,6 +97,7 @@ import {
   setDoc,
   getFirestore,
   getCountFromServer,
+  deleteField,
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
