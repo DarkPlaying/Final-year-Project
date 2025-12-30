@@ -8,10 +8,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Search, Download, Save, Loader2, Filter, ClipboardList, Fingerprint, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Download, Save, Loader2, Filter, ClipboardList, ScanFace, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, setDoc, doc, Timestamp, writeBatch, deleteField } from 'firebase/firestore';
+import { TeacherAttendanceHistoryDialog } from './TeacherAttendanceHistoryDialog';
 
 interface Teacher {
     id: string;
@@ -34,6 +35,8 @@ export const AdminAttendanceManager = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [departmentFilter, setDepartmentFilter] = useState('all');
     const [departments, setDepartments] = useState<string[]>([]);
+    const [selectedTeacherForHistory, setSelectedTeacherForHistory] = useState<Teacher | null>(null);
+    const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
 
     // Load Teachers
     useEffect(() => {
@@ -198,22 +201,25 @@ export const AdminAttendanceManager = () => {
         halfDay: Object.values(attendance).filter(r => r.status === 'HL').length,
     };
 
-    const resetBiometric = async (teacherId: string, name: string) => {
-        if (!confirm(`Are you sure you want to reset fingerprint for ${name}?`)) return;
+    const resetFaceID = async (teacherId: string, name: string) => {
+        if (!confirm(`Are you sure you want to reset Face ID for ${name}?`)) return;
         try {
             await setDoc(doc(db, 'users', teacherId), {
+                faceDescriptor: null,
+                hasFace: false,
+                // Also clear old biometric fields if they exist
                 biometricCredId: deleteField(),
                 biometricCredIds: deleteField(),
                 registeredDeviceIds: deleteField()
             }, { merge: true });
-            toast.success(`Fingerprint reset for ${name}`);
+            toast.success(`Face ID reset for ${name}`);
         } catch (error) {
-            console.error("Error resetting fingerprint:", error);
-            toast.error("Failed to reset fingerprint");
+            console.error("Error resetting Face ID:", error);
+            toast.error("Failed to reset Face ID");
         }
     };
 
-    const resetAllBiometrics = async () => {
+    const resetAllFaceIDs = async () => {
         let targets = [];
         if (departmentFilter === 'all') {
             targets = teachers;
@@ -226,25 +232,26 @@ export const AdminAttendanceManager = () => {
             return;
         }
 
-        if (!confirm(`WARNING: This will remove fingerprint access for ${targets.length} teachers in ${departmentFilter === 'all' ? 'All Departments' : departmentFilter}. Continue?`)) return;
+        if (!confirm(`WARNING: This will remove Face ID access for ${targets.length} teachers in ${departmentFilter === 'all' ? 'All Departments' : departmentFilter}. Continue?`)) return;
 
         setSaving(true);
         try {
             const batch = writeBatch(db);
             targets.forEach(t => {
                 const ref = doc(db, 'users', t.id);
-                // updating with deleteField inside a set({merge:true}) or update()
                 batch.update(ref, {
+                    faceDescriptor: null,
+                    hasFace: false,
                     biometricCredId: deleteField(),
                     biometricCredIds: deleteField(),
                     registeredDeviceIds: deleteField()
                 });
             });
             await batch.commit();
-            toast.success("All selected fingerprints reset successfully");
+            toast.success("All selected Face IDs reset successfully");
         } catch (error) {
             console.error("Error resetting all:", error);
-            toast.error("Failed to reset all fingerprints");
+            toast.error("Failed to reset all Face IDs");
         } finally {
             setSaving(false);
         }
@@ -337,11 +344,11 @@ export const AdminAttendanceManager = () => {
                             <Button
                                 variant="destructive"
                                 className="w-full bg-red-900/50 hover:bg-red-900 border border-red-800 text-red-200"
-                                onClick={resetAllBiometrics}
+                                onClick={resetAllFaceIDs}
                                 disabled={saving}
                             >
-                                <Fingerprint className="mr-2 h-4 w-4" />
-                                Reset {departmentFilter === 'all' ? 'All' : departmentFilter} Biometrics
+                                <ScanFace className="mr-2 h-4 w-4" />
+                                Reset {departmentFilter === 'all' ? 'All' : departmentFilter} Face IDs
                             </Button>
                         </div>
                     </CardContent>
@@ -430,16 +437,30 @@ export const AdminAttendanceManager = () => {
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="text-center">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="text-slate-400 hover:text-red-400 hover:bg-red-400/10"
-                                                            onClick={() => resetBiometric(teacher.id, teacher.name)}
-                                                            title="Reset Fingerprint"
-                                                        >
-                                                            <Fingerprint className="h-4 w-4" />
-                                                            <span className="sr-only">Reset</span>
-                                                        </Button>
+                                                        <div className="flex justify-center gap-1">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-slate-400 hover:text-indigo-400 hover:bg-indigo-400/10"
+                                                                onClick={() => {
+                                                                    setSelectedTeacherForHistory(teacher);
+                                                                    setHistoryDialogOpen(true);
+                                                                }}
+                                                                title="Show Attendance"
+                                                            >
+                                                                <Eye className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-slate-400 hover:text-red-400 hover:bg-red-400/10"
+                                                                onClick={() => resetFaceID(teacher.id, teacher.name)}
+                                                                title="Reset Face ID"
+                                                            >
+                                                                <ScanFace className="h-4 w-4" />
+                                                                <span className="sr-only">Reset</span>
+                                                            </Button>
+                                                        </div>
                                                     </TableCell>
                                                 </TableRow>
                                             );
@@ -451,6 +472,14 @@ export const AdminAttendanceManager = () => {
                     </CardContent>
                 </Card>
             </div>
+
+            {selectedTeacherForHistory && (
+                <TeacherAttendanceHistoryDialog
+                    teacher={selectedTeacherForHistory}
+                    open={historyDialogOpen}
+                    onOpenChange={setHistoryDialogOpen}
+                />
+            )}
         </div>
     );
 };

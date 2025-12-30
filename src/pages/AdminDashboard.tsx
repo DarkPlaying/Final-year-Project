@@ -67,7 +67,8 @@ import {
   PlusCircle,
   Clock,
   CheckSquare,
-  Square
+  Square,
+  ScanFace
 } from 'lucide-react';
 import { UserRole } from '@/types/auth';
 import { db, database } from '@/lib/firebase';
@@ -2019,7 +2020,10 @@ const AdminDashboard = () => {
     try {
       await updateDoc(doc(db, 'users', teacher.id), {
         faceDescriptor: null,
-        hasFace: false
+        hasFace: false,
+        biometricCredId: deleteField(),
+        biometricCredIds: deleteField(),
+        registeredDeviceIds: deleteField()
       });
 
       toast.success(`Face ID reset for ${teacher.full_name}`);
@@ -2683,7 +2687,7 @@ const AdminDashboard = () => {
                             <RotateCcw className="h-4 w-4" />
                           </Button>
                           <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => handleResetFaceID(teacher)} title="Reset Face ID">
-                            <RefreshCw className="h-4 w-4" />
+                            <ScanFace className="h-4 w-4" />
                           </Button>
                           <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 hover:bg-slate-700" onClick={() => {
                             toast.info("Coming soon");
