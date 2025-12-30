@@ -21,24 +21,48 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
+    const hasTriggered = useRef(false);
+    const onCompleteRef = useRef(onComplete);
+
+    // Keep ref in sync
+    useEffect(() => {
+        onCompleteRef.current = onComplete;
+    }, [onComplete]);
 
     useEffect(() => {
+        let isMounted = true;
+        let timeouts: NodeJS.Timeout[] = [];
+        let activeStream: MediaStream | null = null;
+
         const startCamera = async () => {
+            if (hasTriggered.current) return;
+
             try {
                 const mediaStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'user' }
                 });
+
+                if (!isMounted) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                    return;
+                }
+
+                activeStream = mediaStream;
                 setStream(mediaStream);
+
                 if (videoRef.current) {
                     videoRef.current.srcObject = mediaStream;
                 }
                 setStatus('scanning');
 
                 // Simulate "AI" face verification/registration
-                setTimeout(() => {
+                const t1 = setTimeout(() => {
+                    if (!isMounted) return;
                     setMessage(mode === 'register' ? 'Capturing facial features...' : 'Verifying facial features...');
 
-                    setTimeout(() => {
+                    const t2 = setTimeout(() => {
+                        if (!isMounted || hasTriggered.current) return;
+
                         // Take a snapshot
                         if (videoRef.current && canvasRef.current) {
                             const canvas = canvasRef.current;
@@ -49,31 +73,48 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                             if (ctx) {
                                 ctx.drawImage(video, 0, 0);
                                 const faceData = canvas.toDataURL('image/jpeg', 0.5);
+
+                                hasTriggered.current = true;
                                 setStatus('success');
                                 setMessage(mode === 'register' ? 'Face registered successfully' : 'Face verified successfully');
-                                setTimeout(() => {
-                                    onComplete(faceData);
+
+                                const t3 = setTimeout(() => {
+                                    if (isMounted) {
+                                        onCompleteRef.current(faceData);
+                                        // Stop camera after completion
+                                        if (activeStream) {
+                                            activeStream.getTracks().forEach(track => track.stop());
+                                        }
+                                    }
                                 }, 1500);
+                                timeouts.push(t3);
                             }
                         }
                     }, 2500);
+                    timeouts.push(t2);
                 }, 2000);
+                timeouts.push(t1);
 
             } catch (err) {
-                console.error("Camera access failed:", err);
-                setStatus('error');
-                setMessage('Camera access denied or not available');
+                if (isMounted) {
+                    console.error("Camera access failed:", err);
+                    setStatus('error');
+                    setMessage('Camera access denied or not available');
+                }
             }
         };
 
         startCamera();
 
         return () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
+            isMounted = false;
+            timeouts.forEach(clearTimeout);
+            if (activeStream) {
+                activeStream.getTracks().forEach(track => track.stop());
             }
         };
-    }, [mode, onComplete, stream]);
+    }, [mode]); // Only re-run if mode changes
+
 
     const stopCamera = () => {
         if (stream) {
