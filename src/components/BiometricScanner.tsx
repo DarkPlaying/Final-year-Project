@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Fingerprint, CheckCircle2, XCircle, ShieldCheck, Smartphone, Loader2 } from 'lucide-react';
+import { ScanFace, CheckCircle2, XCircle, ShieldCheck, Smartphone, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -21,7 +21,7 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
 }) => {
     const [status, setStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
     const [scanProgress, setScanProgress] = useState(0);
-    const [message, setMessage] = useState(mode === 'verify' ? 'Place your finger on the sensor' : 'Scanning for initial registration');
+    const [message, setMessage] = useState(mode === 'verify' ? 'Aligning neural pathways for verification...' : 'Synchronizing secure facial biometric...');
 
     useEffect(() => {
         if (isProcessing) {
@@ -32,12 +32,12 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
                         clearInterval(interval);
                         return 100;
                     }
-                    return prev + 2;
+                    return prev + 1;
                 });
-            }, 50);
+            }, 30);
             return () => clearInterval(interval);
         } else if (status === 'scanning' && !isProcessing) {
-            // This is handled by the parent calling onComplete or showing error
+            // Processing done
         }
     }, [isProcessing]);
 
@@ -48,7 +48,7 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
                 {/* Outer Glow */}
                 <div className={cn(
                     "absolute -inset-4 rounded-full blur-2xl opacity-20 transition-all duration-500",
-                    status === 'scanning' ? "bg-indigo-500 animate-pulse" :
+                    status === 'scanning' ? "bg-blue-500 animate-pulse" :
                         status === 'success' ? "bg-green-500" :
                             status === 'error' ? "bg-red-500" : "bg-slate-500"
                 )} />
@@ -56,14 +56,14 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
                 {/* Main Ring */}
                 <div className={cn(
                     "relative h-48 w-48 rounded-full border-4 flex items-center justify-center transition-all duration-500 shadow-2xl overflow-hidden bg-slate-900/50 backdrop-blur-xl",
-                    status === 'scanning' ? "border-indigo-500 shadow-indigo-500/20" :
+                    status === 'scanning' ? "border-blue-500 shadow-blue-500/20" :
                         status === 'success' ? "border-green-500 shadow-green-500/20" :
                             status === 'error' ? "border-red-500 shadow-red-500/20" : "border-slate-700 shadow-slate-900/20"
                 )}>
 
                     {/* Scanning Laser Line */}
                     {status === 'scanning' && (
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-400 to-transparent shadow-[0_0_15px_rgba(129,140,248,0.8)] animate-scan z-20" />
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent shadow-[0_0_15px_rgba(96,165,250,0.8)] animate-scan z-20" />
                     )}
 
                     {/* Icon Mapping */}
@@ -73,9 +73,9 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
                         ) : status === 'error' ? (
                             <XCircle className="h-20 w-20 text-red-400 animate-in zoom-in" />
                         ) : (
-                            <Fingerprint className={cn(
+                            <ScanFace className={cn(
                                 "h-24 w-24 transition-colors duration-500",
-                                status === 'scanning' ? "text-indigo-400" : "text-slate-500"
+                                status === 'scanning' ? "text-blue-400" : "text-slate-500"
                             )} />
                         )}
                     </div>
@@ -83,8 +83,8 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
                     {/* Ripple Effect when processing */}
                     {status === 'scanning' && (
                         <>
-                            <div className="absolute inset-0 border-4 border-indigo-500 rounded-full animate-ping opacity-20" />
-                            <div className="absolute inset-4 border-2 border-indigo-400 rounded-full animate-ping opacity-10 animation-delay-300" />
+                            <div className="absolute inset-0 border-4 border-blue-500 rounded-full animate-ping opacity-20" />
+                            <div className="absolute inset-4 border-2 border-blue-400 rounded-full animate-ping opacity-10 animation-delay-300" />
                         </>
                     )}
                 </div>
@@ -93,12 +93,12 @@ export const BiometricScanner: React.FC<BiometricScannerProps> = ({
             {/* Info & Messaging */}
             <div className="text-center space-y-2 max-w-xs">
                 <h3 className="text-xl font-bold text-white tracking-tight">
-                    {status === 'scanning' ? 'Verifying Identity...' :
-                        status === 'success' ? 'Access Granted' :
-                            status === 'error' ? 'Verification Failed' : 'Biometric Auth'}
+                    {status === 'scanning' ? 'Neural Identity Match...' :
+                        status === 'success' ? 'Face ID Confirmed' :
+                            status === 'error' ? 'Scan Failed' : 'Face ID Setup'}
                 </h3>
                 <p className="text-sm text-slate-400 leading-relaxed italic">
-                    Hello, <span className="text-indigo-400 font-semibold">{userName}</span>. {message}
+                    <span className="text-blue-400 font-semibold">{userName}</span>, {message}
                 </p>
             </div>
 

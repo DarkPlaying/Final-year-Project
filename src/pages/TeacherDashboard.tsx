@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react'; // Refreshed
+import { useState, useEffect, useRef, useCallback } from 'react'; // Refreshed
 
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -1844,7 +1844,6 @@ const TeacherDashboard = () => {
 
     if (forceRegister || !hasFace) {
       setBiometricOverlayMode('register');
-      toast.info("Preparing AI Facial Registration...");
     } else {
       // Pre-fetch latest descriptor just in case it was updated elsewhere
       const userDoc = await getDoc(doc(db, 'users', userId));
@@ -7639,7 +7638,8 @@ const TeacherDashboard = () => {
                 if (biometricOverlayMode === 'register') {
                   // Save face descriptor to Firestore
                   await updateDoc(doc(db, 'users', userId), {
-                    faceDescriptor: newDescriptorStr
+                    faceDescriptor: newDescriptorStr,
+                    hasFace: true
                   });
                   toast.success("AI Face Profile registered successfully!");
                   setHasFace(true);

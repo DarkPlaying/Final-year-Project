@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as faceapi from 'face-api.js';
-import { Camera, RefreshCw, CheckCircle2, ShieldCheck, XCircle, Loader2, Scan } from 'lucide-react';
+import { Camera, RefreshCw, CheckCircle2, XCircle, Loader2, ScanFace } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -10,7 +10,7 @@ interface FaceScannerProps {
     onComplete: (faceData?: string) => void;
     onCancel: () => void;
     userName: string;
-    expectedDescriptor?: string; // Add this
+    expectedDescriptor?: string;
 }
 
 export const FaceScanner: React.FC<FaceScannerProps> = ({
@@ -20,37 +20,40 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
     userName,
     expectedDescriptor
 }) => {
-    const [status, setStatus] = useState<'idle' | 'initializing' | 'scanning' | 'success' | 'error'>('initializing');
-    const [retryCount, setRetryCount] = useState(0);
-    const [message, setMessage] = useState('Loading facial recognition models...');
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [status, setStatus] = useState<'initializing' | 'scanning' | 'success' | 'error'>('initializing');
+    const [message, setMessage] = useState('Initializing AI Face Lock...');
     const [stream, setStream] = useState<MediaStream | null>(null);
+
+    const videoRef = useRef<HTMLVideoElement>(null);
     const hasTriggered = useRef(false);
-    const onCompleteRef = useRef(onComplete);
+    const isMounted = useRef(true);
+    const detectorRef = useRef<any>(null);
 
-    // Keep ref in sync
+    // Stop all media tracks
+    const stopEverything = () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+    };
+
     useEffect(() => {
-        onCompleteRef.current = onComplete;
-    }, [onComplete]);
+        isMounted.current = true;
 
-    useEffect(() => {
-        let isMounted = true;
-        let activeStream: MediaStream | null = null;
-        let interval: NodeJS.Timeout | null = null;
-
-        const loadModelsAndStart = async () => {
+        async function setup() {
             try {
-                // Ensure models are loaded from /models directory in public folder
+                // 1. Load Models (Cached by browser usually)
+                setMessage('Loading Neural Models...');
+                const modelPath = '/models';
                 await Promise.all([
-                    faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
-                    faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-                    faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(modelPath),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(modelPath),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(modelPath)
                 ]);
 
-                if (!isMounted) return;
-                setMessage('Camera starting...');
+                if (!isMounted.current) return;
 
+                // 2. Setup Camera
+                setMessage('Connecting Secure Camera...');
                 const mediaStream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: 'user',
@@ -59,197 +62,137 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                     }
                 });
 
-                if (!isMounted) {
-                    mediaStream.getTracks().forEach(track => track.stop());
+                if (!isMounted.current) {
+                    mediaStream.getTracks().forEach(t => t.stop());
                     return;
                 }
 
-                activeStream = mediaStream;
                 setStream(mediaStream);
-
                 if (videoRef.current) {
                     videoRef.current.srcObject = mediaStream;
-                    // Explicitly call play to ensure video starts on all mobile browsers
-                    try {
-                        await videoRef.current.play();
-                    } catch (e) {
-                        console.warn("Video play failed, browser might be blocking:", e);
-                    }
+                    await videoRef.current.play();
                 }
 
                 setStatus('scanning');
-                setMessage(mode === 'register' ? 'Neural profile initialization...' : 'Aligning neural pathways...');
+                setMessage(mode === 'register' ? 'Look steady at the camera' : 'Scanning face for matching...');
 
-                // Start Detection Loop - Strictly sequential to prevent CPU overhead
-                let lastDetectionTime = 0;
-                let failCount = 0;
-                let isDetecting = false;
+                // 3. Start Inference Loop
+                runInference();
 
-                const detect = async (time: number) => {
-                    if (!videoRef.current || hasTriggered.current || !isMounted || isDetecting) {
-                        return;
-                    }
-
-                    try {
-                        // Ensure video is playing and has enough data
-                        if (videoRef.current.readyState < 2) {
-                            requestAnimationFrame(detect);
-                            return;
-                        }
-
-                        // Run detection only after a short delay (1000ms) to maintain performance
-                        if (time - lastDetectionTime > 1000) {
-                            isDetecting = true;
-                            lastDetectionTime = time;
-
-                            const detection = await faceapi.detectSingleFace(
-                                videoRef.current,
-                                new faceapi.SsdMobilenetv1Options({
-                                    minConfidence: 0.45,
-                                    maxResults: 1
-                                })
-                            )
-                                .withFaceLandmarks()
-                                .withFaceDescriptor();
-
-                            if (detection) {
-                                if (isMounted && !hasTriggered.current) {
-                                    failCount = 0;
-                                    if (mode === 'register') {
-                                        handleSuccess(detection.descriptor);
-                                    } else if (expectedDescriptor) {
-                                        try {
-                                            const saved = JSON.parse(expectedDescriptor);
-                                            const current = Array.from(detection.descriptor);
-
-                                            let distance = 0;
-                                            for (let i = 0; i < saved.length; i++) {
-                                                distance += Math.pow(saved[i] - current[i], 2);
-                                            }
-                                            distance = Math.sqrt(distance);
-
-                                            if (distance <= 0.60) {
-                                                handleVerification(detection.descriptor, true);
-                                            } else {
-                                                setStatus('error');
-                                                setMessage(`Neural Mismatch. Please center your face.`);
-                                            }
-                                        } catch (e) {
-                                            console.error("Comparison Error:", e);
-                                            handleVerification(detection.descriptor);
-                                        }
-                                    } else {
-                                        handleVerification(detection.descriptor);
-                                    }
-                                }
-                            } else {
-                                if (isMounted && status === 'scanning') {
-                                    failCount++;
-                                    if (failCount > 10) {
-                                        setMessage('No face detected. Adjust lighting and stay still.');
-                                    } else {
-                                        setMessage('Neural processing active...');
-                                    }
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        console.error("Detection Loop Error:", err);
-                    } finally {
-                        isDetecting = false;
-                        if (!hasTriggered.current && isMounted) {
-                            requestAnimationFrame(detect);
-                        }
-                    }
-                };
-
-                requestAnimationFrame(detect);
-
-            } catch (err) {
-                if (isMounted) {
-                    console.error("AI Face Initialization Error:", err);
+            } catch (err: any) {
+                console.error("Setup Error:", err);
+                if (isMounted.current) {
                     setStatus('error');
-                    setMessage('Neural system failed to initialize. Reload page.');
+                    setMessage(err.name === 'NotAllowedError' ? 'Camera access denied' : 'Neural system failure');
                 }
             }
-        };
+        }
 
-        const handleSuccess = (descriptor: Float32Array) => {
-            if (hasTriggered.current) return;
-            hasTriggered.current = true;
+        async function runInference() {
+            if (!isMounted.current || hasTriggered.current || !videoRef.current) return;
 
-            setStatus('success');
-            setMessage('Face Profile Created Successfully');
-
-            // Store descriptor as string for Firestore
-            const descriptorStr = JSON.stringify(Array.from(descriptor));
-
-            setTimeout(() => {
-                if (isMounted) {
-                    onCompleteRef.current(descriptorStr);
-                    stopEverything();
+            try {
+                // Ensure video is ready
+                if (videoRef.current.readyState < 2) {
+                    requestAnimationFrame(() => runInference());
+                    return;
                 }
-            }, 1500);
-        };
 
-        const handleVerification = async (currentDescriptor: Float32Array, isMatch: boolean = true) => {
-            if (hasTriggered.current) return;
-            hasTriggered.current = true;
+                // Standard SSD Detection
+                const detection = await faceapi.detectSingleFace(
+                    videoRef.current,
+                    new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+                )
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
 
-            if (isMatch) {
-                setStatus('success');
-                setMessage('Identity Confirmed');
-            } else {
-                setStatus('error');
-                setMessage('Identity Mismatch');
-            }
+                if (detection && isMounted.current && !hasTriggered.current) {
+                    const currentDescriptor = detection.descriptor;
 
-            const descriptorStr = JSON.stringify(Array.from(currentDescriptor));
+                    if (mode === 'register') {
+                        // Registration mode
+                        hasTriggered.current = true;
+                        setStatus('success');
+                        setMessage('Face Profile Secured');
+                        const dataStr = JSON.stringify(Array.from(currentDescriptor));
+                        setTimeout(() => onComplete(dataStr), 1500);
+                    } else if (expectedDescriptor) {
+                        // Verification mode
+                        try {
+                            const saved = JSON.parse(expectedDescriptor);
+                            const current = Array.from(currentDescriptor);
 
-            // Fast transition (200ms) for better UX
-            setTimeout(() => {
-                if (isMounted) {
-                    onCompleteRef.current(descriptorStr);
-                    stopEverything();
+                            // Euclidean distance check
+                            let distance = 0;
+                            for (let i = 0; i < saved.length; i++) {
+                                distance += Math.pow(saved[i] - current[i], 2);
+                            }
+                            distance = Math.sqrt(distance);
+
+                            // 0.6 is the industry standard for Face Matching
+                            if (distance <= 0.6) {
+                                hasTriggered.current = true;
+                                setStatus('success');
+                                setMessage('Identity Confirmed');
+                                setTimeout(() => onComplete(JSON.stringify(current)), 800);
+                            } else {
+                                // Don't give up immediately, just update message
+                                setMessage(`Analysis Mismatch. Reposition face.`);
+                                requestAnimationFrame(() => runInference());
+                            }
+                        } catch (e) {
+                            console.error("Match Logic Error:", e);
+                            requestAnimationFrame(() => runInference());
+                        }
+                    } else {
+                        // Fallback check
+                        hasTriggered.current = true;
+                        onComplete(JSON.stringify(Array.from(currentDescriptor)));
+                    }
+                } else {
+                    // Continue scanning if mounted and not triggered
+                    if (isMounted.current && !hasTriggered.current) {
+                        requestAnimationFrame(() => runInference());
+                    }
                 }
-            }, 200);
-        };
-
-        const stopEverything = () => {
-            if (interval) clearInterval(interval);
-            if (activeStream) {
-                activeStream.getTracks().forEach(track => track.stop());
+            } catch (err) {
+                console.error("Inference Error:", err);
+                if (isMounted.current && !hasTriggered.current) {
+                    // Small delay before retry on error
+                    setTimeout(() => runInference(), 500);
+                }
             }
-        };
+        }
 
-        loadModelsAndStart();
+        setup();
 
         return () => {
-            isMounted = false;
+            isMounted.current = false;
             stopEverything();
         };
-    }, [mode, retryCount]);
-
-    const handleCancel = () => {
-        onCancel();
-    };
+    }, [mode, expectedDescriptor, onComplete]);
 
     return (
-        <div className="flex flex-col items-center justify-center p-8 space-y-8 animate-in fade-in zoom-in duration-300">
-            <div className="relative group">
-                <canvas ref={canvasRef} className="hidden" />
+        <div className="flex flex-col items-center justify-center p-8 space-y-6 bg-slate-900 border border-slate-700/50 rounded-2xl shadow-2xl relative overflow-hidden backdrop-blur-xl">
+            {/* Background decorative elements */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500/0 via-blue-500 to-blue-500/0 opacity-30" />
+            <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500/0 via-blue-500 to-blue-500/0 opacity-30" />
+
+            <div className="relative">
+                {/* Glow Ring */}
                 <div className={cn(
-                    "absolute -inset-4 rounded-full blur-2xl opacity-20 transition-all duration-500",
+                    "absolute -inset-4 rounded-full blur-2xl opacity-20 transition-all duration-700",
                     status === 'scanning' ? "bg-blue-500 animate-pulse" :
                         status === 'success' ? "bg-green-500" :
-                            status === 'error' ? "bg-red-500" : "bg-slate-500"
+                            status === 'error' ? "bg-red-500" : "bg-blue-900"
                 )} />
 
+                {/* Video Container */}
                 <div className={cn(
-                    "relative h-64 w-64 rounded-full border-4 flex items-center justify-center transition-all duration-500 shadow-2xl overflow-hidden bg-slate-900/50 backdrop-blur-xl",
+                    "relative h-64 w-64 rounded-full border-4 flex items-center justify-center transition-all duration-500 shadow-2xl overflow-hidden bg-slate-950",
                     status === 'scanning' ? "border-blue-500 shadow-blue-500/20" :
                         status === 'success' ? "border-green-500 shadow-green-500/20" :
-                            status === 'error' ? "border-red-500 shadow-red-500/20" : "border-slate-700 shadow-slate-900/20"
+                            status === 'error' ? "border-red-500 shadow-red-500/20" : "border-slate-800"
                 )}>
                     <video
                         ref={videoRef}
@@ -257,81 +200,66 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                         playsInline
                         muted
                         className={cn(
-                            "absolute inset-0 h-full w-full object-cover",
-                            status === 'success' ? "brightness-110" : "grayscale-[30%]"
+                            "absolute inset-0 h-full w-full object-cover transition-transform duration-700",
+                            status === 'success' ? "scale-105" : "scale-110"
                         )}
                         style={{ transform: 'scaleX(-1)' }}
                     />
 
+                    {/* Scanning Animation Overlay */}
                     {status === 'scanning' && (
-                        <div className="absolute inset-0 z-20 pointer-events-none border-[16px] border-transparent">
-                            <div className="absolute inset-4 border-2 border-blue-400/30 rounded-full animate-pulse" />
-                            <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-400 rounded-tl-xl" />
-                            <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-400 rounded-tr-xl" />
-                            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-400 rounded-bl-xl" />
-                            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-400 rounded-br-xl" />
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent shadow-[0_0_15px_rgba(96,165,250,0.8)] animate-scan-face z-30" />
+                        <div className="absolute inset-0 pointer-events-none z-10">
+                            <div className="absolute top-0 left-0 w-full h-0.5 bg-blue-400/80 shadow-[0_0_15px_rgba(96,165,250,0.8)] animate-scan-line" />
+                            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 h-1/2 border-y border-blue-400/20 rounded-xl" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 border border-blue-400/10 rounded-full" />
                         </div>
                     )}
 
-                    <div className="z-40">
+                    {/* Status Icons */}
+                    <div className="relative z-20">
                         {status === 'initializing' && <Loader2 className="h-12 w-12 text-blue-400 animate-spin" />}
-                        {status === 'success' && <CheckCircle2 className="h-20 w-20 text-green-400 animate-in zoom-in" />}
-                        {status === 'error' && <XCircle className="h-20 w-20 text-red-400 animate-in zoom-in" />}
+                        {status === 'success' && <CheckCircle2 className="h-20 w-20 text-green-400 animate-in zoom-in duration-500" />}
+                        {status === 'error' && <XCircle className="h-20 w-20 text-red-400 animate-in zoom-in duration-500" />}
                     </div>
                 </div>
             </div>
 
-            <div className="text-center space-y-2 max-w-xs">
-                <div className="flex flex-col items-center gap-2">
-                    <div className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[10px] uppercase font-bold tracking-tighter flex items-center gap-1">
-                        <Scan className="h-3 w-3" /> Step 2: AI Facial Match
-                    </div>
-                    <h3 className="text-xl font-bold text-white tracking-tight">
-                        {status === 'scanning' ? 'Neural Processing...' :
-                            status === 'success' ? 'Identity Verified' :
-                                status === 'error' ? 'Analysis Failed' : 'Initializing AI'}
+            <div className="text-center space-y-3">
+                <div className="flex flex-col items-center gap-1.5">
+                    <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-[10px] uppercase font-bold tracking-widest flex items-center gap-1.5">
+                        <ScanFace className="h-3.5 w-3.5" /> Neural Secure Scan
+                    </span>
+                    <h3 className="text-2xl font-bold text-white tracking-tight">
+                        {status === 'initializing' ? 'System Loading' :
+                            status === 'scanning' ? 'Scanning Bio-Identity' :
+                                status === 'success' ? 'Authenticated' : 'Access Denied'}
                     </h3>
                 </div>
-                <p className="text-sm text-slate-400 leading-relaxed italic">
+                <p className="text-sm text-slate-400 leading-relaxed font-medium min-h-[1.25rem]">
                     {message}
                 </p>
             </div>
 
-            <div className="flex gap-4 w-full pt-4">
-                {status === 'error' && (
-                    <Button
-                        variant="default"
-                        className="flex-1 bg-blue-600 hover:bg-blue-700"
-                        onClick={() => {
-                            hasTriggered.current = false;
-                            setStatus('initializing');
-                            setRetryCount(prev => prev + 1);
-                        }}
-                    >
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Retry System
-                    </Button>
-                )}
+            <div className="w-full pt-4 border-t border-slate-800">
                 <Button
                     variant="ghost"
-                    className="flex-1 text-slate-400 hover:text-white"
-                    onClick={handleCancel}
+                    className="w-full text-slate-400 hover:text-white hover:bg-slate-800/50 rounded-xl transition-all"
+                    onClick={onCancel}
                 >
-                    Cancel
+                    Cancel Scan
                 </Button>
             </div>
 
             <style dangerouslySetInnerHTML={{
                 __html: `
-                @keyframes scan-face {
-                    0% { transform: translateY(0); opacity: 0; }
-                    10% { opacity: 1; }
-                    90% { opacity: 1; }
-                    100% { transform: translateY(256px); opacity: 0; }
+                @keyframes scan-line {
+                    0% { top: 10%; opacity: 0; }
+                    20% { opacity: 1; }
+                    80% { opacity: 1; }
+                    100% { top: 90%; opacity: 0; }
                 }
-                .animate-scan-face {
-                    animation: scan-face 3s ease-in-out infinite;
+                .animate-scan-line {
+                    animation: scan-line 2.5s ease-in-out infinite;
                 }
             `}} />
         </div>
