@@ -54,8 +54,8 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 const mediaStream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: 'user',
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
                     }
                 });
 
@@ -88,6 +88,12 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                     if (!videoRef.current || hasTriggered.current || !isMounted) return;
 
                     try {
+                        // Ensure video is playing and has enough data
+                        if (videoRef.current.readyState < 2) {
+                            requestAnimationFrame(detect);
+                            return;
+                        }
+
                         // Run detection only after a short delay (600ms) to save CPU
                         if (time - lastDetectionTime > 600) {
                             lastDetectionTime = time;
@@ -95,48 +101,54 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                             const detection = await faceapi.detectSingleFace(
                                 videoRef.current,
                                 new faceapi.SsdMobilenetv1Options({
-                                    minConfidence: 0.40, // Increased sensitivity
+                                    minConfidence: 0.20, // Significantly more sensitive
                                     maxResults: 1
                                 })
                             )
                                 .withFaceLandmarks()
                                 .withFaceDescriptor();
 
-                            if (detection && isMounted && !hasTriggered.current) {
-                                failCount = 0;
-                                if (mode === 'register') {
-                                    handleSuccess(detection.descriptor);
-                                } else if (expectedDescriptor) {
-                                    try {
-                                        const saved = JSON.parse(expectedDescriptor);
-                                        const current = Array.from(detection.descriptor);
+                            if (detection) {
+                                console.log("AI: Face Found with confidence:", detection.detection.score);
+                                if (isMounted && !hasTriggered.current) {
+                                    failCount = 0;
+                                    if (mode === 'register') {
+                                        handleSuccess(detection.descriptor);
+                                    } else if (expectedDescriptor) {
+                                        try {
+                                            const saved = JSON.parse(expectedDescriptor);
+                                            const current = Array.from(detection.descriptor);
 
-                                        let distance = 0;
-                                        for (let i = 0; i < saved.length; i++) {
-                                            distance += Math.pow(saved[i] - current[i], 2);
-                                        }
-                                        distance = Math.sqrt(distance);
+                                            let distance = 0;
+                                            for (let i = 0; i < saved.length; i++) {
+                                                distance += Math.pow(saved[i] - current[i], 2);
+                                            }
+                                            distance = Math.sqrt(distance);
+                                            console.log("AI: Face Match Distance:", distance);
 
-                                        // 0.6 is the standard threshold for face Recognition in face-api.js
-                                        if (distance <= 0.60) {
-                                            handleVerification(detection.descriptor, true);
-                                        } else {
-                                            setStatus('error');
-                                            setMessage(`Neural Mismatch (${distance.toFixed(3)}). Please center your face.`);
+                                            if (distance <= 0.60) {
+                                                handleVerification(detection.descriptor, true);
+                                            } else {
+                                                setStatus('error');
+                                                setMessage(`Neural Mismatch (${distance.toFixed(3)}). Please center your face.`);
+                                            }
+                                        } catch (e) {
+                                            console.error("Comparison Error:", e);
+                                            handleVerification(detection.descriptor);
                                         }
-                                    } catch (e) {
-                                        console.error("Comparison Error:", e);
+                                    } else {
                                         handleVerification(detection.descriptor);
                                     }
-                                } else {
-                                    handleVerification(detection.descriptor);
                                 }
-                            } else if (isMounted && status === 'scanning') {
-                                failCount++;
-                                if (failCount > 10) {
-                                    setMessage('No face detected. Adjust lighting and move closer.');
-                                } else {
-                                    setMessage('Processing neural image...');
+                            } else {
+                                console.log("AI: No face detected in frame");
+                                if (isMounted && status === 'scanning') {
+                                    failCount++;
+                                    if (failCount > 10) {
+                                        setMessage('No face detected. Increase lighting or move slowly.');
+                                    } else {
+                                        setMessage('Scanning neural vectors...');
+                                    }
                                 }
                             }
                         }
