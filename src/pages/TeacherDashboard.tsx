@@ -7657,7 +7657,7 @@ const TeacherDashboard = () => {
                     }
                     distance = Math.sqrt(distance);
 
-                    if (distance > 0.55) {
+                    if (distance > 0.60) {
                       toast.error("Identity Lock: Face Mismatch!");
                       setShowFaceOverlay(false);
                       faceProcessRef.current = false;

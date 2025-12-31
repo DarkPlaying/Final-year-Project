@@ -21,6 +21,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
     expectedDescriptor
 }) => {
     const [status, setStatus] = useState<'idle' | 'initializing' | 'scanning' | 'success' | 'error'>('initializing');
+    const [retryCount, setRetryCount] = useState(0);
     const [message, setMessage] = useState('Loading facial recognition models...');
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -68,59 +69,79 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
 
                 if (videoRef.current) {
                     videoRef.current.srcObject = mediaStream;
+                    // Explicitly call play to ensure video starts on all mobile browsers
+                    try {
+                        await videoRef.current.play();
+                    } catch (e) {
+                        console.warn("Video play failed, browser might be blocking:", e);
+                    }
                 }
 
                 setStatus('scanning');
-                setMessage(mode === 'register' ? 'Look directly at the camera' : 'Position your face for verification');
+                setMessage(mode === 'register' ? 'Neural profile initialization...' : 'Aligning neural pathways...');
 
-                // Start Detection Loop - Using SSD for accuracy with controlled frequency for performance
+                // Start Detection Loop - Sequential execution to prevent overlapping AI calls
                 let lastDetectionTime = 0;
+                let failCount = 0;
+
                 const detect = async (time: number) => {
                     if (!videoRef.current || hasTriggered.current || !isMounted) return;
 
-                    // Run detection every 600ms to prevent lag on mobile
-                    if (time - lastDetectionTime > 600) {
-                        lastDetectionTime = time;
+                    try {
+                        // Run detection only after a short delay (600ms) to save CPU
+                        if (time - lastDetectionTime > 600) {
+                            lastDetectionTime = time;
 
-                        // SSD is more accurate but heavier than Tiny
-                        const detection = await faceapi.detectSingleFace(
-                            videoRef.current,
-                            new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
-                        )
-                            .withFaceLandmarks()
-                            .withFaceDescriptor();
+                            const detection = await faceapi.detectSingleFace(
+                                videoRef.current,
+                                new faceapi.SsdMobilenetv1Options({
+                                    minConfidence: 0.40, // Increased sensitivity
+                                    maxResults: 1
+                                })
+                            )
+                                .withFaceLandmarks()
+                                .withFaceDescriptor();
 
-                        if (detection && isMounted && !hasTriggered.current) {
-                            if (mode === 'register') {
-                                handleSuccess(detection.descriptor);
-                            } else if (expectedDescriptor) {
-                                try {
-                                    const saved = JSON.parse(expectedDescriptor);
-                                    const current = Array.from(detection.descriptor);
+                            if (detection && isMounted && !hasTriggered.current) {
+                                failCount = 0;
+                                if (mode === 'register') {
+                                    handleSuccess(detection.descriptor);
+                                } else if (expectedDescriptor) {
+                                    try {
+                                        const saved = JSON.parse(expectedDescriptor);
+                                        const current = Array.from(detection.descriptor);
 
-                                    let distance = 0;
-                                    for (let i = 0; i < saved.length; i++) {
-                                        distance += Math.pow(saved[i] - current[i], 2);
+                                        let distance = 0;
+                                        for (let i = 0; i < saved.length; i++) {
+                                            distance += Math.pow(saved[i] - current[i], 2);
+                                        }
+                                        distance = Math.sqrt(distance);
+
+                                        // 0.6 is the standard threshold for face Recognition in face-api.js
+                                        if (distance <= 0.60) {
+                                            handleVerification(detection.descriptor, true);
+                                        } else {
+                                            setStatus('error');
+                                            setMessage(`Neural Mismatch (${distance.toFixed(3)}). Please center your face.`);
+                                        }
+                                    } catch (e) {
+                                        console.error("Comparison Error:", e);
+                                        handleVerification(detection.descriptor);
                                     }
-                                    distance = Math.sqrt(distance);
-
-                                    // Balanced threshold for mobile front cameras
-                                    if (distance <= 0.55) {
-                                        handleVerification(detection.descriptor, true);
-                                    } else {
-                                        setStatus('error');
-                                        setMessage(`Identity Mismatch. Please center your face.`);
-                                    }
-                                } catch (e) {
-                                    console.error("Comparison Error:", e);
+                                } else {
                                     handleVerification(detection.descriptor);
                                 }
-                            } else {
-                                handleVerification(detection.descriptor);
+                            } else if (isMounted && status === 'scanning') {
+                                failCount++;
+                                if (failCount > 10) {
+                                    setMessage('No face detected. Adjust lighting and move closer.');
+                                } else {
+                                    setMessage('Processing neural image...');
+                                }
                             }
-                        } else if (isMounted && status === 'scanning') {
-                            setMessage('Analyzing camera feed...');
                         }
+                    } catch (err) {
+                        console.error("Detection Loop Error:", err);
                     }
 
                     if (!hasTriggered.current && isMounted) {
@@ -134,7 +155,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 if (isMounted) {
                     console.error("AI Face Initialization Error:", err);
                     setStatus('error');
-                    setMessage('Failed to initialize facial recognition. Check your connection.');
+                    setMessage('Neural system failed to initialize. Reload page.');
                 }
             }
         };
@@ -193,7 +214,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
             isMounted = false;
             stopEverything();
         };
-    }, [mode]);
+    }, [mode, retryCount]);
 
     const handleCancel = () => {
         onCancel();
@@ -264,6 +285,20 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
             </div>
 
             <div className="flex gap-4 w-full pt-4">
+                {status === 'error' && (
+                    <Button
+                        variant="default"
+                        className="flex-1 bg-blue-600 hover:bg-blue-700"
+                        onClick={() => {
+                            hasTriggered.current = false;
+                            setStatus('initializing');
+                            setRetryCount(prev => prev + 1);
+                        }}
+                    >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Retry System
+                    </Button>
+                )}
                 <Button
                     variant="ghost"
                     className="flex-1 text-slate-400 hover:text-white"
