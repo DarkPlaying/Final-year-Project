@@ -103,6 +103,18 @@ service cloud.firestore {
       allow update: if isAuthenticated();
     }
 
+    // System: Global configurations
+    match /system/maintenance {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Settings: Portal status and teacher-specific settings
+    match /settings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || isTeacher();
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if isAdmin();
