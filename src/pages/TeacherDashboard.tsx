@@ -404,6 +404,63 @@ const TeacherDashboard = () => {
   const [userDataLoaded, setUserDataLoaded] = useState(false);
   const faceProcessRef = useRef(false);
 
+  const handleFaceScanCancel = useCallback(() => {
+    setShowFaceOverlay(false);
+    faceProcessRef.current = false;
+  }, []);
+
+  const handleFaceScanComplete = useCallback(async (newDescriptorStr?: string) => {
+    if (faceProcessRef.current || !newDescriptorStr) return;
+    faceProcessRef.current = true;
+
+    try {
+      if (biometricOverlayMode === 'register') {
+        // Save face descriptor to Firestore
+        await updateDoc(doc(db, 'users', userId), {
+          faceDescriptor: newDescriptorStr,
+          hasFace: true
+        });
+        toast.success("AI Face Profile registered successfully!");
+        setHasFace(true);
+        setRegisteredFaceDescriptor(newDescriptorStr);
+      } else if (biometricOverlayMode === 'verify') {
+        // Double check matching if a descriptor exists
+        if (registeredFaceDescriptor) {
+          const saved = JSON.parse(registeredFaceDescriptor);
+          const current = JSON.parse(newDescriptorStr);
+          let distance = 0;
+          for (let i = 0; i < saved.length; i++) {
+            distance += Math.pow(saved[i] - current[i], 2);
+          }
+          distance = Math.sqrt(distance);
+
+          if (distance > 0.60) {
+            toast.error("Identity Lock: Face Mismatch!");
+            setShowFaceOverlay(false);
+            faceProcessRef.current = false;
+            return;
+          }
+          toast.success("Identity Confirmed: Face Matched!");
+        } else {
+          // If no registered face but somehow in verify mode (shouldn't happen), assume success but log it
+          console.warn("Verify mode active but no registered face found.");
+          toast.success("Identity Confirmed!");
+        }
+      }
+
+      setShowFaceOverlay(false);
+      // Give more time for the face overlay dialog to close before opening the next one
+      setTimeout(() => {
+        setShowSelfAttendanceDialog(true);
+        faceProcessRef.current = false;
+      }, 500);
+    } catch (err) {
+      console.error("Face matching error:", err);
+      toast.error("An error occurred during facial analysis.");
+      faceProcessRef.current = false;
+    }
+  }, [userId, biometricOverlayMode, registeredFaceDescriptor, setShowSelfAttendanceDialog, setShowFaceOverlay]);
+
   // Auto-prompt biometric setup removed as per user request
 
 
@@ -7621,64 +7678,17 @@ const TeacherDashboard = () => {
         if (!open) faceProcessRef.current = false;
       }}>
         <DialogContent className="bg-slate-900/90 border-slate-700 p-0 overflow-hidden max-w-sm backdrop-blur-2xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>AI Face Scanner</DialogTitle>
+            <DialogDescription>Verify your identity using facial recognition</DialogDescription>
+          </DialogHeader>
           <FaceScanner
             key={showFaceOverlay ? 'active' : 'inactive'}
             mode={biometricOverlayMode === 'register' ? 'register' : 'verify'}
             userName={teacherProfileForm?.name || "Teacher"}
             expectedDescriptor={biometricOverlayMode === 'verify' ? registeredFaceDescriptor || undefined : undefined}
-            onCancel={() => {
-              setShowFaceOverlay(false);
-              faceProcessRef.current = false;
-            }}
-            onComplete={async (newDescriptorStr) => {
-              if (faceProcessRef.current || !newDescriptorStr) return;
-              faceProcessRef.current = true;
-
-              try {
-                if (biometricOverlayMode === 'register') {
-                  // Save face descriptor to Firestore
-                  await updateDoc(doc(db, 'users', userId), {
-                    faceDescriptor: newDescriptorStr,
-                    hasFace: true
-                  });
-                  toast.success("AI Face Profile registered successfully!");
-                  setHasFace(true);
-                  setRegisteredFaceDescriptor(newDescriptorStr);
-                } else if (biometricOverlayMode === 'verify') {
-                  // The scanner already checked the distance if expectedDescriptor was passed
-                  // but we do a final dry run check here if it wasn't or just to be safe.
-
-                  if (registeredFaceDescriptor) {
-                    const saved = JSON.parse(registeredFaceDescriptor);
-                    const current = JSON.parse(newDescriptorStr);
-                    let distance = 0;
-                    for (let i = 0; i < saved.length; i++) {
-                      distance += Math.pow(saved[i] - current[i], 2);
-                    }
-                    distance = Math.sqrt(distance);
-
-                    if (distance > 0.60) {
-                      toast.error("Identity Lock: Face Mismatch!");
-                      setShowFaceOverlay(false);
-                      faceProcessRef.current = false;
-                      return;
-                    }
-                  }
-
-                  toast.success("Identity Confirmed: Face Matched!");
-                }
-
-                setShowFaceOverlay(false);
-                setTimeout(() => {
-                  setShowSelfAttendanceDialog(true);
-                  faceProcessRef.current = false;
-                }, 150);
-              } catch (err) {
-                console.error("Face matching error:", err);
-                toast.error("An error occurred during facial analysis.");
-                faceProcessRef.current = false;
-              }
-            }}
+            onCancel={handleFaceScanCancel}
+            onComplete={handleFaceScanComplete}
           />
         </DialogContent>
       </Dialog>

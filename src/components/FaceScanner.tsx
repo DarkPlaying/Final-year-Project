@@ -27,7 +27,17 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
     const videoRef = useRef<HTMLVideoElement>(null);
     const hasTriggered = useRef(false);
     const isMounted = useRef(true);
-    const detectorRef = useRef<any>(null);
+    const onCompleteRef = useRef(onComplete);
+    const expectedDescriptorRef = useRef(expectedDescriptor);
+
+    // Keep refs up to date without triggering useEffect
+    useEffect(() => {
+        onCompleteRef.current = onComplete;
+    }, [onComplete]);
+
+    useEffect(() => {
+        expectedDescriptorRef.current = expectedDescriptor;
+    }, [expectedDescriptor]);
 
     // Stop all media tracks
     const stopEverything = () => {
@@ -38,17 +48,22 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
 
     useEffect(() => {
         isMounted.current = true;
+        hasTriggered.current = false;
 
         async function setup() {
             try {
-                // 1. Load Models (Cached by browser usually)
-                setMessage('Loading Neural Models...');
+                // 1. Load Models
                 const modelPath = '/models';
-                await Promise.all([
-                    faceapi.nets.ssdMobilenetv1.loadFromUri(modelPath),
-                    faceapi.nets.faceLandmark68Net.loadFromUri(modelPath),
-                    faceapi.nets.faceRecognitionNet.loadFromUri(modelPath)
-                ]);
+                const nets = faceapi.nets;
+
+                if (!nets.ssdMobilenetv1.isLoaded || !nets.faceLandmark68Net.isLoaded || !nets.faceRecognitionNet.isLoaded) {
+                    setMessage('Loading AI Neural Engines...');
+                    await Promise.all([
+                        nets.ssdMobilenetv1.loadFromUri(modelPath),
+                        nets.faceLandmark68Net.loadFromUri(modelPath),
+                        nets.faceRecognitionNet.loadFromUri(modelPath)
+                    ]);
+                }
 
                 if (!isMounted.current) return;
 
@@ -68,16 +83,26 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 }
 
                 setStream(mediaStream);
-                if (videoRef.current) {
+                if (videoRef.current && isMounted.current) {
                     videoRef.current.srcObject = mediaStream;
-                    await videoRef.current.play();
+                    try {
+                        await videoRef.current.play();
+                    } catch (err: any) {
+                        if (err.name === 'AbortError') {
+                            console.warn("FaceScanner: play() interrupted.");
+                        } else {
+                            throw err;
+                        }
+                    }
                 }
 
                 setStatus('scanning');
                 setMessage(mode === 'register' ? 'Look steady at the camera' : 'Scanning face for matching...');
 
-                // 3. Start Inference Loop
-                runInference();
+                // 3. Start Inference Loop with warm-up
+                setTimeout(() => {
+                    if (isMounted.current) runInference();
+                }, 800);
 
             } catch (err: any) {
                 console.error("Setup Error:", err);
@@ -92,13 +117,11 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
             if (!isMounted.current || hasTriggered.current || !videoRef.current) return;
 
             try {
-                // Ensure video is ready
                 if (videoRef.current.readyState < 2) {
                     requestAnimationFrame(() => runInference());
                     return;
                 }
 
-                // Standard SSD Detection
                 const detection = await faceapi.detectSingleFace(
                     videoRef.current,
                     new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
@@ -108,69 +131,94 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
 
                 if (detection && isMounted.current && !hasTriggered.current) {
                     const currentDescriptor = detection.descriptor;
+                    const expected = expectedDescriptorRef.current;
 
                     if (mode === 'register') {
-                        // Registration mode
                         hasTriggered.current = true;
                         setStatus('success');
                         setMessage('Face Profile Secured');
                         const dataStr = JSON.stringify(Array.from(currentDescriptor));
-                        setTimeout(() => onComplete(dataStr), 1500);
-                    } else if (expectedDescriptor) {
-                        // Verification mode
+                        setTimeout(() => {
+                            if (isMounted.current) {
+                                onCompleteRef.current(dataStr);
+                            }
+                        }, 1500);
+                    } else if (expected) {
                         try {
-                            const saved = JSON.parse(expectedDescriptor);
                             const current = Array.from(currentDescriptor);
-
-                            // Euclidean distance check
                             let distance = 0;
-                            for (let i = 0; i < saved.length; i++) {
-                                distance += Math.pow(saved[i] - current[i], 2);
+                            const savedDescriptor = typeof expected === 'string' ? JSON.parse(expected) : expected;
+
+                            for (let i = 0; i < savedDescriptor.length; i++) {
+                                distance += Math.pow(savedDescriptor[i] - current[i], 2);
                             }
                             distance = Math.sqrt(distance);
 
-                            // 0.6 is the industry standard for Face Matching
                             if (distance <= 0.6) {
                                 hasTriggered.current = true;
                                 setStatus('success');
-                                setMessage('Identity Confirmed');
-                                setTimeout(() => onComplete(JSON.stringify(current)), 800);
+                                setMessage('Identity Confirmed: Face Matched');
+                                setTimeout(() => {
+                                    if (isMounted.current) {
+                                        onCompleteRef.current(JSON.stringify(current));
+                                    }
+                                }, 1200);
                             } else {
-                                // Don't give up immediately, just update message
-                                setMessage(`Analysis Mismatch. Reposition face.`);
-                                requestAnimationFrame(() => runInference());
+                                setMessage(`Identity Verification Pending... Reposition Face`);
+                                if (isMounted.current && !hasTriggered.current) {
+                                    setTimeout(() => runInference(), 200);
+                                }
                             }
                         } catch (e) {
                             console.error("Match Logic Error:", e);
-                            requestAnimationFrame(() => runInference());
+                            if (isMounted.current && !hasTriggered.current) {
+                                setTimeout(() => runInference(), 500);
+                            }
                         }
                     } else {
-                        // Fallback check
                         hasTriggered.current = true;
-                        onComplete(JSON.stringify(Array.from(currentDescriptor)));
+                        setStatus('success');
+                        setMessage('Face Captured Successfully!');
+                        setTimeout(() => {
+                            if (isMounted.current) {
+                                onCompleteRef.current(JSON.stringify(Array.from(currentDescriptor)));
+                            }
+                        }, 1000);
                     }
                 } else {
-                    // Continue scanning if mounted and not triggered
                     if (isMounted.current && !hasTriggered.current) {
-                        requestAnimationFrame(() => runInference());
+                        setMessage('Center your face in the frame');
+                        setTimeout(() => runInference(), 200);
                     }
                 }
             } catch (err) {
                 console.error("Inference Error:", err);
                 if (isMounted.current && !hasTriggered.current) {
-                    // Small delay before retry on error
-                    setTimeout(() => runInference(), 500);
+                    setTimeout(() => runInference(), 1000);
                 }
             }
         }
+
+        const setupTimeout = setTimeout(() => {
+            if (isMounted.current) {
+                setStatus(current => {
+                    if (current === 'initializing') {
+                        setMessage('Neural system timed out. Please refresh or try again.');
+                        return 'error';
+                    }
+                    return current;
+                });
+            }
+        }, 45000);
 
         setup();
 
         return () => {
             isMounted.current = false;
+            clearTimeout(setupTimeout);
             stopEverything();
         };
-    }, [mode, expectedDescriptor, onComplete]);
+    }, [mode]);
 
     return (
         <div className="flex flex-col items-center justify-center p-8 space-y-6 bg-slate-900 border border-slate-700/50 rounded-2xl shadow-2xl relative overflow-hidden backdrop-blur-xl">
@@ -210,8 +258,6 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                     {status === 'scanning' && (
                         <div className="absolute inset-0 pointer-events-none z-10">
                             <div className="absolute top-0 left-0 w-full h-0.5 bg-blue-400/80 shadow-[0_0_15px_rgba(96,165,250,0.8)] animate-scan-line" />
-                            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 h-1/2 border-y border-blue-400/20 rounded-xl" />
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 border border-blue-400/10 rounded-full" />
                         </div>
                     )}
 
@@ -240,6 +286,16 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 </p>
             </div>
 
+            {status === 'error' && (
+                <Button
+                    className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-6"
+                    onClick={() => window.location.reload()}
+                >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Restart Neural System
+                </Button>
+            )}
+
             <div className="w-full pt-4 border-t border-slate-800">
                 <Button
                     variant="ghost"
@@ -259,7 +315,7 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                     100% { top: 90%; opacity: 0; }
                 }
                 .animate-scan-line {
-                    animation: scan-line 2.5s ease-in-out infinite;
+                    animation: scan-line 2s linear infinite;
                 }
             `}} />
         </div>
