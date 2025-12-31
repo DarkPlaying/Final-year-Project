@@ -54,8 +54,8 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 const mediaStream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: 'user',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
                     }
                 });
 
@@ -80,12 +80,15 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                 setStatus('scanning');
                 setMessage(mode === 'register' ? 'Neural profile initialization...' : 'Aligning neural pathways...');
 
-                // Start Detection Loop - Sequential execution to prevent overlapping AI calls
+                // Start Detection Loop - Strictly sequential to prevent CPU overhead
                 let lastDetectionTime = 0;
                 let failCount = 0;
+                let isDetecting = false;
 
                 const detect = async (time: number) => {
-                    if (!videoRef.current || hasTriggered.current || !isMounted) return;
+                    if (!videoRef.current || hasTriggered.current || !isMounted || isDetecting) {
+                        return;
+                    }
 
                     try {
                         // Ensure video is playing and has enough data
@@ -94,14 +97,15 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                             return;
                         }
 
-                        // Run detection only after a short delay (600ms) to save CPU
-                        if (time - lastDetectionTime > 600) {
+                        // Run detection only after a short delay (1000ms) to maintain performance
+                        if (time - lastDetectionTime > 1000) {
+                            isDetecting = true;
                             lastDetectionTime = time;
 
                             const detection = await faceapi.detectSingleFace(
                                 videoRef.current,
                                 new faceapi.SsdMobilenetv1Options({
-                                    minConfidence: 0.20, // Significantly more sensitive
+                                    minConfidence: 0.45,
                                     maxResults: 1
                                 })
                             )
@@ -109,7 +113,6 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                                 .withFaceDescriptor();
 
                             if (detection) {
-                                console.log("AI: Face Found with confidence:", detection.detection.score);
                                 if (isMounted && !hasTriggered.current) {
                                     failCount = 0;
                                     if (mode === 'register') {
@@ -124,13 +127,12 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                                                 distance += Math.pow(saved[i] - current[i], 2);
                                             }
                                             distance = Math.sqrt(distance);
-                                            console.log("AI: Face Match Distance:", distance);
 
                                             if (distance <= 0.60) {
                                                 handleVerification(detection.descriptor, true);
                                             } else {
                                                 setStatus('error');
-                                                setMessage(`Neural Mismatch (${distance.toFixed(3)}). Please center your face.`);
+                                                setMessage(`Neural Mismatch. Please center your face.`);
                                             }
                                         } catch (e) {
                                             console.error("Comparison Error:", e);
@@ -141,23 +143,23 @@ export const FaceScanner: React.FC<FaceScannerProps> = ({
                                     }
                                 }
                             } else {
-                                console.log("AI: No face detected in frame");
                                 if (isMounted && status === 'scanning') {
                                     failCount++;
                                     if (failCount > 10) {
-                                        setMessage('No face detected. Increase lighting or move slowly.');
+                                        setMessage('No face detected. Adjust lighting and stay still.');
                                     } else {
-                                        setMessage('Scanning neural vectors...');
+                                        setMessage('Neural processing active...');
                                     }
                                 }
                             }
                         }
                     } catch (err) {
                         console.error("Detection Loop Error:", err);
-                    }
-
-                    if (!hasTriggered.current && isMounted) {
-                        requestAnimationFrame(detect);
+                    } finally {
+                        isDetecting = false;
+                        if (!hasTriggered.current && isMounted) {
+                            requestAnimationFrame(detect);
+                        }
                     }
                 };
 
