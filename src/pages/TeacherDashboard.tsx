@@ -446,6 +446,60 @@ const TeacherDashboard = () => {
           console.warn("Verify mode active but no registered face found.");
           toast.success("Identity Confirmed!");
         }
+
+        // --- LOCATION VERIFICATION (FACE FIRST -> THEN LOCATION) ---
+        toast.loading("Verifying Location Requirements...");
+        try {
+          const settingsSnap = await getDoc(doc(db, 'settings', 'attendance'));
+          if (settingsSnap.exists()) {
+            const settings = settingsSnap.data();
+            if (settings.isEnabled) {
+              await new Promise<void>((resolve, reject) => {
+                if (!navigator.geolocation) {
+                  reject(new Error("Geolocation support is required for attendance."));
+                  return;
+                }
+                navigator.geolocation.getCurrentPosition((pos) => {
+                  const userLat = pos.coords.latitude;
+                  const userLng = pos.coords.longitude;
+                  const targetLat = settings.lat || 0;
+                  const targetLng = settings.lng || 0;
+                  const radius = settings.radius || 100;
+
+                  // Haversine Distance Calculation
+                  const R = 6371e3; // Earth radius in metres
+                  const φ1 = userLat * Math.PI / 180;
+                  const φ2 = targetLat * Math.PI / 180;
+                  const Δφ = (targetLat - userLat) * Math.PI / 180;
+                  const Δλ = (targetLng - userLng) * Math.PI / 180;
+
+                  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+                  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                  const d = R * c; // Distance in meters
+
+                  if (d > radius) {
+                    reject(new Error(`Location Violation: You are ${Math.round(d)}m away from the campus. Must be within ${radius}m.`));
+                  } else {
+                    resolve();
+                  }
+                }, (err) => {
+                  reject(new Error("Location access denied. Please enable GPS."));
+                }, { enableHighAccuracy: true, timeout: 10000 });
+              });
+              toast.dismiss();
+              toast.success("Location Verified!");
+            }
+          }
+        } catch (locErr: any) {
+          console.error("Location check failed:", locErr);
+          toast.dismiss();
+          toast.error(locErr.message || "Attendance blocked due to location error.");
+          setShowFaceOverlay(false);
+          faceProcessRef.current = false;
+          return; // STOP FLOW
+        }
       }
 
       setShowFaceOverlay(false);
@@ -1888,9 +1942,20 @@ const TeacherDashboard = () => {
 
   // --- Auto-Absent Logic & Biometrics ---
 
-  // Helper to check mobile
   const isMobileDevice = () => {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  };
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371000; // Earth radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
   const handleSelfAttendanceClick = async (forceRegister: boolean = false) => {
@@ -1898,6 +1963,49 @@ const TeacherDashboard = () => {
       toast.error("Make attendance in mobile");
       return;
     }
+
+    // --- Geolocation Enforcement ---
+    try {
+      const settingsSnap = await getDoc(doc(db, 'settings', 'attendance'));
+      if (settingsSnap.exists()) {
+        const settings = settingsSnap.data();
+        if (settings.isEnabled) {
+          toast.loading("Verifying your location...");
+          const position: GeolocationPosition = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 0
+            });
+          });
+
+          const distance = calculateDistance(
+            position.coords.latitude,
+            position.coords.longitude,
+            settings.lat,
+            settings.lng
+          );
+
+          if (distance > settings.radius) {
+            toast.dismiss();
+            toast.error(`Outside allowed radius (${Math.round(distance)}m). You must be within ${settings.radius}m of the designated location.`);
+            return;
+          }
+          toast.dismiss();
+          toast.success("Location verified");
+        }
+      }
+    } catch (err: any) {
+      toast.dismiss();
+      console.error("Location verification error:", err);
+      if (err.code === 1) { // PERMISSION_DENIED
+        toast.error("Location access denied. Please allow GPS access to mark attendance.");
+      } else {
+        toast.error("Could not verify your location. Please ensure GPS is enabled and try again.");
+      }
+      return;
+    }
+    // --- End Geolocation Enforcement ---
 
     if (forceRegister || !hasFace) {
       setBiometricOverlayMode('register');
@@ -6290,55 +6398,63 @@ const TeacherDashboard = () => {
                         <Download className="h-4 w-4 mr-2" /> CSV
                       </Button>
                     </div>
-                    <div className="mt-6 border border-slate-700 rounded-lg">
-                      <div className="overflow-x-auto pb-2">
+                    <div className="mt-6 border border-slate-700 rounded-lg overflow-hidden">
+                      <div className="overflow-x-auto overflow-y-auto max-h-[75vh] pb-2 custom-scrollbar">
                         <table className="min-w-full table-auto border-collapse text-xs whitespace-nowrap" onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
-                          <thead>
+                          <thead className="sticky top-0 z-30">
                             <tr className="bg-slate-900 border-b border-slate-700">
-                              <th className="p-0 font-medium text-slate-400 text-left sticky left-0 bg-slate-900 z-20 border-r border-slate-700">
-                                <div className="p-2 w-[140px]">Student</div>
+                              <th className="p-0 font-medium text-slate-400 text-left sticky left-0 top-0 bg-slate-950 z-40 border-r border-slate-700">
+                                <div className="p-2 w-[140px] md:w-[160px] text-sm font-bold">Student</div>
                               </th>
-                              {Array.from({ length: new Date(parseInt(viewAttendanceDate.split('-')[0]), parseInt(viewAttendanceDate.split('-')[1]), 0).getDate() }, (_, i) => i + 1).map(day => (
-                                <th key={day} className={`p-0 font-medium text-slate-400 text-center border-r border-slate-800/50 last:border-0 ${hoveredCol === day ? 'bg-blue-500/10' : ''}`}>
-                                  <div className="py-2 w-12 flex items-center justify-center">{day}</div>
-                                </th>
-                              ))}
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
+                                const daysInMonth = new Date(parseInt(viewAttendanceDate.split('-')[0]), parseInt(viewAttendanceDate.split('-')[1]), 0).getDate();
+                                const isRealDay = day <= daysInMonth;
+                                return (
+                                  <th key={day} className={`p-0 font-medium text-slate-400 text-center border-r border-slate-800/50 last:border-0 ${hoveredCol === day ? 'bg-blue-500/10' : ''} ${!isRealDay ? 'bg-slate-900/50' : ''}`}>
+                                    <div className="py-2 w-6 md:w-7 flex items-center justify-center text-[11px] font-bold">{day}</div>
+                                  </th>
+                                );
+                              })}
                             </tr>
                           </thead>
                           <tbody>
                             {workspaces.find(w => w.id === viewAttendanceWorkspace)?.students
                               ?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(attendanceSearch.toLowerCase()))
-                              .slice((attendancePage - 1) * 20, attendancePage * 20)
                               .map((email: string, idx: number) => {
                                 const daysInMonth = new Date(parseInt(viewAttendanceDate.split('-')[0]), parseInt(viewAttendanceDate.split('-')[1]), 0).getDate();
                                 const year = viewAttendanceDate.split('-')[0];
                                 const month = viewAttendanceDate.split('-')[1];
 
                                 return (
-                                  <tr key={idx} className="border-b border-slate-800 hover:bg-slate-800/50">
-                                    <td className={`p-0 font-medium text-slate-300 sticky left-0 bg-slate-900 z-20 border-r border-slate-700 ${hoveredRow === idx ? 'bg-blue-500/10' : ''}`}>
-                                      <div className="p-2 w-[140px] truncate" title={email}>{studentMap.get(email) || email}</div>
+                                  <tr key={idx} className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
+                                    <td className={`p-0 font-medium text-slate-300 sticky left-0 bg-slate-900 z-20 border-r border-slate-700 shadow-[2px_0_5px_rgba(0,0,0,0.5)] ${hoveredRow === idx ? 'bg-blue-500/10' : ''}`}>
+                                      <div className="p-2 w-[140px] md:w-[160px] truncate text-sm font-bold" title={email}>{studentMap.get(email) || email}</div>
                                     </td>
-                                    {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+                                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
+                                      const isRealDay = day <= daysInMonth;
                                       const dateStr = `${year}-${month}-${day.toString().padStart(2, '0')}`;
-                                      const hasRecord = monthAttendanceData.has(dateStr);
+                                      const hasRecord = isRealDay && monthAttendanceData.has(dateStr);
                                       const isPresent = hasRecord && monthAttendanceData.get(dateStr)?.has(email);
 
                                       return (
                                         <td
                                           key={day}
-                                          className={`p-0 text-center border-r border-slate-800/50 last:border-0 transition-colors ${hoveredRow === idx || hoveredCol === day ? 'bg-blue-500/10' : ''}`}
+                                          className={`p-0 text-center border-r border-slate-800/50 last:border-0 transition-colors ${hoveredRow === idx || hoveredCol === day ? 'bg-blue-500/10' : ''} ${!isRealDay ? 'bg-slate-900/30' : ''}`}
                                           onMouseEnter={() => { setHoveredRow(idx); setHoveredCol(day); }}
                                         >
-                                          <div className="py-1 w-12 flex items-center justify-center">
-                                            <div
-                                              className={`w-10 h-10 rounded flex items-center justify-center text-sm font-bold 
-                                              ${!hasRecord ? 'bg-slate-800/30 text-slate-600' :
-                                                  isPresent ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}
-                                              title={`${dateStr}: ${!hasRecord ? 'No Record' : isPresent ? 'Present' : 'Absent'}`}
-                                            >
-                                              {hasRecord ? (isPresent ? 'P' : 'A') : '-'}
-                                            </div>
+                                          <div className="py-1 w-6 md:w-7 flex items-center justify-center">
+                                            {isRealDay ? (
+                                              <div
+                                                className={`w-5 h-5 md:w-6 md:h-6 rounded-sm flex items-center justify-center text-[9px] font-black shadow-sm transition-all
+                                                ${!hasRecord ? 'bg-slate-800/30 text-slate-600' :
+                                                    isPresent ? 'bg-emerald-500 text-emerald-950 scale-105' : 'bg-rose-500 text-rose-950 scale-105'}`}
+                                                title={`${dateStr}: ${!hasRecord ? 'No Record' : isPresent ? 'Present' : 'Absent'}`}
+                                              >
+                                                {hasRecord ? (isPresent ? 'P' : 'A') : '-'}
+                                              </div>
+                                            ) : (
+                                              <div className="w-5 h-5 md:w-6 md:h-6" />
+                                            )}
                                           </div>
                                         </td>
                                       );
@@ -6350,15 +6466,6 @@ const TeacherDashboard = () => {
                         </table>
                       </div>
                     </div>
-                    {
-                      workspaces.find(w => w.id === viewAttendanceWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(attendanceSearch.toLowerCase())).length > 20 && (
-                        <div className="flex items-center justify-center gap-2 mt-6">
-                          <Button variant="outline" size="sm" onClick={() => setAttendancePage(p => Math.max(1, p - 1))} disabled={attendancePage === 1} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronLeft className="h-4 w-4" /></Button>
-                          <span className="text-sm text-slate-400">Page {attendancePage}</span>
-                          <Button variant="outline" size="sm" onClick={() => setAttendancePage(p => p + 1)} disabled={attendancePage * 20 >= (workspaces.find(w => w.id === viewAttendanceWorkspace)?.students?.filter((email: string) => (studentMap.get(email) || email).toLowerCase().includes(attendanceSearch.toLowerCase())).length || 0)} className="border-slate-600 text-slate-300 hover:bg-slate-700"><ChevronRight className="h-4 w-4" /></Button>
-                        </div>
-                      )
-                    }
                   </>
                 )}
               </CardContent >

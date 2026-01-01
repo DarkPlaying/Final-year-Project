@@ -1080,9 +1080,21 @@ const AdminDashboard = () => {
     try {
       let deleted = 0;
       for (const user of lastUpload.users) {
-        // Only delete if still marked as CSV upload and no workspaces
+        // 1. Delete from Firestore
         const userRef = doc(db, 'users', user.id);
         await deleteDoc(userRef);
+
+        // 2. Delete from Firebase Auth via Notification Service
+        try {
+          const notifServiceUrl = 'https://edu-online-notifications.onrender.com/delete-user';
+          await fetch(notifServiceUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user.email })
+          });
+        } catch (authErr) {
+          console.warn(`Failed to delete user ${user.email} from Auth during undo:`, authErr);
+        }
 
         deleted++;
       }

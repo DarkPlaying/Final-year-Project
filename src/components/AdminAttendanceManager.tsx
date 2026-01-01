@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,11 +8,60 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Search, Download, Save, Loader2, Filter, ClipboardList, ScanFace, Trash2, Eye } from 'lucide-react';
+import { Calendar as CalendarIcon, Search, Download, Save, Loader2, Filter, ClipboardList, ScanFace, Trash2, Eye, ChevronLeft, ChevronRight, MapPin, Navigation, Locate } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, setDoc, doc, Timestamp, writeBatch, deleteField } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, setDoc, doc, Timestamp, writeBatch, deleteField, serverTimestamp } from 'firebase/firestore';
 import { TeacherAttendanceHistoryDialog } from './TeacherAttendanceHistoryDialog';
+import { AdminOverallAttendanceDialog } from './AdminOverallAttendanceDialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for default marker icon in Leaflet + React
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+    iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+});
+
+function MapClickHandler({ onClick }: { onClick: (e: L.LeafletMouseEvent) => void }) {
+    useMapEvents({
+        click: onClick,
+    });
+    return null;
+}
+
+// Helper component to recenter map when coords change
+function MapRecenter({ lat, lng, zoom }: { lat: number; lng: number; zoom: number }) {
+    const map = useMap();
+    useEffect(() => {
+        map.flyTo([lat, lng], zoom);
+    }, [lat, lng, zoom, map]);
+    return null;
+}
+
+// Draggable Marker Component
+function DraggableMarker({ pos, onDragEnd }: { pos: [number, number], onDragEnd: (lat: number, lng: number) => void }) {
+    const markerRef = useRef<any>(null);
+    const eventHandlers = useMemo(
+        () => ({
+            dragend() {
+                const marker = markerRef.current;
+                if (marker != null) {
+                    const { lat, lng } = marker.getLatLng();
+                    onDragEnd(lat, lng);
+                }
+            },
+        }),
+        [onDragEnd]
+    );
+
+    return <Marker draggable={true} eventHandlers={eventHandlers} position={pos} ref={markerRef} />;
+}
 
 interface Teacher {
     id: string;
@@ -37,6 +86,139 @@ export const AdminAttendanceManager = () => {
     const [departments, setDepartments] = useState<string[]>([]);
     const [selectedTeacherForHistory, setSelectedTeacherForHistory] = useState<Teacher | null>(null);
     const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+    const [overallAttendanceOpen, setOverallAttendanceOpen] = useState(false);
+    const [showLocationSettings, setShowLocationSettings] = useState(false);
+    const [locationConfig, setLocationConfig] = useState({
+        lat: 0,
+        lng: 0,
+        radius: 100, // Default 100 meters
+        isEnabled: false
+    });
+    const [mapZoom, setMapZoom] = useState(13); // New state for map zoom
+
+    useEffect(() => {
+        const fetchLocationSettings = async () => {
+            try {
+                const docSnap = await getDoc(doc(db, 'settings', 'attendance'));
+                if (docSnap.exists()) {
+                    setLocationConfig(docSnap.data() as any);
+                }
+            } catch (error) {
+                console.error("Error fetching location settings:", error);
+            }
+        };
+        fetchLocationSettings();
+    }, []);
+
+    const saveLocationSettings = async () => {
+        try {
+            setSaving(true);
+            await setDoc(doc(db, 'settings', 'attendance'), {
+                ...locationConfig,
+                updatedAt: serverTimestamp()
+            });
+            toast.success("Location settings saved successfully");
+            setShowLocationSettings(false);
+        } catch (error) {
+            console.error("Error saving location settings:", error);
+            toast.error("Failed to save location settings");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const getCurrentLocation = () => {
+        if (!navigator.geolocation) {
+            toast.error("Geolocation is not supported by your browser");
+            return;
+        }
+
+        toast.loading("Detecting location...");
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude, accuracy } = position.coords;
+                setLocationConfig(prev => ({
+                    ...prev,
+                    lat: latitude,
+                    lng: longitude
+                }));
+
+                // Adjust zoom based on accuracy
+                if (accuracy > 2000) {
+                    setMapZoom(11); // Zoom out for city view if accuracy is low
+                    toast.dismiss();
+                    toast.warning(`Low GPS Accuracy (${Math.round(accuracy / 1000)}km). Please SEARCH for your exact address above or DRAG the marker.`);
+                } else {
+                    setMapZoom(15); // Zoom in for street view
+                    toast.dismiss();
+                    toast.success(`Location detected (Accuracy: ${Math.round(accuracy)}m).`);
+                }
+            },
+            (error) => {
+                toast.dismiss();
+                toast.error("Failed to detect location: " + error.message);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    };
+
+    const handleSearch = (query: string) => {
+        if (!query) return;
+
+        // Check for Google Maps URL or Lat,Lng format
+        const googleMapsUrlRegex = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
+        const latLngRegex = /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/;
+
+        const urlMatch = query.match(googleMapsUrlRegex);
+        const latLngMatch = query.match(latLngRegex);
+
+        if (urlMatch) {
+            const lat = parseFloat(urlMatch[1]);
+            const lng = parseFloat(urlMatch[2]);
+            setLocationConfig(prev => ({ ...prev, lat, lng }));
+            setMapZoom(17);
+            toast.success("Location extracted from URL");
+        } else if (latLngMatch) {
+            const lat = parseFloat(latLngMatch[1]);
+            const lng = parseFloat(latLngMatch[2]);
+            setLocationConfig(prev => ({ ...prev, lat, lng }));
+            setMapZoom(17);
+            toast.success("Location set from coordinates");
+        } else {
+            toast.loading("Searching location...");
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+                .then(res => res.json())
+                .then(data => {
+                    toast.dismiss();
+                    if (data && data.length > 0) {
+                        const { lat, lon } = data[0];
+                        setLocationConfig(prev => ({
+                            ...prev,
+                            lat: parseFloat(lat),
+                            lng: parseFloat(lon)
+                        }));
+                        setMapZoom(16);
+                        toast.success(`Found: ${data[0].display_name}`);
+                    } else {
+                        toast.error("Location not found on OpenStreetMap", {
+                            action: {
+                                label: 'Find on Google Maps',
+                                onClick: () => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, '_blank')
+                            },
+                            description: "Click above to find, then copy the URL & paste it here.",
+                            duration: 8000
+                        });
+                    }
+                })
+                .catch(err => {
+                    toast.dismiss();
+                    toast.error("Search failed");
+                    console.error(err);
+                });
+        }
+    };
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 6;
 
     // Load Teachers
     useEffect(() => {
@@ -194,6 +376,18 @@ export const AdminAttendanceManager = () => {
         return matchesSearch && matchesDept;
     });
 
+    // Reset to page 1 when filtering
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, departmentFilter]);
+
+    const paginatedTeachers = filteredTeachers.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+    );
+
+    const totalPages = Math.ceil(filteredTeachers.length / ITEMS_PER_PAGE);
+
     // Calculate Stats
     const stats = {
         present: Object.values(attendance).filter(r => r.status === 'P').length,
@@ -313,19 +507,19 @@ export const AdminAttendanceManager = () => {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Summary</Label>
-                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                                <div className="bg-green-500/20 p-2 rounded text-green-400 border border-green-500/30">
-                                    <div className="font-bold text-lg">{stats.present}</div>
-                                    <div>Present</div>
+                            <Label className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Attendance Summary</Label>
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-emerald-500/10 p-3 rounded-xl text-center border border-emerald-500/20 shadow-sm">
+                                    <div className="font-black text-xl text-emerald-500 leading-none">{stats.present}</div>
+                                    <div className="text-[9px] font-bold text-emerald-400/70 mt-1 uppercase">Present</div>
                                 </div>
-                                <div className="bg-red-500/20 p-2 rounded text-red-400 border border-red-500/30">
-                                    <div className="font-bold text-lg">{stats.absent}</div>
-                                    <div>Absent</div>
+                                <div className="bg-rose-500/10 p-3 rounded-xl text-center border border-rose-500/20 shadow-sm">
+                                    <div className="font-black text-xl text-rose-500 leading-none">{stats.absent}</div>
+                                    <div className="text-[9px] font-bold text-rose-400/70 mt-1 uppercase">Absent</div>
                                 </div>
-                                <div className="bg-yellow-500/20 p-2 rounded text-yellow-400 border border-yellow-500/30">
-                                    <div className="font-bold text-lg">{stats.halfDay}</div>
-                                    <div>Half Day</div>
+                                <div className="bg-amber-500/10 p-3 rounded-xl text-center border border-amber-500/20 shadow-sm">
+                                    <div className="font-black text-xl text-amber-500 leading-none">{stats.halfDay}</div>
+                                    <div className="text-[9px] font-bold text-amber-400/70 mt-1 uppercase">Half Day</div>
                                 </div>
                             </div>
                         </div>
@@ -341,6 +535,11 @@ export const AdminAttendanceManager = () => {
                                 Download Report
                             </Button>
 
+                            <Button variant="secondary" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => setOverallAttendanceOpen(true)}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Overall Attendance
+                            </Button>
+
                             <Button
                                 variant="destructive"
                                 className="w-full bg-red-900/50 hover:bg-red-900 border border-red-800 text-red-200"
@@ -349,6 +548,15 @@ export const AdminAttendanceManager = () => {
                             >
                                 <ScanFace className="mr-2 h-4 w-4" />
                                 Reset {departmentFilter === 'all' ? 'All' : departmentFilter} Face IDs
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className="w-full border-slate-700 bg-amber-600/10 hover:bg-amber-600 text-amber-500 hover:text-white border-amber-600/50"
+                                onClick={() => setShowLocationSettings(true)}
+                            >
+                                <MapPin className="mr-2 h-4 w-4" />
+                                Attendance Location Settings
                             </Button>
                         </div>
                     </CardContent>
@@ -393,7 +601,7 @@ export const AdminAttendanceManager = () => {
                                             </TableCell>
                                         </TableRow>
                                     ) : (
-                                        filteredTeachers.map((teacher) => {
+                                        paginatedTeachers.map((teacher) => {
                                             const status = attendance[teacher.id]?.status; // undefined = Not Marked
                                             return (
                                                 <TableRow key={teacher.id} className="border-slate-700 hover:bg-slate-700/30">
@@ -403,36 +611,36 @@ export const AdminAttendanceManager = () => {
                                                     </TableCell>
                                                     <TableCell>{teacher.department}</TableCell>
                                                     <TableCell>
-                                                        <div className="flex justify-center gap-2">
+                                                        <div className="flex justify-center gap-3">
                                                             <button
                                                                 onClick={() => handleStatusChange(teacher.id, 'P')}
-                                                                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all
+                                                                className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all duration-300 shadow-sm
                                                             ${status === 'P'
-                                                                        ? 'bg-green-600 text-white ring-2 ring-green-400 ring-offset-2 ring-offset-slate-900'
-                                                                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
+                                                                        ? 'bg-emerald-500 text-emerald-950 font-black ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900 scale-110 shadow-emerald-500/20'
+                                                                        : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300'}`}
                                                                 title="Present"
                                                             >
-                                                                P
+                                                                <span className="text-xs leading-none">P</span>
                                                             </button>
                                                             <button
                                                                 onClick={() => handleStatusChange(teacher.id, 'A')}
-                                                                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all
+                                                                className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all duration-300 shadow-sm
                                                             ${status === 'A'
-                                                                        ? 'bg-red-600 text-white ring-2 ring-red-400 ring-offset-2 ring-offset-slate-900'
-                                                                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
+                                                                        ? 'bg-rose-500 text-rose-950 font-black ring-2 ring-rose-400 ring-offset-2 ring-offset-slate-900 scale-110 shadow-rose-500/20'
+                                                                        : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300'}`}
                                                                 title="Absent"
                                                             >
-                                                                A
+                                                                <span className="text-xs leading-none">A</span>
                                                             </button>
                                                             <button
                                                                 onClick={() => handleStatusChange(teacher.id, 'HL')}
-                                                                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all
+                                                                className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center transition-all duration-300 shadow-sm
                                                             ${status === 'HL'
-                                                                        ? 'bg-yellow-600 text-white ring-2 ring-yellow-400 ring-offset-2 ring-offset-slate-900'
-                                                                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
+                                                                        ? 'bg-amber-500 text-amber-950 font-black ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-900 scale-110 shadow-amber-500/20'
+                                                                        : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300'}`}
                                                                 title="Half Day Leave"
                                                             >
-                                                                HL
+                                                                <span className="text-xs leading-none text-[10px]">HL</span>
                                                             </button>
                                                         </div>
                                                     </TableCell>
@@ -469,6 +677,36 @@ export const AdminAttendanceManager = () => {
                                 </TableBody>
                             </Table>
                         </div>
+                        {totalPages > 1 && (
+                            <div className="mt-4 flex flex-col md:flex-row items-center justify-between gap-4 p-4 bg-slate-900/50 rounded-lg border border-slate-700 mx-6 mb-6">
+                                <div className="text-sm text-slate-400">
+                                    Showing <span className="text-white">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="text-white">{Math.min(currentPage * ITEMS_PER_PAGE, filteredTeachers.length)}</span> of <span className="text-white">{filteredTeachers.length}</span> teachers
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+                                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                        disabled={currentPage === 1}
+                                    >
+                                        <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                                    </Button>
+                                    <div className="flex items-center gap-1.5 px-3 text-sm font-medium text-slate-400">
+                                        Page <span className="text-white">{currentPage}</span> of <span className="text-white">{totalPages}</span>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+                                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                        disabled={currentPage === totalPages}
+                                    >
+                                        Next <ChevronRight className="h-4 w-4 ml-1" />
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
@@ -480,8 +718,151 @@ export const AdminAttendanceManager = () => {
                     onOpenChange={setHistoryDialogOpen}
                 />
             )}
+
+            <AdminOverallAttendanceDialog
+                open={overallAttendanceOpen}
+                onOpenChange={setOverallAttendanceOpen}
+                departments={departments}
+            />
+
+            {/* Location Settings Dialog */}
+            <Dialog open={showLocationSettings} onOpenChange={setShowLocationSettings}>
+                <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md max-h-[90vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <MapPin className="h-5 w-5 text-amber-500" />
+                            Attendance Location Settings
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-400">
+                            Restrict teacher attendance to a specific geographical radius.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4 flex-1 overflow-y-auto px-1">
+                        <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
+                            <div className="space-y-0.5">
+                                <Label>Enable Location Restriction</Label>
+                                <p className="text-xs text-slate-500">Teachers must be within the radius to mark attendance.</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={locationConfig.isEnabled}
+                                onChange={e => setLocationConfig({ ...locationConfig, isEnabled: e.target.checked })}
+                                className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-indigo-600"
+                            />
+                        </div>
+
+                        <div className="space-y-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                            <Label className="text-indigo-400 font-semibold">1. Search your exact location</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="Search address or paste Google Maps URL..."
+                                    className="bg-slate-800 border-slate-700"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleSearch((e.target as HTMLInputElement).value);
+                                        }
+                                    }}
+                                />
+                                <Button
+                                    variant="secondary"
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+                                    onClick={(e) => {
+                                        const input = e.currentTarget.parentElement?.querySelector('input') as HTMLInputElement;
+                                        handleSearch(input?.value);
+                                    }}
+                                >
+                                    <Search className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <Button
+                                variant="secondary"
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                                onClick={getCurrentLocation}
+                            >
+                                <Locate className="mr-2 h-4 w-4" />
+                                Detect Location
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="flex-1 border-slate-700"
+                                onClick={() => {
+                                    const lat = locationConfig.lat || 0;
+                                    const lng = locationConfig.lng || 0;
+                                    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
+                                }}
+                            >
+                                <MapPin className="mr-2 h-4 w-4" />
+                                Google Maps
+                            </Button>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Constraint Radius (Meters)</Label>
+                            <div className="flex items-center gap-4">
+                                <Input
+                                    type="number"
+                                    value={locationConfig.radius}
+                                    onChange={e => setLocationConfig({ ...locationConfig, radius: parseInt(e.target.value) })}
+                                    className="bg-slate-800 border-slate-700"
+                                />
+                                <span className="text-slate-400 text-sm whitespace-nowrap">meters</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500">Suggested: 100-500 meters for office/campus.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>2. Fine-tune on Map (Drag Marker)</Label>
+                            <div className="h-64 w-full rounded-lg overflow-hidden border border-slate-700 relative z-0">
+                                <MapContainer
+                                    center={[locationConfig.lat || 13.0482, locationConfig.lng || 80.2324]}
+                                    zoom={mapZoom}
+                                    style={{ height: '100%', width: '100%' }}
+                                    scrollWheelZoom={true}
+                                    dragging={true}
+                                >
+                                    <TileLayer
+                                        url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+                                        attribution='&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                                    />
+                                    <MapClickHandler onClick={(e) => {
+                                        setLocationConfig(prev => ({
+                                            ...prev,
+                                            lat: e.latlng.lat,
+                                            lng: e.latlng.lng
+                                        }));
+                                    }} />
+
+                                    <MapRecenter lat={locationConfig.lat || 13.0482} lng={locationConfig.lng || 80.2324} zoom={mapZoom} />
+
+                                    {locationConfig.lat !== 0 && (
+                                        <DraggableMarker
+                                            pos={[locationConfig.lat, locationConfig.lng]}
+                                            onDragEnd={(lat, lng) => {
+                                                setLocationConfig(prev => ({ ...prev, lat, lng }));
+                                            }}
+                                        />
+                                    )}
+                                </MapContainer>
+                                <div className="absolute bottom-2 right-2 z-[1000] bg-slate-900/90 p-2 rounded text-xs text-slate-300 pointer-events-none border border-slate-700 shadow-xl">
+                                    {mapZoom < 13 ? "Zoomed out due to low accuracy. Zoom in (+)" : "Drag marker to adjust"}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setShowLocationSettings(false)}>Cancel</Button>
+                        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={saveLocationSettings} disabled={saving}>
+                            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Save Configuration
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
-
-
