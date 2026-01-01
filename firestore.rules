@@ -112,7 +112,8 @@ service cloud.firestore {
     // Settings: Portal status and teacher-specific settings
     match /settings/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin() || isTeacher();
+      // Only admins can change attendance settings (location constraints)
+      allow write: if isAdmin() || (isTeacher() && docId != 'attendance');
     }
 
     // Default deny

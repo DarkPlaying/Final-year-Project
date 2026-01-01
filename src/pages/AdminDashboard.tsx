@@ -1787,8 +1787,12 @@ const AdminDashboard = () => {
     saveTeacherConfig(newConfig);
   };
 
-  // Real-time Presence Listener
+  // Real-time Presence Listener (Optimized: Only listen when viewing teachers)
   useEffect(() => {
+    if (activeSection !== 'teachers') {
+      return;
+    }
+
     const statusRef = ref(database, '/status');
     const unsub = onValue(statusRef, (snapshot) => {
       const data = snapshot.val();
@@ -1799,7 +1803,7 @@ const AdminDashboard = () => {
       }
     });
     return () => unsub();
-  }, []);
+  }, [activeSection]);
 
   const formatLastSeen = (timestamp: number) => {
     if (!timestamp) return 'Never';
